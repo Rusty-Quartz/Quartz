@@ -1,6 +1,6 @@
 use crate::tcp_socket_helper::read_packet;
 use crate::mc_datatype_helpers::write_varint;
-use crate::server::{RedstoneServer, Player};
+use crate::server::{QuartzServer, Player};
 
 use std::net::TcpStream;
 use std::io::Write;
@@ -32,7 +32,7 @@ struct ChatObject {
 }
 
 
-pub fn load_server_status(server: &RedstoneServer) -> ServerStatusResponse {
+pub fn load_server_status(server: &QuartzServer) -> ServerStatusResponse {
 	ServerStatusResponse {
 		version: McVersion {
 			name: "Redstone 1.15.2".to_owned(),
@@ -49,7 +49,7 @@ pub fn load_server_status(server: &RedstoneServer) -> ServerStatusResponse {
 	}
 }
 
-pub fn send_server_ping(stream: &mut TcpStream, server: &RedstoneServer) {
+pub fn send_server_ping(stream: &mut TcpStream, server: &QuartzServer) {
 	let mut buffer = [0_u8; 4096];
 
 	let res = load_server_status(server);

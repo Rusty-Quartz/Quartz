@@ -9,14 +9,14 @@ use std::io::Result;
 
 use server_ping::send_server_ping;
 use config::load_config;
-use server::RedstoneServer;
+use server::QuartzServer;
 
 
 fn main() -> Result<()> {
 
 	let config = load_config(String::from("./server.properties"));
 
-	let server = RedstoneServer {
+	let server = QuartzServer {
 		players: Vec::new(),
 		config: config,
 		debug: true
