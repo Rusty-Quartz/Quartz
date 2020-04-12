@@ -35,7 +35,7 @@ struct ChatObject {
 pub fn load_server_status(server: &QuartzServer) -> ServerStatusResponse {
 	ServerStatusResponse {
 		version: McVersion {
-			name: "Redstone 1.15.2".to_owned(),
+			name: "Quartz 1.15.2".to_owned(),
 			protocol: 578
 		},
 		players: ServerPlayersObject {
