@@ -2,20 +2,20 @@
 	"handshake": {
 		"server_bound": [
 			{
-				"name": "handshake",
-				"id":"0x0",
+				"name": "Handshake",
+				"id":"0x00",
 				"fields": [
-					{"name": "version", "type":"varint"},
-					{"name": "server_address", "type":"string"},
-					{"name": "server_port", "type":"u16"},
-					{"name": "next_state", "type":"varint"}
+					{"name": "version", "type": "varint"},
+					{"name": "server_address", "type": "string"},
+					{"name": "server_port", "type": "u16"},
+					{"name": "next_state", "type": "varint"}
 				]
 			},
 			{
-				"name": "legacy_ping",
+				"name": "LegacyPing",
 				"id": "0xFE",
 				"fields": [
-					{"name": "payload", "type":"u8"}
+					{"name": "payload", "type": "u8"}
 				]
 			}
 		]
@@ -24,32 +24,32 @@
 	"status": {
 		"client_bound": [
 			{
-				"id": "0x0",
-				"name": "response",
+				"id": "0x00",
+				"name": "Response",
 				"fields": [
-					{"name":"json_length", "type":"varint"},
-					{"name":"json_response", "type":"string"}
+					{"name": "json_length", "type": "varint"},
+					{"name": "json_response", "type": "string"}
 				]
 			},
 			{
-				"id": 1,
-				"name": "pong",
+				"id": "0x01",
+				"name": "Pong",
 				"fields": [
-					{"name":"payload", "type":"i64"}
+					{"name": "payload", "type": "i64"}
 				]
 			}
 		],
 		"server_bound": [
 			{
-				"name":"request",
-				"id":0,
+				"name": "Request",
+				"id": "0x00",
 				"fields":[]
 			},
 			{
-				"name":"ping",
-				"id":1,
+				"name": "Ping",
+				"id": "0x01",
 				"fields": [
-					{"name":"payload", "type":"i64"}
+					{"name": "payload", "type": "i64"}
 				]
 			}
 		]
@@ -57,25 +57,25 @@
 	"login": {
 		"client_bound": [
 			{
-				"name":"disconnect",
-				"id":"0x0",
+				"name": "Disconnect",
+				"id": "0x00",
 				"fields":[
-					{"name": "reason", "type":"chat"}
+					{"name": "reason", "type": "string"}
 				]
 			},
 			{
-				"name": "encryption_request",
-				"id": "0x1",
+				"name": "EncryptionRequest",
+				"id": "0x01",
 				"fields": [
 					{"name": "server_id", "type": "string"},
-					{"name":"pub_key_len", "type": "varint"},
-					{"name":"pub_key", "type": "byte_array(pub_key_len)"},
-					{"name": "verify_token_len", "type":"varint"},
+					{"name": "pub_key_len", "type": "varint"},
+					{"name": "pub_key", "type": "byte_array(pub_key_len)"},
+					{"name": "verify_token_len", "type": "varint"},
 					{"name": "verify_token", "type": "byte_array(verify_token_len)"}
 				]
 			},
 			{
-				"name":"login_success",
+				"name":"LoginSuccess",
 				"id": "0x02",
 				"fields": [
 					{"name": "uuid", "type": "string"},
@@ -83,17 +83,17 @@
 				]
 			},
 			{
-				"name":"set_compression",
+				"name": "SetCompression",
 				"id": "0x03",
 				"fields": [
 					{"name": "threshold", "type":"varint"}
 				]
 			},
 			{
-				"name": "login_plugin_request",
+				"name": "LoginPluginRequest",
 				"id": "0x04",
 				"fields": [
-					{"name": "message_id", "type":"varint"},
+					{"name": "message_id", "type": "varint"},
 					{"name": "channel", "type": "string"},
 					{"name": "data", "type": "byte_array"}
 				]
@@ -101,15 +101,15 @@
 		],
 		"server_bound": [
 			{
-				"name": "login_start",
-				"id": "0x0",
+				"name": "LoginStart",
+				"id": "0x00",
 				"fields": [
 					{"name": "name", "type": "string"}
 				]
 			},
 			{
-				"name": "login_plugin_response",
-				"id": "0x1",
+				"name": "LoginPluginResponse",
+				"id": "0x01",
 				"fields": [
 					{"name": "shared_secret_len", "type": "varint"},
 					{"name": "shared_secret", "type": "byte_array(shared_secret_len)"},
@@ -118,7 +118,7 @@
 				]
 			},
 			{
-				"name": "login_plugin_response",
+				"name": "LoginPluginResponse",
 				"id": "0x02",
 				"fields": [
 					{"name": "message_id", "type": "varint"},
