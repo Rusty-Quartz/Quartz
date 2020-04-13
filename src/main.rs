@@ -7,13 +7,20 @@ mod mc_datatype_helpers;
 use std::net::{TcpListener};
 use std::io::Result;
 
-use server_ping::send_server_ping;
 use config::load_config;
 use server::QuartzServer;
+use network::{connection::ClientConnection, packet_handler::handle_connection};
 
+mod util {
+	pub mod ioutil;
+}
+
+mod network {
+	pub mod connection;
+	pub mod packet_handler;
+}
 
 fn main() -> Result<()> {
-
 	let config = load_config(String::from("./server.properties"));
 
 	let server = QuartzServer {
@@ -26,7 +33,8 @@ fn main() -> Result<()> {
 	
 	for stream in listener.incoming() {
 		println!("client connecting!");
-		send_server_ping(&mut stream?, &server);
+		handle_connection(ClientConnection::new(stream?));
 	}
+
 	Ok(())
 }

@@ -1,0 +1,7 @@
+{
+    "types": {
+        "varint": "i32",
+        "string": "String",
+        "byte_array": "Vec<u8>"
+    }
+}
