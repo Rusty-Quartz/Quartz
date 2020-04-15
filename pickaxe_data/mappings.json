@@ -1,0 +1,7 @@
+{
+    "types": [
+        {"name": "varint", "type": "i32"},
+        {"name": "string", "type": "String"},
+        {"name": "byte_array", "type": "Vec<u8>"}
+	]
+}

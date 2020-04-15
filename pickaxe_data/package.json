@@ -1,0 +1,17 @@
+{
+  "name": "packet_parser",
+  "version": "1.0.0",
+  "description": "",
+  "main": "parser.js",
+  "dependencies": {
+    "@types/node": "^13.11.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "build": "tsc",
+    "run": "node ./parser.js",
+    "parse": "npm run build; npm run run"
+  },
+  "author": "",
+  "license": "ISC"
+}
