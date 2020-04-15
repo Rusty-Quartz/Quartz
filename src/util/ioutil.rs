@@ -1,5 +1,6 @@
 use std::mem::transmute;
 use std::str;
+use std::fmt;
 
 pub struct ByteBuffer {
     inner: Vec<u8>,
@@ -35,23 +36,47 @@ where
     }
 }
 
-impl AsRef<[u8]> for ByteBuffer {
-    fn as_ref(&self) -> &[u8] {
-        &self.inner
-    }
-}
-
-impl AsMut<[u8]> for ByteBuffer {
-    fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.inner
+impl fmt::Display for ByteBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:X?}", self.inner)
     }
 }
 
 impl ByteBuffer {
-    pub fn new(capacity: usize) -> ByteBuffer {
+    pub fn new(initial_size: usize) -> ByteBuffer {
         ByteBuffer {
-            inner: Vec::with_capacity(capacity),
+            inner: vec![0; initial_size],
             cursor: 0
+        }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[inline]
+    pub fn ensure_capacity(&mut self, capacity: usize) {
+        if capacity > self.inner.capacity() {
+            self.inner.reserve_exact(capacity - self.inner.capacity());
+        }
+    }
+
+    #[inline]
+    pub fn inflate(&mut self) {
+        unsafe {
+            self.inner.set_len(self.inner.capacity());
+        }
+    }
+
+    #[inline]
+    pub fn resize(&mut self, size: usize) {
+        self.ensure_capacity(size);
+        if size < self.cursor {
+            self.cursor = size;
+        }
+        unsafe {
+            self.inner.set_len(size);
         }
     }
 
@@ -66,8 +91,8 @@ impl ByteBuffer {
     }
 
     #[inline]
-    pub fn end(&self) -> usize {
-        self.inner.len()
+    pub fn reset_cursor(&mut self) {
+        self.cursor = 0;
     }
 
     #[inline]
@@ -81,9 +106,13 @@ impl ByteBuffer {
         self.cursor = 0;
     }
 
-    #[inline]
-    pub fn ensure_capacity(&mut self, capacity: usize) {
-        self.inner.reserve_exact(capacity);
+    pub fn append_bytes(&mut self, bytes: &[u8]) {
+        self.resize(self.cursor() + bytes.len());
+        self.inner[self.cursor..self.cursor + bytes.len()].copy_from_slice(bytes);
+    }
+
+    pub fn inner_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.inner
     }
 
     #[inline(always)]
@@ -190,25 +219,30 @@ impl ByteBuffer {
 
     #[inline(always)]
     pub fn write(&mut self, byte: u8) {
-        self.inner.push(byte);
-        self.cursor += 1;
+        if self.cursor >= self.inner.len() {
+            self.inner.reserve(1);
+        }
+        self.write_unchecked(byte);
     }
 
     #[inline(always)]
-    pub fn write_unsafe(&mut self, byte: u8) {
+    pub fn write_unchecked(&mut self, byte: u8) {
         self.inner[self.cursor] = byte;
         self.cursor += 1;
     }
 
     #[inline(always)]
-    pub fn write_blob(&mut self, blob: &[u8]) {
-        self.inner.extend(blob);
-        self.cursor += blob.len();
+    pub fn write_bytes(&mut self, blob: &[u8]) {
+        let remaining = self.inner.len() - self.cursor;
+        if remaining < blob.len() {
+            self.inner.reserve(remaining - blob.len());
+        }
+        self.write_bytes_unchecked(blob);
     }
 
     #[inline(always)]
-    pub fn write_blob_unsafe(&mut self, blob: &[u8]) {
-        (self.inner[self.cursor..]).copy_from_slice(blob);
+    pub fn write_bytes_unchecked(&mut self, blob: &[u8]) {
+        (self.inner[self.cursor..self.cursor + blob.len()]).copy_from_slice(blob);
         self.cursor += blob.len();
     }
 
@@ -234,8 +268,8 @@ impl ByteBuffer {
     #[inline(always)]
     pub fn write_u16(&mut self, value: u16) {
         self.ensure_capacity(2);
-        self.write_unsafe((value >> 8) as u8);
-        self.write_unsafe(value as u8);
+        self.write_unchecked((value >> 8) as u8);
+        self.write_unchecked(value as u8);
     }
 
     #[inline(always)]
@@ -246,23 +280,23 @@ impl ByteBuffer {
     #[inline(always)]
     pub fn write_i32(&mut self, value: i32) {
         self.ensure_capacity(4);
-        self.write_unsafe((value >> 24) as u8);
-        self.write_unsafe((value >> 16) as u8);
-        self.write_unsafe((value >> 8) as u8);
-        self.write_unsafe(value as u8);
+        self.write_unchecked((value >> 24) as u8);
+        self.write_unchecked((value >> 16) as u8);
+        self.write_unchecked((value >> 8) as u8);
+        self.write_unchecked(value as u8);
     }
 
     #[inline(always)]
     pub fn write_i64(&mut self, value: i64) {
         self.ensure_capacity(8);
-        self.write_unsafe((value >> 56) as u8);
-        self.write_unsafe((value >> 48) as u8);
-        self.write_unsafe((value >> 40) as u8);
-        self.write_unsafe((value >> 32) as u8);
-        self.write_unsafe((value >> 24) as u8);
-        self.write_unsafe((value >> 16) as u8);
-        self.write_unsafe((value >> 8) as u8);
-        self.write_unsafe(value as u8);
+        self.write_unchecked((value >> 56) as u8);
+        self.write_unchecked((value >> 48) as u8);
+        self.write_unchecked((value >> 40) as u8);
+        self.write_unchecked((value >> 32) as u8);
+        self.write_unchecked((value >> 24) as u8);
+        self.write_unchecked((value >> 16) as u8);
+        self.write_unchecked((value >> 8) as u8);
+        self.write_unchecked(value as u8);
     }
 
     #[inline(always)]
@@ -276,6 +310,16 @@ impl ByteBuffer {
     pub fn write_f64(&mut self, value: f64) {
         unsafe {
             self.write_i64(transmute::<f64, i64>(value));
+        }
+    }
+
+    pub fn varint_size(mut value: i32) -> usize {
+        match value {
+            0..=127 => 1,
+            128..=16383 => 2,
+            16384..=2097151 => 3,
+            2097152..=268435455 => 4,
+            _ => 5
         }
     }
 
@@ -301,11 +345,11 @@ impl ByteBuffer {
     pub fn write_string(&mut self, value: &String) {
         let bytes = value.as_bytes();
         self.write_varint(bytes.len() as i32);
-        self.write_blob(bytes);
+        self.write_bytes(bytes);
     }
 
     #[inline(always)]
     pub fn write_byte_array(&mut self, value: Vec<u8>) {
-        self.write_blob(&value);
+        self.write_bytes(&value);
     }
 }
