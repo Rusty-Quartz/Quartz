@@ -1,13 +1,8 @@
-mod server_ping;
-mod server;
 mod config;
-mod tcp_socket_helper;
-mod mc_datatype_helpers;
 
 use std::io::Result;
 
 use config::load_config;
-use server::QuartzServer;
 use network::{connection::AsyncClientConnection, packet_handler::{handle_async_connection, ServerBoundPacket}};
 use tokio::sync::mpsc;
 use std::net::TcpListener;
@@ -21,14 +16,15 @@ mod network {
 	pub mod packet_handler;
 }
 
+mod server;
+
 #[tokio::main]
 async fn main() -> Result<()> {
 	let config = load_config(String::from("./config.json"));
 	let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded_channel::<ServerBoundPacket>();
 
-	let server = QuartzServer {
-		players: Vec::new(),
-		config: config,
+	let server = server::QuartzServer {
+		config,
 		debug: true
 	};
 

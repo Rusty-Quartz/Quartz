@@ -164,10 +164,12 @@ impl WriteHandle {
         }
     }
 
-    pub async fn send_packet(&mut self, packet: ClientBoundPacket) -> Result<()> {
+    pub async fn send_packet(&mut self, packet: ClientBoundPacket) {
         serialize(packet, &mut self.packet_buffer);
         // This clears the packet buffer when done
-        self.io_handle.lock().await.write_packet_data(&mut self.packet_buffer, &mut self.stream).await
+        if let Err(e) = self.io_handle.lock().await.write_packet_data(&mut self.packet_buffer, &mut self.stream).await {
+            println!("Failed to send packet: {}", e);
+        }
     }
 }
 
@@ -176,7 +178,7 @@ pub struct AsyncClientConnection {
     pub packet_buffer: ByteBuffer,
     io_handle: Arc<Mutex<IOHandle>>,
     pub connection_state: ConnectionState,
-    pub sync_packet_sender: UnboundedSender<ServerBoundPacket>
+    sync_packet_sender: UnboundedSender<ServerBoundPacket>
 }
 
 impl AsyncClientConnection {
@@ -194,10 +196,18 @@ impl AsyncClientConnection {
         WriteHandle::new(self.stream.try_clone().expect("Failed to clone client connection stream."), self.io_handle.clone())
     }
 
-    pub async fn send_packet(&mut self, packet: ClientBoundPacket) -> Result<()> {
+    pub async fn send_packet(&mut self, packet: ClientBoundPacket) {
         serialize(packet, &mut self.packet_buffer);
         // This clears the packet buffer when done
-        self.io_handle.lock().await.write_packet_data(&mut self.packet_buffer, &mut self.stream).await
+        if let Err(e) = self.io_handle.lock().await.write_packet_data(&mut self.packet_buffer, &mut self.stream).await {
+            println!("Failed to send packet: {}", e);
+        }
+    }
+
+    pub fn forward_to_server(&mut self, packet: ServerBoundPacket) {
+        if let Err(e) = self.sync_packet_sender.send(packet) {
+            println!("Failed to forward synchronous packet to server: {}", e);
+        }
     }
 
     pub async fn read_packet(&mut self) -> Result<()> {
