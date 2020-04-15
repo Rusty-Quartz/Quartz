@@ -6,7 +6,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use tokio::sync::mpsc::UnboundedSender;
-use crate::network::packet_handler::{Packet, serialize};
+use crate::network::packet_handler::{ServerBoundPacket, ClientBoundPacket, serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::net::TcpStream;
@@ -164,7 +164,7 @@ impl WriteHandle {
         }
     }
 
-    pub async fn send_packet(&mut self, packet: Packet) -> Result<()> {
+    pub async fn send_packet(&mut self, packet: ClientBoundPacket) -> Result<()> {
         serialize(packet, &mut self.packet_buffer);
         // This clears the packet buffer when done
         self.io_handle.lock().await.write_packet_data(&mut self.packet_buffer, &mut self.stream).await
@@ -176,11 +176,11 @@ pub struct AsyncClientConnection {
     pub packet_buffer: ByteBuffer,
     io_handle: Arc<Mutex<IOHandle>>,
     pub connection_state: ConnectionState,
-    sync_packet_sender: UnboundedSender<Packet>
+    pub sync_packet_sender: UnboundedSender<ServerBoundPacket>
 }
 
 impl AsyncClientConnection {
-    pub fn new(stream: TcpStream, sync_packet_sender: UnboundedSender<Packet>) -> AsyncClientConnection {
+    pub fn new(stream: TcpStream, sync_packet_sender: UnboundedSender<ServerBoundPacket>) -> AsyncClientConnection {
         AsyncClientConnection {
             stream,
             packet_buffer: ByteBuffer::new(4096),
@@ -194,7 +194,7 @@ impl AsyncClientConnection {
         WriteHandle::new(self.stream.try_clone().expect("Failed to clone client connection stream."), self.io_handle.clone())
     }
 
-    pub async fn send_packet(&mut self, packet: Packet) -> Result<()> {
+    pub async fn send_packet(&mut self, packet: ClientBoundPacket) -> Result<()> {
         serialize(packet, &mut self.packet_buffer);
         // This clears the packet buffer when done
         self.io_handle.lock().await.write_packet_data(&mut self.packet_buffer, &mut self.stream).await

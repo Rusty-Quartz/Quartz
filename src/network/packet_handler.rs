@@ -13,19 +13,25 @@ pub trait SyncPacketHandler {
 //#end
 }
 
-pub enum Packet {
-//#Packet
+pub enum ServerBoundPacket {
+//#ServerBoundPacket
 
 //#end
 }
 
-pub fn dispatch_sync_packet(packet: Packet, handler: &mut impl SyncPacketHandler) {
+pub enum ClientBoundPacket {
+//#ClientBoundPacket
+
+//#end
+}
+
+pub fn dispatch_sync_packet(packet: ServerBoundPacket, handler: &mut impl SyncPacketHandler) {
 //#dispatch_sync_packet
 
 //#end
 }
 
-pub fn serialize(packet: Packet, buffer: &mut ByteBuffer) {
+pub fn serialize(packet: ClientBoundPacket, buffer: &mut ByteBuffer) {
 //#serialize
 
 //#end
@@ -34,8 +40,6 @@ pub fn serialize(packet: Packet, buffer: &mut ByteBuffer) {
 fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut DefaultAsyncPacketHandler) {
     let mut buffer = &mut conn.packet_buffer;
     let id = buffer.read_varint();
-
-    println!("Packet received: ({}) {}", conn.packet_buffer.cursor(), conn.packet_buffer);
 
 //#handle_packet
 
