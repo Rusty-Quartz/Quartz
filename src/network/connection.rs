@@ -13,7 +13,7 @@ use std::net::TcpStream;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ConnectionState {
-    Handshaking,
+    Handshake,
     Status,
     Login,
     Play,
@@ -185,7 +185,7 @@ impl AsyncClientConnection {
             stream,
             packet_buffer: ByteBuffer::new(4096),
             io_handle: Arc::new(Mutex::new(IOHandle::new())),
-            connection_state: ConnectionState::Handshaking,
+            connection_state: ConnectionState::Handshake,
             sync_packet_sender
         }
     }
