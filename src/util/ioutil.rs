@@ -43,7 +43,7 @@ impl fmt::Display for ByteBuffer {
 }
 
 impl ByteBuffer {
-    pub fn new(initial_size: usize) -> ByteBuffer {
+    pub fn new(initial_size: usize) -> Self {
         ByteBuffer {
             inner: vec![0; initial_size],
             cursor: 0
@@ -114,12 +114,6 @@ impl ByteBuffer {
     pub fn clear(&mut self) {
         self.inner.clear();
         self.cursor = 0;
-    }
-
-    #[inline]
-    pub fn append_bytes(&mut self, bytes: &[u8]) {
-        self.resize(self.cursor() + bytes.len());
-        self.inner[self.cursor..self.cursor + bytes.len()].copy_from_slice(bytes);
     }
 
     #[inline]
@@ -261,7 +255,7 @@ impl ByteBuffer {
 
     #[inline]
     pub fn write_bytes(&mut self, blob: &[u8]) {
-        self.resize(self.cursor + blob.len());
+        self.ensure_size(self.cursor + blob.len());
         self.write_bytes_unchecked(blob);
     }
 
@@ -295,6 +289,7 @@ impl ByteBuffer {
         self.ensure_size(self.cursor + 2);
         self.inner[self.cursor] = (value >> 8) as u8;
         self.inner[self.cursor + 1] = value as u8;
+        self.cursor += 2;
     }
 
     #[inline]
@@ -309,6 +304,7 @@ impl ByteBuffer {
         self.inner[self.cursor + 1] = (value >> 16) as u8;
         self.inner[self.cursor + 2] = (value >> 8) as u8;
         self.inner[self.cursor + 3] = value as u8;
+        self.cursor += 4;
     }
 
     #[inline]
@@ -322,6 +318,7 @@ impl ByteBuffer {
         self.inner[self.cursor + 5] = (value >> 16) as u8;
         self.inner[self.cursor + 6] = (value >> 8) as u8;
         self.inner[self.cursor + 7] = value as u8;
+        self.cursor += 8;
     }
 
     #[inline]

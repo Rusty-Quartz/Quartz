@@ -28,8 +28,8 @@ pub struct IOHandle {
 }
 
 impl IOHandle {
-    pub fn new() -> IOHandle {
-        IOHandle {
+    pub fn new() -> Self {
+        Self {
             operation_buffer: ByteBuffer::new(4096),
             compression_threshold: -1,
             encrypter: None,
@@ -51,7 +51,7 @@ impl IOHandle {
         if let Some(decrypter) = self.decrypter.as_mut() {
             let len = buffer.len() - offset;
             self.operation_buffer.resize(len);
-            self.operation_buffer.append_bytes(&buffer[offset..]);
+            self.operation_buffer.write_bytes(&buffer[offset..]);
             decrypter.update(&self.operation_buffer[..], &mut buffer[offset..]).unwrap();
         }
     }
@@ -78,19 +78,19 @@ impl IOHandle {
                 packet_data.clear();
                 packet_data.write_varint((ByteBuffer::varint_size(data_len as i32) + self.operation_buffer.len()) as i32);
                 packet_data.write_varint(data_len as i32);
-                packet_data.append_bytes(&self.operation_buffer[..]);
+                packet_data.write_bytes(&self.operation_buffer[..]);
 
                 result = IOHandle::write_encrypted(self.encrypter.as_mut(), packet_data, &mut self.operation_buffer, stream);
             } else {
                 self.operation_buffer.write_varint(packet_data.len() as i32 + 1);
                 self.operation_buffer.write_u8(0); // Data length of 0 signals that this packet is uncompressed
-                self.operation_buffer.append_bytes(&packet_data[..]);
+                self.operation_buffer.write_bytes(&packet_data[..]);
 
                 result = IOHandle::write_encrypted(self.encrypter.as_mut(), &mut self.operation_buffer, packet_data, stream);
             }
         } else {
             self.operation_buffer.write_varint(packet_data.len() as i32);
-            self.operation_buffer.append_bytes(&packet_data[..]);
+            self.operation_buffer.write_bytes(&packet_data[..]);
 
             result = IOHandle::write_encrypted(self.encrypter.as_mut(), &mut self.operation_buffer, packet_data, stream);
         }
@@ -132,7 +132,7 @@ impl IOHandle {
         // Decompress the packet if needed
         if compressed {
             self.operation_buffer.reset_cursor();
-            self.operation_buffer.append_bytes(&packet_buffer[packet_buffer.cursor()..]);
+            self.operation_buffer.write_bytes(&packet_buffer[packet_buffer.cursor()..]);
             packet_buffer.resize(data_len);
             packet_buffer.reset_cursor();
             let mut decoder = GzDecoder::new(&self.operation_buffer[..]);
@@ -156,8 +156,8 @@ pub struct WriteHandle {
 }
 
 impl WriteHandle {
-    pub fn new(stream: TcpStream, io_handle: Arc<Mutex<IOHandle>>) -> WriteHandle {
-        WriteHandle {
+    pub fn new(stream: TcpStream, io_handle: Arc<Mutex<IOHandle>>) -> Self {
+        Self {
             stream,
             packet_buffer: ByteBuffer::new(4096),
             io_handle
@@ -182,8 +182,8 @@ pub struct AsyncClientConnection {
 }
 
 impl AsyncClientConnection {
-    pub fn new(stream: TcpStream, sync_packet_sender: UnboundedSender<ServerBoundPacket>) -> AsyncClientConnection {
-        AsyncClientConnection {
+    pub fn new(stream: TcpStream, sync_packet_sender: UnboundedSender<ServerBoundPacket>) -> Self {
+        Self {
             stream,
             packet_buffer: ByteBuffer::new(4096),
             io_handle: Arc::new(Mutex::new(IOHandle::new())),
