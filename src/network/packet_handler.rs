@@ -47,6 +47,10 @@ impl AsyncPacketHandler {
 
 impl QuartzServer {
 //#SyncPacketHandler
+	async fn legacy_ping(&mut self, payload: u8) {
+
+	}
+
 	async fn request(&mut self) {
 
 	}
@@ -59,34 +63,11 @@ impl QuartzServer {
 
 pub enum ServerBoundPacket {
 //#ServerBoundPacket
-	Handshake {
-		version: i32, 
-		server_address: String, 
-		server_port: u16, 
-		next_state: i32
-	},
 	LegacyPing {
 		payload: u8
 	},
 	Request,
 
-	Ping {
-		payload: i64
-	},
-	LoginStart {
-		name: String
-	},
-	EncryptionResponse {
-		shared_secret_len: i32, 
-		shared_secret: Vec<u8>, 
-		verify_token_len: i32, 
-		verify_token: Vec<u8>
-	},
-	LoginPluginResponse {
-		message_id: i32, 
-		successful: bool, 
-		data: Vec<u8>
-	},
 	LoginSuccessServer {
 		uuid: String, 
 		username: String
@@ -131,8 +112,9 @@ pub enum ClientBoundPacket {
 pub async fn dispatch_sync_packet(packet: ServerBoundPacket, handler: &mut QuartzServer) {
 //#dispatch_sync_packet
 	match packet {
-		ServerBoundPacket::Request => handler.request().await,
-		ServerBoundPacket::LoginSuccessServer{uuid, username} => handler.login_success_server(uuid, username).await,
+		ServerBoundPacket::LegacyPing{payload} => handler.legacy_ping(payload),
+		ServerBoundPacket::Request => handler.request(),
+		ServerBoundPacket::LoginSuccessServer{uuid, username} => handler.login_success_server(uuid, username),
 		_ => {}
 	}
 //#end
@@ -211,7 +193,7 @@ async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut Asy
 				0x01 => {
 					let payload = buffer.read_i64();
 					async_handler.ping(conn, payload).await;
-				},
+				}
 				_ => invalid_packet(id, buffer.len())
 			}
 		},

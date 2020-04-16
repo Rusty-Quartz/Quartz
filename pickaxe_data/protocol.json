@@ -16,7 +16,7 @@
 			{
 				"name": "Legacy_Ping",
 				"id": "0xFE",
-				"async": true,
+				"async": false,
 				"fields": [
 					{"name": "payload", "type": "u8"}
 				]

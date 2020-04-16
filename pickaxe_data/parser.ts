@@ -92,7 +92,7 @@ let packetEnumParser = (packetArr: Packet[]):string => {
 };
 
 console.log('Parsing packets into enum...');
-let serverPacketEnum = packetEnumParser(server_bound);
+let serverPacketEnum = packetEnumParser(server_bound.filter(p => !p.async));
 let clientPacketEnum = packetEnumParser(client_bound);
 
 // Split packets up into async and sync
@@ -111,14 +111,14 @@ asyncPackets.forEach((packet) => {
 	let asyncPacket = '';
 
 	// Function definition header
-	asyncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self, client_conn: &mut AsyncClientConnection`;
+	asyncPacket += `\tasync fn ${packet.name.toLowerCase()}(&mut self, client_conn: &mut AsyncClientConnection`;
 
 	// function parameter
 	packet.fields.forEach((field) => {
 		asyncPacket += `, ${field.name}: ${parseType(field.type)}`
 	});
 
-	asyncPacket += ');\n';
+	asyncPacket += ') {\n';
 
 	asyncPacketHandler += asyncPacket;
 });
@@ -132,14 +132,14 @@ syncPackets.forEach((packet) => {
 	let syncPacket = '';
 
 	// define function for each sync packet
-	syncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self`;
+	syncPacket += `\tasync fn ${packet.name.toLowerCase()}(&mut self`;
 
 	// have fields as parameters
 	packet.fields.forEach((field) => {
 		syncPacket += `, ${field.name}: ${parseType(field.type)}`
 	});
 
-	syncPacket += ');\n';
+	syncPacket += ') {\n';
 
 	syncPacketHandler += syncPacket;
 });
@@ -172,11 +172,11 @@ packetInfo.forEach((state, i) => {
 			// determine if the packet is async or not
 			if(packet.async) {
 				// if async send packet data to the corrisponding async handler function
-				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.map(v => v.name).join(', ')});`;
+				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.map(v => v.name).join(', ')}).await;`;
 				packetString += `\n\t\t\t\t}${i == (<Packet[]>state.server_bound).length - 1 ? '' : ','}`;
 			} else {
 				// otherwise yeet it to the server thread
-				packetString += `\n\t\t\t\t\tconn.sync_packet_sender.send(ServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? ');' : ' {'}`;
+				packetString += `\n\t\t\t\t\tconn.forward_to_server(ServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? ');' : ' {'}`;
 
 				// if no fields then just close the function without defining parameters for the struct
 				if (packet.fields.length == 0) return stateString += `${packetString}\n\t\t\t\t}${i == packet.fields.length - 1 ? '' : ','}`;
@@ -187,21 +187,21 @@ packetInfo.forEach((state, i) => {
 					packetString += `${field.name}${i == packet.fields.length - 1 ? '' : ','}`;
 				});
 
-				packetString += `});\n\t\t\t\t}${i == (<Packet[]>state.server_bound).length - 1 ? '' : ','}`;
+				packetString += `});\n\t\t\t\t},`;
 			}
 			
 			stateString += packetString;
 			
 		});
 
-		stateString += `\n\t\t\t}`;
+		stateString += `\n\t\t\t\t_ => invalid_packet(id, buffer.len())\n\t\t\t}`;
 	}
-	stateString += `\n\t\t}${i == packetInfo.length - 1 ? '' : ','}`;
+	stateString += `\n\t\t},`;
 
 	deserializers += stateString;
 });
 
-deserializers += '\n\t}'
+deserializers += '\n\t\t_ => {}\n\t}';
 
 
 console.log('Parsing client bound packet data into serializers...');
@@ -266,8 +266,26 @@ insertionIndexes.forEach((data) => {
 	let slice = outputFile.substring(lastIndex, data[0]);
 	output += slice;
 
-	output += '\n' + data[1] + (data[1].endsWith('\n') ? '' : '\n');
+	if(data[0] == asyncPackerHandlerIndex || data[0] == syncPacketHandlerIndex) {
+		let fnBody = outputFile.substring(data[0], endIndex).split('\n');
+		let handlers = data[1].split('\n');
+		handlers.pop();
 
+		fnBody.forEach((line, i) => {
+			if(line.startsWith('\tasync fn')) {
+				if(handlers.length == 0) throw new Error('UhOh there are more handlers in packet_handlers.rs than are loaded in from ore');
+				fnBody[i] = <string>handlers.shift();
+
+			}
+		});
+
+		if(handlers.length != 0) handlers.forEach((handler) => fnBody.push(`${handler}\n\n\t}\n`));
+
+		output += fnBody.join('\n');
+	}
+
+
+	else output += '\n' + data[1] + (data[1].endsWith('\n') ? '' : '\n');
 	lastIndex = endIndex;
 });
 
