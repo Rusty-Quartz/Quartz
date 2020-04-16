@@ -35,18 +35,6 @@ impl Uuid {
             Err(_) => Err("Invalid UUID string.")
         }
     }
-
-    pub fn write_to_buffer(&self, buffer: &mut [u8]) -> Result<(), &'static str> {
-        if buffer.len() != 16 {
-            return Err("Expected buffer size of 16.");
-        }
-
-        for i in 0..16 {
-            buffer[i] = (self.0 >> 8 * (15 - i)) as u8;
-        }
-
-        Ok(())
-    }
 }
 
 impl fmt::Display for Uuid {

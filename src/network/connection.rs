@@ -2,8 +2,8 @@ use std::io::Result;
 use std::io::{Write, Read};
 use crate::util::ioutil::ByteBuffer;
 use openssl::symm::{Cipher, Mode, Crypter};
-use flate2::read::GzDecoder;
-use flate2::write::GzEncoder;
+use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::network::packet_handler::{ServerBoundPacket, ClientBoundPacket, serialize};
@@ -29,7 +29,7 @@ pub struct IOHandle {
 
 impl IOHandle {
     pub fn new() -> Self {
-        Self {
+        IOHandle {
             operation_buffer: ByteBuffer::new(4096),
             compression_threshold: -1,
             encrypter: None,
@@ -72,7 +72,7 @@ impl IOHandle {
         if self.compression_threshold >= 0 {
             if packet_data.cursor() >= self.compression_threshold as usize {
                 let data_len = packet_data.cursor();
-                let mut encoder = GzEncoder::new(self.operation_buffer.inner_mut(), Compression::default());
+                let mut encoder = ZlibEncoder::new(self.operation_buffer.inner_mut(), Compression::default());
                 encoder.write_all(&packet_data[..]).unwrap();
                 encoder.finish().unwrap();
                 packet_data.clear();
@@ -135,7 +135,7 @@ impl IOHandle {
             self.operation_buffer.write_bytes(&packet_buffer[packet_buffer.cursor()..]);
             packet_buffer.resize(data_len);
             packet_buffer.reset_cursor();
-            let mut decoder = GzDecoder::new(&self.operation_buffer[..]);
+            let mut decoder = ZlibDecoder::new(&self.operation_buffer[..]);
             match decoder.read(&mut packet_buffer[..]) {
                 Ok(read) => if read != data_len {
                     // TODO: Handle properly
@@ -157,7 +157,7 @@ pub struct WriteHandle {
 
 impl WriteHandle {
     pub fn new(stream: TcpStream, io_handle: Arc<Mutex<IOHandle>>) -> Self {
-        Self {
+        WriteHandle {
             stream,
             packet_buffer: ByteBuffer::new(4096),
             io_handle
@@ -183,7 +183,7 @@ pub struct AsyncClientConnection {
 
 impl AsyncClientConnection {
     pub fn new(stream: TcpStream, sync_packet_sender: UnboundedSender<ServerBoundPacket>) -> Self {
-        Self {
+        AsyncClientConnection {
             stream,
             packet_buffer: ByteBuffer::new(4096),
             io_handle: Arc::new(Mutex::new(IOHandle::new())),

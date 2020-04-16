@@ -7,19 +7,28 @@ use network::{connection::AsyncClientConnection, packet_handler::{handle_async_c
 use tokio::sync::mpsc;
 use std::net::TcpListener;
 
-mod util {
-	pub mod ioutil;
+pub mod data {
+	mod uuid;
+
+	pub use self::uuid::Uuid;
 }
 
-mod network {
+pub mod nbt {
+	mod tag;
+	pub mod read;
+
+	pub use self::tag::NbtTag;
+	pub use self::tag::NbtCompound;
+	pub use self::tag::NbtList;
+}
+
+pub mod network {
 	pub mod connection;
 	pub mod packet_handler;
 }
 
-mod data {
-	pub use self::uuid::Uuid;
-
-	pub mod uuid;
+pub mod util {
+	pub mod ioutil;
 }
 
 mod server;

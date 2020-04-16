@@ -11,3 +11,5 @@ openssl = "0.10.29"
 flate2 = "1.0.14"
 tokio = { version = "0.2.18", features = ["full"] }
 rand = "0.7.3"
+cesu8 = "1.1.0"
+byteorder = "1.3.4"
