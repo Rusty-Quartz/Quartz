@@ -70,7 +70,7 @@ let packetEnumParser = (packetArr: Packet[]):string => {
 	packetArr.forEach((packet, i) => {
 		// If there are no fields just output an element of the enum with the name of the packet
 		if(packet.fields.length == 0) {
-			packetEnum += `\t${packet.name.replace(/_/g, '')}${(i == packetArr.length - 1 ? '' : ',')}\n\n`;
+			packetEnum += `\t${packet.name.replace(/_/g, '')}${(i == packetArr.length - 1 ? '' : ',')}\n`;
 			return
 		}
 		
@@ -111,7 +111,7 @@ asyncPackets.forEach((packet) => {
 	let asyncPacket = '';
 
 	// Function definition header
-	asyncPacket += `\tasync fn ${packet.name.toLowerCase()}(&mut self, client_conn: &mut AsyncClientConnection`;
+	asyncPacket += `\tasync fn ${packet.name.toLowerCase()}(&mut self, conn: &mut AsyncClientConnection`;
 
 	// function parameter
 	packet.fields.forEach((field) => {
@@ -228,7 +228,7 @@ serializers += '\n\t}'
 console.log('Parsing sync server bound packets into dispatchSyncPacket functions');
 let dispatchSyncPacket = '\tmatch packet {';
 syncPackets.forEach((packet, index) => {
-	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? '' : `{${packet.fields.map(v => v.name).join(', ')}}`} => handler.${packet.name.toLowerCase()}(${packet.fields.map(v => v.name).join(', ')}),`;
+	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? '' : `{${packet.fields.map(v => v.name).join(', ')}}`} => handler.${packet.name.toLowerCase()}(${packet.fields.map(v => v.name).join(', ')}).await,`;
 });
 
 dispatchSyncPacket += '\n\t\t_ => {}\n\t}';

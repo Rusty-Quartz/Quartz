@@ -14,32 +14,32 @@ impl AsyncPacketHandler {
 	}
 
 //#AsyncPacketHandler
-	async fn handshake(&mut self, client_conn: &mut AsyncClientConnection, version: i32, server_address: String, server_port: u16, next_state: i32) {
+	async fn handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, server_address: String, server_port: u16, next_state: i32) {
 		if version != PROTOCOL_VERSION {
-			client_conn.connection_state = ConnectionState::Disconnected;
+			conn.connection_state = ConnectionState::Disconnected;
 			return;
 		}
 
 		if next_state == 1 {
-			client_conn.connection_state = ConnectionState::Status;
+			conn.connection_state = ConnectionState::Status;
 		} else if next_state == 2 {
-			client_conn.connection_state = ConnectionState::Login;
+			conn.connection_state = ConnectionState::Login;
 		}
 	}
 
-	async fn ping(&mut self, client_conn: &mut AsyncClientConnection, payload: i64) {
-		client_conn.send_packet(ClientBoundPacket::Pong {payload}).await;
+	async fn ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
+		conn.send_packet(ClientBoundPacket::Pong {payload}).await;
 	}
 
-	async fn login_start(&mut self, client_conn: &mut AsyncClientConnection, name: String) {
-
-	}
-
-	async fn encryption_response(&mut self, client_conn: &mut AsyncClientConnection, shared_secret_len: i32, shared_secret: Vec<u8>, verify_token_len: i32, verify_token: Vec<u8>) {
+	async fn login_start(&mut self, conn: &mut AsyncClientConnection, name: String) {
 
 	}
 
-	async fn login_plugin_response(&mut self, client_conn: &mut AsyncClientConnection, message_id: i32, successful: bool, data: Vec<u8>) {
+	async fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret_len: i32, shared_secret: Vec<u8>, verify_token_len: i32, verify_token: Vec<u8>) {
+
+	}
+
+	async fn login_plugin_response(&mut self, conn: &mut AsyncClientConnection, message_id: i32, successful: bool, data: Vec<u8>) {
 
 	}
 //#end
@@ -67,7 +67,6 @@ pub enum ServerBoundPacket {
 		payload: u8
 	},
 	Request,
-
 	LoginSuccessServer {
 		uuid: String, 
 		username: String
@@ -112,9 +111,9 @@ pub enum ClientBoundPacket {
 pub async fn dispatch_sync_packet(packet: ServerBoundPacket, handler: &mut QuartzServer) {
 //#dispatch_sync_packet
 	match packet {
-		ServerBoundPacket::LegacyPing{payload} => handler.legacy_ping(payload),
-		ServerBoundPacket::Request => handler.request(),
-		ServerBoundPacket::LoginSuccessServer{uuid, username} => handler.login_success_server(uuid, username),
+		ServerBoundPacket::LegacyPing{payload} => handler.legacy_ping(payload).await,
+		ServerBoundPacket::Request => handler.request().await,
+		ServerBoundPacket::LoginSuccessServer{uuid, username} => handler.login_success_server(uuid, username).await,
 		_ => {}
 	}
 //#end
