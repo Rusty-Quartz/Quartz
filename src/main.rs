@@ -26,12 +26,6 @@ mod server;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-	let mut buffer = util::ioutil::ByteBuffer::new(0);
-	buffer.write_bytes(&[0xFF]);
-    buffer.write_u16(33);
-    buffer.write_bytes(&[0x00, 0xA7, 0x00, 0x31, 0x00, 0x00]);
-	println!("{}", buffer);
-
 	let config = load_config(String::from("./config.json"));
 	let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded_channel::<ServerBoundPacket>();
 
