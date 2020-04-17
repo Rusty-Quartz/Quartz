@@ -3,7 +3,7 @@ mod config;
 use std::io::Result;
 
 use config::load_config;
-use network::{connection::AsyncClientConnection, packet_handler::{handle_async_connection, ServerBoundPacket}};
+use network::{connection::AsyncClientConnection, packet_handler::{handle_async_connection, WrappedServerPacket}};
 use tokio::sync::mpsc;
 use std::net::TcpListener;
 
@@ -16,6 +16,7 @@ pub mod data {
 pub mod nbt {
 	mod tag;
 	pub mod read;
+	pub mod write;
 
 	pub use self::tag::NbtTag;
 	pub use self::tag::NbtCompound;
@@ -36,7 +37,7 @@ mod server;
 #[tokio::main]
 async fn main() -> Result<()> {
 	let config = load_config(String::from("./config.json"));
-	let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded_channel::<ServerBoundPacket>();
+	let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded_channel::<WrappedServerPacket>();
 
 	let server = server::QuartzServer {
 		config,

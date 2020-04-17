@@ -8,8 +8,8 @@
 				"async": true,
 				"fields": [
 					{"name": "version", "type": "varint"},
-					{"name": "server_address", "type": "string"},
-					{"name": "server_port", "type": "u16"},
+					{"name": "server_address", "type": "string", "unused": true},
+					{"name": "server_port", "type": "u16", "unused": true},
 					{"name": "next_state", "type": "varint"}
 				]
 			},
@@ -29,7 +29,7 @@
 		"client_bound": [
 			{
 				"id": "0x00",
-				"name": "Response",
+				"name": "Status_Response",
 				"async": true,
 				"fields": [
 					{"name": "json_length", "type": "varint"},
@@ -47,7 +47,7 @@
 		],
 		"server_bound": [
 			{
-				"name": "Request",
+				"name": "Status_Request",
 				"id": "0x00",
 				"async": false,
 				"fields":[]
@@ -147,14 +147,9 @@
 				"name": "Login_Success_Server",
 				"id": "0xFF",
 				"async": false,
-				"fields": [{
-						"name": "uuid",
-						"type": "string"
-					},
-					{
-						"name": "username",
-						"type": "string"
-					}
+				"fields": [
+					{"name": "uuid", "type": "string"},
+					{"name": "username", "type": "string"}
 				]
 			}
 		]

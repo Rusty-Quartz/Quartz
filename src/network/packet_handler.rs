@@ -1,6 +1,7 @@
 use crate::network::connection::{AsyncClientConnection, ConnectionState};
 use crate::util::ioutil::ByteBuffer;
 use crate::server::QuartzServer;
+use crate::data::Uuid;
 
 const PROTOCOL_VERSION: i32 = 578;
 
@@ -14,7 +15,7 @@ impl AsyncPacketHandler {
 	}
 
 //#AsyncPacketHandler
-	async fn handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, server_address: String, server_port: u16, next_state: i32) {
+	async fn handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, next_state: i32) {
 		if version != PROTOCOL_VERSION {
 			conn.connection_state = ConnectionState::Disconnected;
 			return;
@@ -47,15 +48,15 @@ impl AsyncPacketHandler {
 
 impl QuartzServer {
 //#SyncPacketHandler
-	async fn legacy_ping(&mut self, payload: u8) {
+	async fn legacy_ping(&mut self, sender: Uuid, payload: u8) {
 
 	}
 
-	async fn request(&mut self) {
+	async fn status_request(&mut self, sender: Uuid) {
 
 	}
 
-	async fn login_success_server(&mut self, uuid: String, username: String) {
+	async fn login_success_server(&mut self, sender: Uuid, uuid: String, username: String) {
 
 	}
 //#end
@@ -66,7 +67,7 @@ pub enum ServerBoundPacket {
 	LegacyPing {
 		payload: u8
 	},
-	Request,
+	StatusRequest,
 	LoginSuccessServer {
 		uuid: String, 
 		username: String
@@ -74,9 +75,24 @@ pub enum ServerBoundPacket {
 //#end
 }
 
+pub struct WrappedServerPacket {
+	pub sender: Uuid,
+	pub packet: ServerBoundPacket
+}
+
+impl WrappedServerPacket {
+	#[inline]
+	pub fn new(sender: Uuid, packet: ServerBoundPacket) -> Self {
+		WrappedServerPacket {
+			sender,
+			packet
+		}
+	}
+}
+
 pub enum ClientBoundPacket {
 //#ClientBoundPacket
-	Response {
+	StatusResponse {
 		json_length: i32, 
 		json_response: String
 	},
@@ -108,13 +124,12 @@ pub enum ClientBoundPacket {
 //#end
 }
 
-pub async fn dispatch_sync_packet(packet: ServerBoundPacket, handler: &mut QuartzServer) {
+pub async fn dispatch_sync_packet(wrapped_packet: WrappedServerPacket, handler: &mut QuartzServer) {
 //#dispatch_sync_packet
-	match packet {
-		ServerBoundPacket::LegacyPing{payload} => handler.legacy_ping(payload).await,
-		ServerBoundPacket::Request => handler.request().await,
-		ServerBoundPacket::LoginSuccessServer{uuid, username} => handler.login_success_server(uuid, username).await,
-		_ => {}
+	match wrapped_packet.packet {
+		ServerBoundPacket::LegacyPing{payload} => handler.legacy_ping(wrapped_packet.sender, payload).await,
+		ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender).await,
+		ServerBoundPacket::LoginSuccessServer{uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username).await
 	}
 //#end
 }
@@ -122,7 +137,7 @@ pub async fn dispatch_sync_packet(packet: ServerBoundPacket, handler: &mut Quart
 pub fn serialize(packet: ClientBoundPacket, buffer: &mut ByteBuffer) {
 //#serialize
 	match packet {
-		ClientBoundPacket::Response{json_length, json_response} => {
+		ClientBoundPacket::StatusResponse{json_length, json_response} => {
 			buffer.write_varint(0);
 			buffer.write_varint(json_length);
 			buffer.write_string(&json_response);
@@ -162,8 +177,14 @@ pub fn serialize(packet: ClientBoundPacket, buffer: &mut ByteBuffer) {
 //#end
 }
 
+macro_rules! invalid_packet {
+	($id:expr, $len:expr) => {
+		println!("Invalid packet received. ID: {}, Len: {}", $id, $len);
+	};
+}
+
 async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler) {
-    let mut buffer = &mut conn.packet_buffer;
+    let buffer = &mut conn.packet_buffer;
     let id = buffer.read_varint();
 
 //#handle_packet
@@ -172,28 +193,28 @@ async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut Asy
 			match id {
 				0x00 => {
 					let version = buffer.read_varint();
-					let server_address = buffer.read_string();
-					let server_port = buffer.read_u16();
+					buffer.read_string(); // server_address
+					buffer.read_u16(); // server_port
 					let next_state = buffer.read_varint();
-					async_handler.handshake(conn, version, server_address, server_port, next_state).await;
+					async_handler.handshake(conn, version, next_state).await;
 				},
 				0xFE => {
 					let payload = buffer.read_u8();
 					conn.forward_to_server(ServerBoundPacket::LegacyPing {payload});
 				},
-				_ => invalid_packet(id, buffer.len())
+				_ => invalid_packet!(id, buffer.len())
 			}
 		},
 		ConnectionState::Status => {
 			match id {
 				0x00 => {
-					conn.forward_to_server(ServerBoundPacket::Request);
+					conn.forward_to_server(ServerBoundPacket::StatusRequest);
 				},
 				0x01 => {
 					let payload = buffer.read_i64();
 					async_handler.ping(conn, payload).await;
-				}
-				_ => invalid_packet(id, buffer.len())
+				},
+				_ => invalid_packet!(id, buffer.len())
 			}
 		},
 		ConnectionState::Login => {
@@ -218,19 +239,14 @@ async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut Asy
 				0xFF => {
 					let uuid = buffer.read_string();
 					let username = buffer.read_string();
-					conn.forward_to_server(ServerBoundPacket::LoginSuccessServer {uuid,username});
+					conn.forward_to_server(ServerBoundPacket::LoginSuccessServer {uuid, username});
 				},
-				_ => invalid_packet(id, buffer.len())
+				_ => invalid_packet!(id, buffer.len())
 			}
 		},
 		_ => {}
 	}
 //#end
-}
-
-#[inline(always)]
-fn invalid_packet(id: i32, len: usize) {
-	println!("Invalid packet received. ID: {}, Len: {}", id, len);
 }
 
 pub async fn handle_async_connection(mut conn: AsyncClientConnection) {

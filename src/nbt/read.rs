@@ -40,7 +40,6 @@ where
     R: Read
 {
     let tag = match id {
-        0x0 => NbtTag::End,
         0x1 => NbtTag::Byte(source.read_i8()?),
         0x2 => NbtTag::Short(source.read_i16::<BigEndian>()?),
         0x3 => NbtTag::Int(source.read_i32::<BigEndian>()?),
@@ -50,6 +49,7 @@ where
         0x7 => {
             let len = source.read_i32::<BigEndian>()? as usize;
             let mut array = vec![0_i8; len];
+
             for i in 0..len {
                 array[i] = source.read_i8()?;
             }
@@ -62,8 +62,12 @@ where
             let len = source.read_i32::<BigEndian>()? as usize;
 
             // Make sure we don't have a list of TAG_End unless it's empty or an invalid type
-            if type_id > 0xC || (type_id == 0 && len != 0) {
+            if type_id > 0xC || (type_id == 0 && len > 0) {
                 return Err(Error::new(ErrorKind::InvalidData, "Invalid list type encountered."));
+            }
+
+            if len <= 0 {
+                return Ok(NbtTag::List(NbtList::new()));
             }
 
             let mut list = NbtList::with_capacity(len);
@@ -76,6 +80,7 @@ where
         0xA => {
             let mut compound = NbtCompound::new();
             let mut tag_id = source.read_u8()?;
+
             // Read until TAG_End
             while tag_id != 0x0 {
                 let name = read_string(source)?;
@@ -89,6 +94,7 @@ where
         0xB => {
             let len = source.read_i32::<BigEndian>()? as usize;
             let mut array = vec![0_i32; len];
+
             for i in 0..len {
                 array[i] = source.read_i32::<BigEndian>()?;
             }
@@ -98,12 +104,13 @@ where
         0xC => {
             let len = source.read_i32::<BigEndian>()? as usize;
             let mut array = vec![0_i64; len];
+
             for i in 0..len {
                 array[i] = source.read_i64::<BigEndian>()?;
             }
 
             NbtTag::LongArray(array)
-        }
+        },
         _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid tag type encountered."))
     };
 
@@ -117,9 +124,11 @@ where
     let len = source.read_u16::<BigEndian>()? as usize;
     let mut bytes = vec![0; len];
     source.read_exact(&mut bytes)?;
+    
     let java_decoded = match cesu8::from_java_cesu8(&bytes) {
         Ok(string) => string,
-        Err(e) => return Err(Error::new(ErrorKind::InvalidData, "Invalid string encoding."))
+        Err(_) => return Err(Error::new(ErrorKind::InvalidData, "Invalid string encoding."))
     };
+
     Ok(java_decoded.into_owned())
 }

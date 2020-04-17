@@ -78,7 +78,7 @@ let packetEnumParser = (packetArr: Packet[]):string => {
 		
 		packetString += `\t${packet.name.replace(/_/g, '')} {`;
 		
-		packet.fields.forEach((field, i) => {
+		packet.fields.filter(field => !field.unused).forEach((field, i) => {
 			// format the fields into rust struct elements
 			packetString += `\n\t\t${field.name}: ${parseType(field.type)}${i == packet.fields.length-1 ? '' : ', '}`;
 		});
@@ -114,7 +114,7 @@ asyncPackets.forEach((packet) => {
 	asyncPacket += `\tasync fn ${packet.name.toLowerCase()}(&mut self, conn: &mut AsyncClientConnection`;
 
 	// function parameter
-	packet.fields.forEach((field) => {
+	packet.fields.filter(field => !field.unused).forEach((field) => {
 		asyncPacket += `, ${field.name}: ${parseType(field.type)}`
 	});
 
@@ -132,10 +132,10 @@ syncPackets.forEach((packet) => {
 	let syncPacket = '';
 
 	// define function for each sync packet
-	syncPacket += `\tasync fn ${packet.name.toLowerCase()}(&mut self`;
+	syncPacket += `\tasync fn ${packet.name.toLowerCase()}(&mut self, sender: Uuid`;
 
 	// have fields as parameters
-	packet.fields.forEach((field) => {
+	packet.fields.filter(field => !field.unused).forEach((field) => {
 		syncPacket += `, ${field.name}: ${parseType(field.type)}`
 	});
 
@@ -161,30 +161,33 @@ packetInfo.forEach((state, i) => {
 
 			let packetString = `\n\t\t\t\t${packet.id} => {`;
 
-			let varNames:string[] = [];
-
 			// Loop over fields to make buffer.read function names
 			packet.fields.forEach((field) => {
-				packetString += `\n\t\t\t\t\tlet ${field.name} = buffer.read_${field.type + (field.type.includes('(') ? '' : '()')};`;
-				varNames.push(field.name);
+				packetString += '\n\t\t\t\t\t';
+				if (!field.unused) {
+					packetString += `let ${field.name} = `;
+				}
+				packetString += `buffer.read_${field.type + (field.type.includes('(') ? '' : '()')};`;
+				if (field.unused) {
+					packetString += ` // ${field.name}`;
+				}
 			});
 
 			// determine if the packet is async or not
 			if(packet.async) {
 				// if async send packet data to the corrisponding async handler function
-				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.map(v => v.name).join(', ')}).await;`;
-				packetString += `\n\t\t\t\t}${i == (<Packet[]>state.server_bound).length - 1 ? '' : ','}`;
+				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}).await;`;
+				packetString += `\n\t\t\t\t},`;
 			} else {
 				// otherwise yeet it to the server thread
 				packetString += `\n\t\t\t\t\tconn.forward_to_server(ServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? ');' : ' {'}`;
 
 				// if no fields then just close the function without defining parameters for the struct
-				if (packet.fields.length == 0) return stateString += `${packetString}\n\t\t\t\t}${i == packet.fields.length - 1 ? '' : ','}`;
-
+				if (packet.fields.length == 0) return stateString += `${packetString}\n\t\t\t\t},`;
 
 				// put parameters for struct
 				packet.fields.forEach((field, i) => {
-					packetString += `${field.name}${i == packet.fields.length - 1 ? '' : ','}`;
+					packetString += `${field.name}${i == packet.fields.length - 1 ? '' : ', '}`;
 				});
 
 				packetString += `});\n\t\t\t\t},`;
@@ -194,7 +197,7 @@ packetInfo.forEach((state, i) => {
 			
 		});
 
-		stateString += `\n\t\t\t\t_ => invalid_packet(id, buffer.len())\n\t\t\t}`;
+		stateString += `\n\t\t\t\t_ => invalid_packet!(id, buffer.len())\n\t\t\t}`;
 	}
 	stateString += `\n\t\t},`;
 
@@ -226,12 +229,16 @@ client_bound.forEach((packet, i) => {
 serializers += '\n\t}'
 
 console.log('Parsing sync server bound packets into dispatchSyncPacket functions');
-let dispatchSyncPacket = '\tmatch packet {';
+let dispatchSyncPacket = '\tmatch wrapped_packet.packet {';
 syncPackets.forEach((packet, index) => {
-	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? '' : `{${packet.fields.map(v => v.name).join(', ')}}`} => handler.${packet.name.toLowerCase()}(${packet.fields.map(v => v.name).join(', ')}).await,`;
+	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? '' : `{${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}}`}`;
+	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${packet.fields.length > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}).await`;
+	if (index < syncPackets.length - 1) {
+		dispatchSyncPacket += ',';
+	}
 });
 
-dispatchSyncPacket += '\n\t\t_ => {}\n\t}';
+dispatchSyncPacket += '\n\t}';
 
 
 let inclusiveIndexOf = (input: string, searchTerm: string) => {
@@ -312,7 +319,8 @@ type Packet = {
 
 type Field = {
 	name: string,
-	type: string
+	type: string,
+	unused?: boolean
 }
 
 type Mappings = {

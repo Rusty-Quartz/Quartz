@@ -336,7 +336,7 @@ impl ByteBuffer {
     }
 
     #[inline]
-    pub fn varint_size(mut value: i32) -> usize {
+    pub fn varint_size(value: i32) -> usize {
         match value {
             0..=127 => 1,
             128..=16383 => 2,

@@ -3,6 +3,7 @@ use std::fmt;
 use rand::prelude::*;
 
 #[repr(transparent)]
+#[derive(Copy, Clone)]
 pub struct Uuid(u128);
 
 impl Uuid {

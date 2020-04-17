@@ -6,10 +6,11 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use tokio::sync::mpsc::UnboundedSender;
-use crate::network::packet_handler::{ServerBoundPacket, ClientBoundPacket, serialize};
+use crate::network::packet_handler::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::net::TcpStream;
+use crate::data::Uuid;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ConnectionState {
@@ -178,17 +179,19 @@ pub struct AsyncClientConnection {
     pub packet_buffer: ByteBuffer,
     io_handle: Arc<Mutex<IOHandle>>,
     pub connection_state: ConnectionState,
-    sync_packet_sender: UnboundedSender<ServerBoundPacket>
+    sync_packet_sender: UnboundedSender<WrappedServerPacket>,
+    pub uuid: Uuid
 }
 
 impl AsyncClientConnection {
-    pub fn new(stream: TcpStream, sync_packet_sender: UnboundedSender<ServerBoundPacket>) -> Self {
+    pub fn new(stream: TcpStream, sync_packet_sender: UnboundedSender<WrappedServerPacket>) -> Self {
         AsyncClientConnection {
             stream,
             packet_buffer: ByteBuffer::new(4096),
             io_handle: Arc::new(Mutex::new(IOHandle::new())),
             connection_state: ConnectionState::Handshake,
-            sync_packet_sender
+            sync_packet_sender,
+            uuid: Uuid::random() // Start with a random identifier, switch to proper player ID later
         }
     }
 
@@ -205,7 +208,7 @@ impl AsyncClientConnection {
     }
 
     pub fn forward_to_server(&mut self, packet: ServerBoundPacket) {
-        if let Err(e) = self.sync_packet_sender.send(packet) {
+        if let Err(e) = self.sync_packet_sender.send(WrappedServerPacket::new(self.uuid, packet)) {
             println!("Failed to forward synchronous packet to server: {}", e);
         }
     }

@@ -5,7 +5,6 @@ use std::fmt;
 use std::fmt::Write;
 
 pub enum NbtTag {
-    End,
     Byte(i8),
     Short(i16),
     Int(i32),
@@ -64,8 +63,7 @@ impl fmt::Display for NbtTag {
             NbtTag::List(value) => write!(f, "{}", value),
             NbtTag::Compound(value) => write!(f, "{}", value),
             NbtTag::IntArray(value) => write_list!(f, value, ", {}"),
-            NbtTag::LongArray(value) => write_list!(f, value, ", {}L"),
-            _ => Ok(())
+            NbtTag::LongArray(value) => write_list!(f, value, ", {}L")
         }
     }
 }
