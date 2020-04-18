@@ -1,7 +1,7 @@
-use crate::network::connection::{AsyncClientConnection, ConnectionState};
+use crate::network::connection::{AsyncClientConnection, ConnectionState, WriteHandle};
 use crate::util::ioutil::ByteBuffer;
 use crate::server::QuartzServer;
-use crate::data::Uuid;
+use log::error;
 
 const PROTOCOL_VERSION: i32 = 578;
 
@@ -10,12 +10,12 @@ struct AsyncPacketHandler {
 }
 
 impl AsyncPacketHandler {
-	pub fn new() -> AsyncPacketHandler {
+	pub fn new() -> Self {
 		AsyncPacketHandler {}
 	}
 
 //#AsyncPacketHandler
-	async fn handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, next_state: i32) {
+	fn handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, next_state: i32) {
 		if version != PROTOCOL_VERSION {
 			conn.connection_state = ConnectionState::Disconnected;
 			return;
@@ -28,19 +28,19 @@ impl AsyncPacketHandler {
 		}
 	}
 
-	async fn ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
-		conn.send_packet(ClientBoundPacket::Pong {payload}).await;
+	fn ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
+		conn.send_packet(ClientBoundPacket::Pong {payload});
 	}
 
-	async fn login_start(&mut self, conn: &mut AsyncClientConnection, name: String) {
-
-	}
-
-	async fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret_len: i32, shared_secret: Vec<u8>, verify_token_len: i32, verify_token: Vec<u8>) {
+	fn login_start(&mut self, conn: &mut AsyncClientConnection, name: String) {
 
 	}
 
-	async fn login_plugin_response(&mut self, conn: &mut AsyncClientConnection, message_id: i32, successful: bool, data: Vec<u8>) {
+	fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret_len: i32, shared_secret: Vec<u8>, verify_token_len: i32, verify_token: Vec<u8>) {
+
+	}
+
+	fn login_plugin_response(&mut self, conn: &mut AsyncClientConnection, message_id: i32, successful: bool, data: Vec<u8>) {
 
 	}
 //#end
@@ -48,15 +48,19 @@ impl AsyncPacketHandler {
 
 impl QuartzServer {
 //#SyncPacketHandler
-	async fn legacy_ping(&mut self, sender: Uuid, payload: u8) {
+	fn connection_established(&mut self, sender: usize, write_handle: WriteHandle) {
 
 	}
 
-	async fn status_request(&mut self, sender: Uuid) {
+	fn login_success_server(&mut self, sender: usize, uuid: String, username: String) {
 
 	}
 
-	async fn login_success_server(&mut self, sender: Uuid, uuid: String, username: String) {
+	fn legacy_ping(&mut self, sender: usize, payload: u8) {
+
+	}
+
+	fn status_request(&mut self, sender: usize) {
 
 	}
 //#end
@@ -64,25 +68,28 @@ impl QuartzServer {
 
 pub enum ServerBoundPacket {
 //#ServerBoundPacket
-	LegacyPing {
-		payload: u8
+	ConnectionEstablished {
+		write_handle: WriteHandle
 	},
-	StatusRequest,
 	LoginSuccessServer {
 		uuid: String, 
 		username: String
-	}
+	},
+	LegacyPing {
+		payload: u8
+	},
+	StatusRequest
 //#end
 }
 
 pub struct WrappedServerPacket {
-	pub sender: Uuid,
+	pub sender: usize,
 	pub packet: ServerBoundPacket
 }
 
 impl WrappedServerPacket {
 	#[inline]
-	pub fn new(sender: Uuid, packet: ServerBoundPacket) -> Self {
+	pub fn new(sender: usize, packet: ServerBoundPacket) -> Self {
 		WrappedServerPacket {
 			sender,
 			packet
@@ -124,12 +131,13 @@ pub enum ClientBoundPacket {
 //#end
 }
 
-pub async fn dispatch_sync_packet(wrapped_packet: WrappedServerPacket, handler: &mut QuartzServer) {
+pub fn dispatch_sync_packet(wrapped_packet: WrappedServerPacket, handler: &mut QuartzServer) {
 //#dispatch_sync_packet
 	match wrapped_packet.packet {
-		ServerBoundPacket::LegacyPing{payload} => handler.legacy_ping(wrapped_packet.sender, payload).await,
-		ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender).await,
-		ServerBoundPacket::LoginSuccessServer{uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username).await
+		ServerBoundPacket::ConnectionEstablished {write_handle} => handler.connection_established(wrapped_packet.sender, write_handle),
+		ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username),
+		ServerBoundPacket::LegacyPing {payload} => handler.legacy_ping(wrapped_packet.sender, payload),
+		ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender)
 	}
 //#end
 }
@@ -137,38 +145,38 @@ pub async fn dispatch_sync_packet(wrapped_packet: WrappedServerPacket, handler: 
 pub fn serialize(packet: ClientBoundPacket, buffer: &mut ByteBuffer) {
 //#serialize
 	match packet {
-		ClientBoundPacket::StatusResponse{json_length, json_response} => {
-			buffer.write_varint(0);
+		ClientBoundPacket::StatusResponse {json_length, json_response} => {
+			buffer.write_varint(0x00);
 			buffer.write_varint(json_length);
 			buffer.write_string(&json_response);
 		},
-		ClientBoundPacket::Pong{payload} => {
-			buffer.write_varint(1);
+		ClientBoundPacket::Pong {payload} => {
+			buffer.write_varint(0x01);
 			buffer.write_i64(payload);
 		},
-		ClientBoundPacket::Disconnect{reason} => {
-			buffer.write_varint(0);
+		ClientBoundPacket::Disconnect {reason} => {
+			buffer.write_varint(0x00);
 			buffer.write_string(&reason);
 		},
-		ClientBoundPacket::EncryptionRequest{server_id, pub_key_len, pub_key, verify_token_len, verify_token} => {
-			buffer.write_varint(1);
+		ClientBoundPacket::EncryptionRequest {server_id, pub_key_len, pub_key, verify_token_len, verify_token} => {
+			buffer.write_varint(0x01);
 			buffer.write_string(&server_id);
 			buffer.write_varint(pub_key_len);
 			buffer.write_byte_array(&pub_key);
 			buffer.write_varint(verify_token_len);
 			buffer.write_byte_array(&verify_token);
 		},
-		ClientBoundPacket::LoginSuccess{uuid, username} => {
-			buffer.write_varint(2);
+		ClientBoundPacket::LoginSuccess {uuid, username} => {
+			buffer.write_varint(0x02);
 			buffer.write_string(&uuid);
 			buffer.write_string(&username);
 		},
-		ClientBoundPacket::SetCompression{threshold} => {
-			buffer.write_varint(3);
+		ClientBoundPacket::SetCompression {threshold} => {
+			buffer.write_varint(0x03);
 			buffer.write_varint(threshold);
 		},
-		ClientBoundPacket::LoginPluginRequest{message_id, channel, data} => {
-			buffer.write_varint(4);
+		ClientBoundPacket::LoginPluginRequest {message_id, channel, data} => {
+			buffer.write_varint(0x04);
 			buffer.write_varint(message_id);
 			buffer.write_string(&channel);
 			buffer.write_byte_array(&data);
@@ -179,11 +187,11 @@ pub fn serialize(packet: ClientBoundPacket, buffer: &mut ByteBuffer) {
 
 macro_rules! invalid_packet {
 	($id:expr, $len:expr) => {
-		println!("Invalid packet received. ID: {}, Len: {}", $id, $len);
+		error!("Invalid packet received. ID: {}, Len: {}", $id, $len);
 	};
 }
 
-async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler) {
+fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler) {
     let buffer = &mut conn.packet_buffer;
     let id = buffer.read_varint();
 
@@ -196,7 +204,7 @@ async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut Asy
 					buffer.read_string(); // server_address
 					buffer.read_u16(); // server_port
 					let next_state = buffer.read_varint();
-					async_handler.handshake(conn, version, next_state).await;
+					async_handler.handshake(conn, version, next_state);
 				},
 				0xFE => {
 					let payload = buffer.read_u8();
@@ -212,7 +220,7 @@ async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut Asy
 				},
 				0x01 => {
 					let payload = buffer.read_i64();
-					async_handler.ping(conn, payload).await;
+					async_handler.ping(conn, payload);
 				},
 				_ => invalid_packet!(id, buffer.len())
 			}
@@ -221,25 +229,20 @@ async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut Asy
 			match id {
 				0x00 => {
 					let name = buffer.read_string();
-					async_handler.login_start(conn, name).await;
+					async_handler.login_start(conn, name);
 				},
 				0x01 => {
 					let shared_secret_len = buffer.read_varint();
 					let shared_secret = buffer.read_byte_array(shared_secret_len as usize);
 					let verify_token_len = buffer.read_varint();
 					let verify_token = buffer.read_byte_array(verify_token_len as usize);
-					async_handler.encryption_response(conn, shared_secret_len, shared_secret, verify_token_len, verify_token).await;
+					async_handler.encryption_response(conn, shared_secret_len, shared_secret, verify_token_len, verify_token);
 				},
 				0x02 => {
 					let message_id = buffer.read_varint();
 					let successful = buffer.read_bool();
 					let data = buffer.read_byte_array(buffer.remaining());
-					async_handler.login_plugin_response(conn, message_id, successful, data).await;
-				},
-				0xFF => {
-					let uuid = buffer.read_string();
-					let username = buffer.read_string();
-					conn.forward_to_server(ServerBoundPacket::LoginSuccessServer {uuid, username});
+					async_handler.login_plugin_response(conn, message_id, successful, data);
 				},
 				_ => invalid_packet!(id, buffer.len())
 			}
@@ -249,19 +252,19 @@ async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut Asy
 //#end
 }
 
-pub async fn handle_async_connection(mut conn: AsyncClientConnection) {
+pub fn handle_async_connection(mut conn: AsyncClientConnection) {
     let mut async_handler = AsyncPacketHandler::new();
 
     while conn.connection_state != ConnectionState::Disconnected {
-        match conn.read_packet().await {
-            Ok(_) => handle_packet(&mut conn, &mut async_handler).await,
+        match conn.read_packet() {
+            Ok(_) => handle_packet(&mut conn, &mut async_handler),
             Err(e) => {
                 // TODO: handle properly
-                println!("Error in connection handler: {}", e);
+                error!("Error in connection handler: {}", e);
                 return;
             }
         }
     }
 
-    println!("Client disconnected.");
+    error!("Client disconnected.");
 }

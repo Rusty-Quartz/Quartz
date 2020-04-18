@@ -111,7 +111,7 @@ asyncPackets.forEach((packet) => {
 	let asyncPacket = '';
 
 	// Function definition header
-	asyncPacket += `\tasync fn ${packet.name.toLowerCase()}(&mut self, conn: &mut AsyncClientConnection`;
+	asyncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self, conn: &mut AsyncClientConnection`;
 
 	// function parameter
 	packet.fields.filter(field => !field.unused).forEach((field) => {
@@ -132,7 +132,7 @@ syncPackets.forEach((packet) => {
 	let syncPacket = '';
 
 	// define function for each sync packet
-	syncPacket += `\tasync fn ${packet.name.toLowerCase()}(&mut self, sender: Uuid`;
+	syncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self, sender: usize`;
 
 	// have fields as parameters
 	packet.fields.filter(field => !field.unused).forEach((field) => {
@@ -151,7 +151,7 @@ console.log('Parsing server bound packet data into deserializers...');
 let deserializers = '\tmatch conn.connection_state {';
 
 // This code is hell
-packetInfo.forEach((state, i) => {
+packetInfo.filter(state => state.name != '__internal__').forEach((state, i) => {
 	let stateString = `\n\t\tConnectionState::${state.name} => {`;
 
 	if(state.server_bound) {
@@ -176,7 +176,7 @@ packetInfo.forEach((state, i) => {
 			// determine if the packet is async or not
 			if(packet.async) {
 				// if async send packet data to the corrisponding async handler function
-				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}).await;`;
+				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')});`;
 				packetString += `\n\t\t\t\t},`;
 			} else {
 				// otherwise yeet it to the server thread
@@ -211,10 +211,10 @@ console.log('Parsing client bound packet data into serializers...');
 let serializers = '\tmatch packet {';
 
 client_bound.forEach((packet, i) => {
-	let packetString = `\n\t\tClientBoundPacket::${packet.name.replace(/_/g, '')}{${packet.fields.map((v) => v.name).join(', ')}} => {`;
+	let packetString = `\n\t\tClientBoundPacket::${packet.name.replace(/_/g, '')} {${packet.fields.map((v) => v.name).join(', ')}} => {`;
 
 	// Write length
-	packetString += `\n\t\t\tbuffer.write_varint(${parseInt(packet.id, 16)});`;
+	packetString += `\n\t\t\tbuffer.write_varint(${packet.id});`;
 
 	// Write each field to buffer
 	packet.fields.forEach((fields) => {
@@ -231,8 +231,8 @@ serializers += '\n\t}'
 console.log('Parsing sync server bound packets into dispatchSyncPacket functions');
 let dispatchSyncPacket = '\tmatch wrapped_packet.packet {';
 syncPackets.forEach((packet, index) => {
-	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? '' : `{${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}}`}`;
-	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${packet.fields.length > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}).await`;
+	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? '' : ` {${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}}`}`;
+	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${packet.fields.length > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')})`;
 	if (index < syncPackets.length - 1) {
 		dispatchSyncPacket += ',';
 	}
@@ -279,7 +279,7 @@ insertionIndexes.forEach((data) => {
 		handlers.pop();
 
 		fnBody.forEach((line, i) => {
-			if(line.startsWith('\tasync fn')) {
+			if(line.startsWith('\tfn')) {
 				if(handlers.length == 0) throw new Error('UhOh there are more handlers in packet_handlers.rs than are loaded in from ore');
 				fnBody[i] = <string>handlers.shift();
 
@@ -311,7 +311,7 @@ type State = {
 };
 
 type Packet = {
-	async: boolean,
+	async?: boolean,
 	name: string,
 	id: string,
 	fields: Field[]

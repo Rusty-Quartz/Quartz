@@ -1,5 +1,25 @@
 [
 	{
+		"name": "__internal__",
+		"server_bound": [
+			{
+				"name": "Connection_Established",
+				"id": "0xFF",
+				"fields": [
+					{"name": "write_handle", "type": "WriteHandle"}
+				]
+			},
+			{
+				"name": "Login_Success_Server",
+				"id": "0xFF",
+				"fields": [
+					{"name": "uuid", "type": "string"},
+					{"name": "username", "type": "string"}
+				]
+			}
+		]
+	},
+	{
 		"name": "Handshake",
 		"server_bound": [
 			{
@@ -16,7 +36,6 @@
 			{
 				"name": "Legacy_Ping",
 				"id": "0xFE",
-				"async": false,
 				"fields": [
 					{"name": "payload", "type": "u8"}
 				]
@@ -49,7 +68,6 @@
 			{
 				"name": "Status_Request",
 				"id": "0x00",
-				"async": false,
 				"fields":[]
 			},
 			{
@@ -141,15 +159,6 @@
 					{"name": "message_id", "type": "varint"},
 					{"name": "successful", "type": "bool"},
 					{"name": "data", "type": "byte_array(buffer.remaining())"}
-				]
-			},
-			{
-				"name": "Login_Success_Server",
-				"id": "0xFF",
-				"async": false,
-				"fields": [
-					{"name": "uuid", "type": "string"},
-					{"name": "username", "type": "string"}
 				]
 			}
 		]

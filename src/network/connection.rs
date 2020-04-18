@@ -5,12 +5,11 @@ use openssl::symm::{Cipher, Mode, Crypter};
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use tokio::sync::mpsc::UnboundedSender;
+use futures::channel::mpsc::UnboundedSender;
 use crate::network::packet_handler::*;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
-use crate::data::Uuid;
+use log::error;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ConnectionState {
@@ -66,7 +65,7 @@ impl IOHandle {
         self.compression_threshold = compression_threshold;
     }
 
-    pub async fn write_packet_data(&mut self, packet_data: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
+    pub fn write_packet_data(&mut self, packet_data: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
         self.operation_buffer.clear();
         let result: Result<()>;
         
@@ -100,7 +99,7 @@ impl IOHandle {
         result
     }
 
-    pub async fn collect_packet(&mut self, packet_buffer: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
+    pub fn collect_packet(&mut self, packet_buffer: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
         self.decrypt_buffer(&mut *packet_buffer, 0);
 
         // Read the packet header
@@ -140,7 +139,7 @@ impl IOHandle {
             match decoder.read(&mut packet_buffer[..]) {
                 Ok(read) => if read != data_len {
                     // TODO: Handle properly
-                    println!("Decompression error; connection.rs");
+                    error!("Failed to decompress packet.");
                 },
                 Err(e) => return Err(e)
             };
@@ -151,69 +150,71 @@ impl IOHandle {
 }
 
 pub struct WriteHandle {
+    pub id: usize,
     stream: TcpStream,
     packet_buffer: ByteBuffer,
     io_handle: Arc<Mutex<IOHandle>>
 }
 
 impl WriteHandle {
-    pub fn new(stream: TcpStream, io_handle: Arc<Mutex<IOHandle>>) -> Self {
+    pub fn new(id: usize, stream: TcpStream, io_handle: Arc<Mutex<IOHandle>>) -> Self {
         WriteHandle {
+            id,
             stream,
             packet_buffer: ByteBuffer::new(4096),
             io_handle
         }
     }
 
-    pub async fn send_packet(&mut self, packet: ClientBoundPacket) {
+    pub fn send_packet(&mut self, packet: ClientBoundPacket) {
         serialize(packet, &mut self.packet_buffer);
         // This clears the packet buffer when done
-        if let Err(e) = self.io_handle.lock().await.write_packet_data(&mut self.packet_buffer, &mut self.stream).await {
-            println!("Failed to send packet: {}", e);
+        if let Err(e) = self.io_handle.lock().unwrap().write_packet_data(&mut self.packet_buffer, &mut self.stream) {
+            error!("Failed to send packet: {}", e);
         }
     }
 }
 
 pub struct AsyncClientConnection {
+    pub id: usize,
     pub stream: TcpStream,
     pub packet_buffer: ByteBuffer,
     io_handle: Arc<Mutex<IOHandle>>,
     pub connection_state: ConnectionState,
-    sync_packet_sender: UnboundedSender<WrappedServerPacket>,
-    pub uuid: Uuid
+    sync_packet_sender: UnboundedSender<WrappedServerPacket>
 }
 
 impl AsyncClientConnection {
-    pub fn new(stream: TcpStream, sync_packet_sender: UnboundedSender<WrappedServerPacket>) -> Self {
+    pub fn new(id: usize, stream: TcpStream, sync_packet_sender: UnboundedSender<WrappedServerPacket>) -> Self {
         AsyncClientConnection {
+            id,
             stream,
             packet_buffer: ByteBuffer::new(4096),
             io_handle: Arc::new(Mutex::new(IOHandle::new())),
             connection_state: ConnectionState::Handshake,
-            sync_packet_sender,
-            uuid: Uuid::random() // Start with a random identifier, switch to proper player ID later
+            sync_packet_sender
         }
     }
 
     pub fn create_write_handle(&self) -> WriteHandle {
-        WriteHandle::new(self.stream.try_clone().expect("Failed to clone client connection stream."), self.io_handle.clone())
+        WriteHandle::new(self.id, self.stream.try_clone().expect("Failed to clone client connection stream."), self.io_handle.clone())
     }
 
-    pub async fn send_packet(&mut self, packet: ClientBoundPacket) {
+    pub fn send_packet(&mut self, packet: ClientBoundPacket) {
         serialize(packet, &mut self.packet_buffer);
         // This clears the packet buffer when done
-        if let Err(e) = self.io_handle.lock().await.write_packet_data(&mut self.packet_buffer, &mut self.stream).await {
-            println!("Failed to send packet: {}", e);
+        if let Err(e) = self.io_handle.lock().unwrap().write_packet_data(&mut self.packet_buffer, &mut self.stream) {
+            error!("Failed to send packet: {}", e);
         }
     }
 
     pub fn forward_to_server(&mut self, packet: ServerBoundPacket) {
-        if let Err(e) = self.sync_packet_sender.send(WrappedServerPacket::new(self.uuid, packet)) {
-            println!("Failed to forward synchronous packet to server: {}", e);
+        if let Err(e) = self.sync_packet_sender.unbounded_send(WrappedServerPacket::new(self.id, packet)) {
+            error!("Failed to forward synchronous packet to server: {}", e);
         }
     }
 
-    pub async fn read_packet(&mut self) -> Result<()> {
+    pub fn read_packet(&mut self) -> Result<()> {
         self.packet_buffer.inflate();
         self.packet_buffer.reset_cursor();
 
@@ -226,7 +227,7 @@ impl AsyncClientConnection {
                     Ok(())
                 } else {
                     self.packet_buffer.resize(read);
-                    self.io_handle.lock().await.collect_packet(&mut self.packet_buffer, &mut self.stream).await
+                    self.io_handle.lock().unwrap().collect_packet(&mut self.packet_buffer, &mut self.stream)
                 }
             },
             Err(e) => Err(e)
