@@ -2,6 +2,9 @@ use crate::network::connection::{AsyncClientConnection, ConnectionState, WriteHa
 use crate::util::ioutil::ByteBuffer;
 use crate::server::QuartzServer;
 use log::error;
+use crate::data::Uuid;
+use crate::config::Config;
+use std::u16;
 
 const PROTOCOL_VERSION: i32 = 578;
 
@@ -47,17 +50,58 @@ impl AsyncPacketHandler {
 }
 
 impl QuartzServer {
+	pub fn new(config: Config) -> QuartzServer {
+		QuartzServer {
+			config,
+			version: String::from("1.15.2")
+		}
+	}
 //#SyncPacketHandler
 	fn connection_established(&mut self, sender: usize, write_handle: WriteHandle) {
-
 	}
 
 	fn login_success_server(&mut self, sender: usize, uuid: String, username: String) {
 
 	}
 
-	fn legacy_ping(&mut self, sender: usize, payload: u8) {
+	fn legacy_ping(&mut self, sender: Uuid, payload: u8) {
+		// Load in all needed values from server object
+		let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
+		let version = &self.version;
+		let motd = &self.config.motd;
+		let player_count = u16::to_string(&0); // TODO: change this once we have a way to get this
+		let max_players = u16::to_string(&self.config.max_players);
 
+		// Add String header
+		let mut string_vec:Vec<u16> = vec![0x00A7, 0x0031, 0x0000];
+
+		// Add all fields to vector
+		string_vec.append(&mut protocol_version.chars().rev().collect::<String>().encode_utf16().collect::<Vec<u16>>());
+		string_vec.push(0x0000);
+
+		string_vec.append(&mut version.encode_utf16().collect::<Vec<u16>>());
+		string_vec.push(0x0000);
+
+		string_vec.append(&mut motd.encode_utf16().collect::<Vec<u16>>());
+		string_vec.push(0x0000);
+
+		string_vec.append(&mut player_count.encode_utf16().collect::<Vec<u16>>());
+		string_vec.push(0x0000);
+
+		string_vec.append(&mut max_players.encode_utf16().collect::<Vec<u16>>());
+
+		let mut buffer = ByteBuffer::new(3 + string_vec.len());
+
+		// Write FF and length
+		buffer.write_bytes(&[0xFF]);
+		buffer.write_u16(string_vec.len() as u16);
+
+		// Write String
+		for bytes in string_vec {
+			buffer.write_u16(bytes);
+		}
+
+		// TODO: Send buffer to player
 	}
 
 	fn status_request(&mut self, sender: usize) {

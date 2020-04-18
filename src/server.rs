@@ -37,5 +37,6 @@ pub fn get_server() -> &'static QuartzServer {
 pub struct QuartzServer {
     pub config: Config,
     sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
-    pub running: bool
+    pub running: bool,
+	pub version: String
 }

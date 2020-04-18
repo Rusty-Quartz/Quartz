@@ -4,9 +4,9 @@ use std::io::Read;
 
 #[derive(Deserialize)]
 pub struct Config {
-	pub max_players: u32,
+	pub max_players: u16,
 	pub port: u16,
-	pub motd: String,
+	pub motd: String
 }
 
 pub fn load_config(path: String) -> Config {
