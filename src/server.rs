@@ -15,7 +15,8 @@ pub fn init_server(
                 SERVER_INSTANCE = Some(QuartzServer {
                     config,
                     sync_packet_receiver,
-                    running: true
+                    running: true,
+                    version: "1.15.2"
                 });
 
                 SERVER_INSTANCE.as_ref().unwrap()
@@ -38,5 +39,5 @@ pub struct QuartzServer {
     pub config: Config,
     sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
     pub running: bool,
-	pub version: String
+    pub version: &'static str
 }

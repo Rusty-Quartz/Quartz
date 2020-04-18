@@ -279,7 +279,7 @@ insertionIndexes.forEach((data) => {
 		handlers.pop();
 
 		fnBody.forEach((line, i) => {
-			if(line.startsWith('\tfn')) {
+			if(line.trim().startsWith('fn ')) {
 				if(handlers.length == 0) throw new Error('UhOh there are more handlers in packet_handlers.rs than are loaded in from ore');
 				fnBody[i] = <string>handlers.shift();
 
@@ -300,7 +300,7 @@ output += outputFile.substring(lastIndex, outputFile.length);
 
 
 console.log('Writing code to file');
-writeFileSync(`${quartzDir}/src/network/packet_handler.rs`, output);
+writeFileSync(`${quartzDir}/src/network/packet_handler.rs`, output.replace(/\t/g, '    '));
 console.log('Done!');
 
 // Type declarations
