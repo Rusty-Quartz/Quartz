@@ -30,10 +30,18 @@ use chrono::prelude::*;
 use linefeed::Interface;
 use linefeed::terminal::DefaultTerminal;
 
+#[cfg(unix)]
+use termion::color;
+
+const FILE_SIZE_LIMIT: u64 = 50_000_000;
+
+#[cfg(debug_assertions)]
+const LEVEL_FILTER: LevelFilter = LevelFilter::Debug;
+#[cfg(not(debug_assertions))]
+const LEVEL_FILTER: LevelFilter = LevelFilter::Info;
+
 // Sets up log4rs customized for the minecraft server
 pub fn init_logger(console_interface: Arc<Interface<DefaultTerminal>>) -> Result<(), Box<dyn Error>> {
-    const FILE_SIZE_LIMIT: u64 = 50_000_000;
-
     // Logs info to the console with colors and such
     let console = CustomConsoleAppender {console_interface};
 
@@ -53,7 +61,7 @@ pub fn init_logger(console_interface: Arc<Interface<DefaultTerminal>>) -> Result
                 Root::builder()
                     .appender("console")
                     .appender("logfile")
-                    .build(LevelFilter::Trace)
+                    .build(LEVEL_FILTER)
             )?;
     
     log4rs::init_config(config)?;
@@ -76,12 +84,11 @@ struct CustomConsoleAppender {
 impl Append for CustomConsoleAppender {
     #[cfg(unix)]
     fn append(&self, record: &Record) -> Result<(), Box<dyn Error + Sync + Send>> {
-        use termion::color;
-
         let mut writer = self.console_interface.lock_writer_erase()?;
         match record.metadata().level() {
             Level::Error => write!(writer, "{}", color::Fg(color::Red))?,
             Level::Warn => write!(writer, "{}", color::Fg(color::LightYellow))?,
+            Level::Debug => write!(writer, "{}", color::Fg(color::LightCyan))?,
             _ => write!(writer, "{}", color::Fg(color::Reset))?,
         }
         writeln!(writer, "[{} {}]: {}{}", Local::now().format("%H:%M:%S"), record.metadata().level(), record.args(), color::Fg(color::Reset))?;
@@ -209,7 +216,7 @@ impl CustomLogRoller {
     // Attempts compress_log and prints an error if it fails
     fn try_compress_log(input_path: &str, output_path: &str) {
         if let Err(_) = Self::compress_log(Path::new(input_path), Path::new(output_path)) {
-            error!("Failed to compress log file.");
+            error!("Failed to compress log file");
         }
     }
 

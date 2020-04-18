@@ -1,7 +1,7 @@
 use crate::network::connection::{AsyncClientConnection, ConnectionState, WriteHandle};
 use crate::util::ioutil::ByteBuffer;
 use crate::server::QuartzServer;
-use log::error;
+use log::{debug, warn, error};
 
 const PROTOCOL_VERSION: i32 = 578;
 
@@ -218,7 +218,7 @@ pub fn serialize(packet: ClientBoundPacket, buffer: &mut ByteBuffer) {
 
 macro_rules! invalid_packet {
     ($id:expr, $len:expr) => {
-        error!("Invalid packet received. ID: {}, Len: {}", $id, $len);
+        warn!("Invalid packet received. ID: {}, Len: {}", $id, $len);
     };
 }
 
@@ -297,5 +297,5 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection) {
         }
     }
 
-    error!("Client disconnected.");
+    debug!("Client disconnected");
 }

@@ -61,15 +61,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded::<WrappedServerPacket>();
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port))?;
-    let server = server::init_server(config, sync_packet_receiver);
+    listener.set_nonblocking(true).expect("Failed to create non-blocking TCP listener");
 
-    let mut next_connection_id: usize = 0;
-    thread::spawn(move || {
+    let server_handle = thread::spawn(move || {
+        let mut next_connection_id: usize = 0;
+
+        // Wait for the server to start
+        while !server::is_running() {}
+
+        info!("Started TCP Server Thread");
+
         loop {
             match listener.accept() {
                 // Successful connection
                 Ok((socket, _addr)) => {
-                    info!("Client connected.");
+                    // Don't bother handling the connection if the server is shutting down
+                    if !server::is_running() {
+                        return;
+                    }
+
+                    debug!("Client connected");
                     let packet_sender = sync_packet_sender.clone();
                     let mut conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
                     next_connection_id += 1;
@@ -82,8 +93,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     });
                 },
 
-                // Somewhat patchy shutdown hook
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => return,
+                // Wait before checking for a new connection and exit if the server is no longer running
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    if server::is_running() {
+                        thread::sleep(Duration::from_millis(100));
+                    } else {
+                        return;
+                    }
+                },
 
                 // Actual error
                 Err(e) => error!("Failed to accept TCP socket: {}", e)
@@ -91,11 +108,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    while server.running {
-        // Do nothing for now
-        thread::sleep(Duration::from_millis(50));
-    }
+    let server = server::init_server(config, sync_packet_receiver);
+    server.add_join_handle("TCP Server Thread", server_handle);
 
+    // Temporary thread blocker
+    let _ = console_interface.read_line();
+
+    server::shutdown_if_initialized();
     logging::cleanup();
 
     Ok(())

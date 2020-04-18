@@ -1,7 +1,8 @@
 /target
 Cargo.lock
 **/*.rs.bk
-source/*
+source/
 node_modules/
 parser.js
 parsed.rs
+run/

@@ -139,7 +139,7 @@ impl IOHandle {
             match decoder.read(&mut packet_buffer[..]) {
                 Ok(read) => if read != data_len {
                     // TODO: Handle properly
-                    error!("Failed to decompress packet.");
+                    error!("Failed to decompress packet");
                 },
                 Err(e) => return Err(e)
             };
@@ -197,7 +197,7 @@ impl AsyncClientConnection {
     }
 
     pub fn create_write_handle(&self) -> WriteHandle {
-        WriteHandle::new(self.id, self.stream.try_clone().expect("Failed to clone client connection stream."), self.io_handle.clone())
+        WriteHandle::new(self.id, self.stream.try_clone().expect("Failed to clone client connection stream"), self.io_handle.clone())
     }
 
     pub fn send_packet(&mut self, packet: ClientBoundPacket) {
