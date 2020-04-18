@@ -30,8 +30,6 @@ use chrono::prelude::*;
 use linefeed::Interface;
 use linefeed::terminal::DefaultTerminal;
 
-use termion::color;
-
 // Sets up log4rs customized for the minecraft server
 pub fn init_logger(console_interface: Arc<Interface<DefaultTerminal>>) -> Result<(), Box<dyn Error>> {
     const FILE_SIZE_LIMIT: u64 = 50_000_000;
@@ -76,7 +74,10 @@ struct CustomConsoleAppender {
 }
 
 impl Append for CustomConsoleAppender {
+    #[cfg(unix)]
     fn append(&self, record: &Record) -> Result<(), Box<dyn Error + Sync + Send>> {
+        use termion::color;
+
         let mut writer = self.console_interface.lock_writer_erase()?;
         match record.metadata().level() {
             Level::Error => write!(writer, "{}", color::Fg(color::Red))?,
@@ -84,6 +85,13 @@ impl Append for CustomConsoleAppender {
             _ => write!(writer, "{}", color::Fg(color::Reset))?,
         }
         writeln!(writer, "[{} {}]: {}{}", Local::now().format("%H:%M:%S"), record.metadata().level(), record.args(), color::Fg(color::Reset))?;
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    fn append(&self, record: &Record) -> Result<(), Box<dyn Error + Sync + Send>> {
+        let mut writer = self.console_interface.lock_writer_erase()?;
+        writeln!(writer, "[{} {}]: {}", Local::now().format("%H:%M:%S"), record.metadata().level(), record.args())?;
         Ok(())
     }
 

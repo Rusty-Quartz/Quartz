@@ -1,5 +1,5 @@
 [package]
-name = "Quartz"
+name = "quartz"
 version = "0.1.0"
 authors = ["maddymakesgames", "Cassy343", "Fish"]
 edition = "2018"
@@ -17,4 +17,6 @@ log = "0.4.8"
 log4rs = "0.11.0"
 chrono = "0.4.11"
 linefeed = "0.6.0"
+
+[target.'cfg(unix)'.dependencies]
 termion = "1.5.5"
