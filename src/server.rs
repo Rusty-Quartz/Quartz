@@ -2,7 +2,8 @@ use futures::channel::mpsc::UnboundedReceiver;
 use std::thread::{self, JoinHandle};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::borrow::Cow;
 use std::time::Duration;
 use crate::config::Config;
 use crate::network::packet_handler::{WrappedServerPacket, ClientBoundPacket, dispatch_sync_packet, PROTOCOL_VERSION};
@@ -10,7 +11,7 @@ use crate::network::connection::WriteHandle;
 
 use serde::Serialize;
 
-use log::{info, error};
+use log::{info, warn, error};
 
 static mut SERVER_INSTANCE: Option<QuartzServer> = None;
 static mut SERVER_STATE: AtomicU8 = AtomicU8::new(0);
@@ -30,14 +31,14 @@ const SHUTDOWN: u8 = 3;
 pub fn init_server(
     config: Config,
     sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>
-) -> &'static mut QuartzServer {
+) -> &'static mut QuartzServer<'static> {
     unsafe {
         match SERVER_STATE.compare_and_swap(UNITIALIZED, INITIALIZING, Ordering::SeqCst) {
             UNITIALIZED => {
                 // Initialize the server
                 let mut server = QuartzServer {
                     config,
-                    client_list: HashMap::new(),
+                    client_list: Cow::Owned(HashMap::new()),
                     sync_packet_receiver,
                     join_handles: HashMap::new(),
                     version: "1.15.2"
@@ -53,6 +54,32 @@ pub fn init_server(
             },
             INITIALIZING | INITIALIZED => panic!("Attempted to initialize server more than once."),
             SHUTDOWN => panic!("Attempted to initialize server after shutdown."),
+            _ => unreachable!("Invalid server state.")
+        }
+    }
+}
+
+pub fn add_client(id: usize, connection: WriteHandle) {
+    unsafe {
+        match SERVER_STATE.load(Ordering::Relaxed) {
+            INITIALIZED => {
+                SERVER_INSTANCE.as_mut().unwrap().add_client(id, connection);
+            }
+            UNITIALIZED | INITIALIZING => panic!("Attempted to add client before server was initialized."),
+            SHUTDOWN => warn!("Client attempted to connect during server shutdown sequence."),
+            _ => unreachable!("Invalid server state.")
+        }
+    }
+}
+
+pub fn remove_client(id: usize) {
+    unsafe {
+        match SERVER_STATE.load(Ordering::Relaxed) {
+            INITIALIZED => {
+                SERVER_INSTANCE.as_mut().unwrap().remove_client(id);
+            }
+            UNITIALIZED | INITIALIZING => panic!("Attempted to add client before server was initialized."),
+            SHUTDOWN => warn!("Client attempted to connect during server shutdown sequence."),
             _ => unreachable!("Invalid server state.")
         }
     }
@@ -92,15 +119,15 @@ pub fn shutdown() {
     }
 }
 
-pub struct QuartzServer {
+pub struct QuartzServer<'a> {
     pub config: Config,
-    client_list: HashMap<usize, Client>,
+    client_list: Cow<'a, HashMap<usize, Client>>,
     sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
     join_handles: HashMap<String, JoinHandle<()>>,
     pub version: &'static str
 }
 
-impl QuartzServer {
+impl<'a> QuartzServer<'a> {
     fn init(&mut self) {
         // In case it's needed later
     }
@@ -110,7 +137,11 @@ impl QuartzServer {
     }
 
     pub fn add_client(&mut self, client_id: usize, connection: WriteHandle) {
-        self.client_list.insert(client_id, Client::new(connection));
+        self.client_list.to_mut().insert(client_id, Client::new(connection));
+    }
+
+    pub fn remove_client(&mut self, client_id: usize) {
+        self.client_list.to_mut().remove(&client_id);
     }
 
     pub fn send_packet(&self, client_id: usize, packet: ClientBoundPacket) {
@@ -122,8 +153,18 @@ impl QuartzServer {
 
     pub fn run(&mut self) {
         loop {
-            while let Ok(Some(packet)) = self.sync_packet_receiver.try_next() {
-                dispatch_sync_packet(packet, self);
+            loop {
+                match self.sync_packet_receiver.try_next() {
+                    Ok(packet_wrapper) => {
+                        match packet_wrapper {
+                            Some(packet) => {
+                                dispatch_sync_packet(packet, self);
+                            },
+                            None => break
+                        }
+                    },
+                    Err(_) => break
+                }
             }
 
             thread::sleep(Duration::from_millis(50));
@@ -148,14 +189,13 @@ impl QuartzServer {
             },
             description: ServerPingChatObject {
                 text: self.config.motd.to_owned()
-            },
-            favicon: None
+            }
         };
         serde_json::to_string(&status_object).unwrap()
     }
 }
 
-impl Drop for QuartzServer {
+impl<'a> Drop for QuartzServer<'a> {
     fn drop(&mut self) {
         for (thread_name, handle) in self.join_handles.drain() {
             info!("Shutting down {}", thread_name);
@@ -166,15 +206,16 @@ impl Drop for QuartzServer {
     }
 }
 
+#[derive(Clone)]
 struct Client {
-    connection: Mutex<WriteHandle>,
+    connection: Arc<Mutex<WriteHandle>>,
     player_id: Option<usize>
 }
 
 impl Client {
     pub fn new(connection: WriteHandle) -> Self {
         Client {
-            connection: Mutex::new(connection),
+            connection: Arc::new(Mutex::new(connection)),
             player_id: None
         }
     }
@@ -190,9 +231,7 @@ impl Client {
 struct ServerPingResponse {
     version: ServerPingVersion,
     players: ServerPingPlayersList,
-    description: ServerPingChatObject,
-    favicon: Option<String>
-
+    description: ServerPingChatObject
 }
 
 #[derive(Serialize)]

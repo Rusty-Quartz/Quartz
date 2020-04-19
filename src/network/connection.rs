@@ -9,7 +9,7 @@ use futures::channel::mpsc::UnboundedSender;
 use crate::network::packet_handler::*;
 use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
-use log::error;
+use log::*;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ConnectionState {
@@ -120,7 +120,7 @@ impl IOHandle {
         }
 
         // Large packet, gather the rest of the data
-        if raw_len > packet_buffer.capacity() {
+        if raw_len > packet_buffer.len() {
             let end = packet_buffer.len();
             packet_buffer.resize(raw_len);
             match stream.read_exact(&mut packet_buffer[end..]) {
@@ -201,6 +201,7 @@ impl AsyncClientConnection {
     }
 
     pub fn send_packet(&mut self, packet: ClientBoundPacket) {
+        self.packet_buffer.clear();
         serialize(packet, &mut self.packet_buffer);
         // This clears the packet buffer when done
         if let Err(e) = self.io_handle.lock().unwrap().write_packet_data(&mut self.packet_buffer, &mut self.stream) {
@@ -215,8 +216,18 @@ impl AsyncClientConnection {
     }
 
     pub fn read_packet(&mut self) -> Result<()> {
+        // More than one packet was read at once, collect the remaining packet and handle it
+        if self.packet_buffer.remaining() > 0 {
+            self.packet_buffer.drawback_cursor();
+            return self.io_handle.lock().unwrap().collect_packet(&mut self.packet_buffer, &mut self.stream)
+        }
+        // Prepare for the next packet
+        else {
+            self.packet_buffer.reset_cursor();
+        }
+
+        // Inflate the buffer so we can read to its capacity
         self.packet_buffer.inflate();
-        self.packet_buffer.reset_cursor();
 
         // Read the first chunk, this is what blocks the thread
         match self.stream.read(&mut self.packet_buffer[..]) {

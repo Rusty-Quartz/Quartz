@@ -1,6 +1,6 @@
-use crate::network::connection::{AsyncClientConnection, ConnectionState, WriteHandle};
+use crate::network::connection::{AsyncClientConnection, ConnectionState};
 use crate::util::ioutil::ByteBuffer;
-use crate::server::*;
+use crate::server::{self, QuartzServer};
 use log::{debug, warn, error};
 
 pub const PROTOCOL_VERSION: i32 = 578;
@@ -42,12 +42,8 @@ impl AsyncPacketHandler {
 //#end
 }
 
-impl QuartzServer {
+impl<'a> QuartzServer<'a> {
 //#SyncPacketHandler
-    fn connection_established(&mut self, sender: usize, write_handle: WriteHandle) {
-        self.add_client(sender, write_handle);
-    }
-
     fn login_success_server(&mut self, sender: usize, uuid: String, username: String) {
 
     }
@@ -93,23 +89,13 @@ impl QuartzServer {
     }
 
     fn status_request(&mut self, sender: usize) {
-        let json_response = self.status();
-
-        let response_packet = ClientBoundPacket::StatusResponse {
-            json_length: json_response.len() as i32,
-            json_response
-        };
-
-        self.send_packet(sender, response_packet);
+        self.send_packet(sender, ClientBoundPacket::StatusResponse {json_response: self.status()});
     }
 //#end
 }
 
 pub enum ServerBoundPacket {
 //#ServerBoundPacket
-    ConnectionEstablished {
-        write_handle: WriteHandle
-    },
     LoginSuccessServer {
         uuid: String, 
         username: String
@@ -139,7 +125,6 @@ impl WrappedServerPacket {
 pub enum ClientBoundPacket {
 //#ClientBoundPacket
     StatusResponse {
-        json_length: i32, 
         json_response: String
     },
     Pong {
@@ -173,7 +158,6 @@ pub enum ClientBoundPacket {
 pub fn dispatch_sync_packet(wrapped_packet: WrappedServerPacket, handler: &mut QuartzServer) {
 //#dispatch_sync_packet
     match wrapped_packet.packet {
-        ServerBoundPacket::ConnectionEstablished {write_handle} => handler.connection_established(wrapped_packet.sender, write_handle),
         ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username),
         ServerBoundPacket::LegacyPing {payload} => handler.legacy_ping(wrapped_packet.sender, payload),
         ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender)
@@ -184,9 +168,8 @@ pub fn dispatch_sync_packet(wrapped_packet: WrappedServerPacket, handler: &mut Q
 pub fn serialize(packet: ClientBoundPacket, buffer: &mut ByteBuffer) {
 //#serialize
     match packet {
-        ClientBoundPacket::StatusResponse {json_length, json_response} => {
+        ClientBoundPacket::StatusResponse {json_response} => {
             buffer.write_varint(0x00);
-            buffer.write_varint(json_length);
             buffer.write_string(&json_response);
         },
         ClientBoundPacket::Pong {payload} => {
@@ -305,5 +288,6 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection) {
         }
     }
 
+    server::remove_client(conn.id);
     debug!("Client disconnected");
 }

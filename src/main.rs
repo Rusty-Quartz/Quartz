@@ -18,7 +18,6 @@ use network::{
     connection::AsyncClientConnection,
     packet_handler::{
         handle_async_connection,
-        ServerBoundPacket,
         WrappedServerPacket
     }
 };
@@ -83,11 +82,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     debug!("Client connected");
                     let packet_sender = sync_packet_sender.clone();
-                    let mut conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
+                    let conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
                     next_connection_id += 1;
 
-                    let write_handle = conn.create_write_handle();
-                    conn.forward_to_server(ServerBoundPacket::ConnectionEstablished {write_handle});
+                    server::add_client(conn.id, conn.create_write_handle());
 
                     thread::spawn(move || {
                         handle_async_connection(conn);

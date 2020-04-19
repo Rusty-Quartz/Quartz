@@ -3,13 +3,6 @@
 		"name": "__internal__",
 		"server_bound": [
 			{
-				"name": "Connection_Established",
-				"id": "0xFF",
-				"fields": [
-					{"name": "write_handle", "type": "WriteHandle"}
-				]
-			},
-			{
 				"name": "Login_Success_Server",
 				"id": "0xFF",
 				"fields": [
@@ -51,7 +44,6 @@
 				"name": "Status_Response",
 				"async": true,
 				"fields": [
-					{"name": "json_length", "type": "varint"},
 					{"name": "json_response", "type": "string"}
 				]
 			},

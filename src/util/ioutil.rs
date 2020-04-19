@@ -1,6 +1,7 @@
 use std::mem::transmute;
 use std::str;
 use std::fmt;
+use std::ptr;
 
 pub struct ByteBuffer {
     inner: Vec<u8>,
@@ -45,7 +46,7 @@ impl fmt::Display for ByteBuffer {
 impl ByteBuffer {
     pub fn new(initial_size: usize) -> Self {
         ByteBuffer {
-            inner: vec![0; initial_size],
+            inner: Vec::with_capacity(initial_size),
             cursor: 0
         }
     }
@@ -103,6 +104,22 @@ impl ByteBuffer {
     #[inline]
     pub fn reset_cursor(&mut self) {
         self.cursor = 0;
+    }
+
+    pub fn drawback_cursor(&mut self) {
+        if self.cursor == self.inner.len() {
+            self.cursor = 0;
+            return;
+        }
+
+        unsafe {
+            let ptr = self.inner.as_mut_ptr();
+            let new_len = self.inner.len() - self.cursor;
+            // Copy remaining bytes
+            ptr::copy(ptr.add(self.cursor), ptr, new_len);
+            self.inner.set_len(new_len);
+            self.cursor = 0;
+        }
     }
 
     #[inline]
@@ -249,8 +266,8 @@ impl ByteBuffer {
             self.inner.push(byte);
         } else {
             self.inner[self.cursor] = byte;
-            self.cursor += 1;
         }
+        self.cursor += 1;
     }
 
     #[inline]
