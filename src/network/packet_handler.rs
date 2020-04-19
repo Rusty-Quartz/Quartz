@@ -86,11 +86,11 @@ impl<'a> QuartzServer<'a> {
             buffer.write_u16(bytes);
         }
 
-        // TODO: Send buffer to player
+        self.send_buffer(sender, buffer);
     }
 
     fn status_request(&mut self, sender: usize) {
-        self.send_packet(sender, ClientBoundPacket::StatusResponse {json_response: self.status()});
+        self.send_packet(sender, ClientBoundPacket::StatusResponse {json_response: String::from("{\"this\"}")});
     }
 //#end
 }

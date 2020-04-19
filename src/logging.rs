@@ -91,7 +91,7 @@ impl Append for CustomConsoleAppender {
             Level::Debug => write!(writer, "{}", color::Fg(color::LightCyan))?,
             _ => write!(writer, "{}", color::Fg(color::Reset))?,
         }
-        writeln!(writer, "[{} {}]: {}{}", Local::now().format("%H:%M:%S"), record.metadata().level(), record.args(), color::Fg(color::Reset))?;
+        writeln!(writer, "[{} {}]: {}{}", Local::now().format("%H:%M:%S.%f "), record.metadata().level(), record.args(), color::Fg(color::Reset))?;
         Ok(())
     }
 

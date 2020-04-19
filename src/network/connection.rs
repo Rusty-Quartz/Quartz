@@ -225,6 +225,12 @@ impl WriteHandle {
             error!("Failed to send packet: {}", e);
         }
     }
+
+    pub fn send_buffer(&mut self, buffer: ByteBuffer) {
+        if let Err(e) = self.stream.write_all(&buffer[..]) {
+            error!("Failed to send buffer: {}", e);
+        }
+    }
 }
 
 pub struct AsyncClientConnection {

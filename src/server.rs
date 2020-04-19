@@ -8,6 +8,7 @@ use std::time::Duration;
 use crate::config::Config;
 use crate::network::packet_handler::{WrappedServerPacket, ClientBoundPacket, dispatch_sync_packet, PROTOCOL_VERSION};
 use crate::network::connection::WriteHandle;
+use crate::util::ioutil::ByteBuffer;
 
 use serde::Serialize;
 
@@ -151,6 +152,14 @@ impl<'a> QuartzServer<'a> {
         }
     }
 
+    // This should be used ONLY for the legacy ping response
+    pub fn send_buffer(&self, client_id: usize, buffer: ByteBuffer) {
+        match self.client_list.get(&client_id) {
+            Some(client) => client.send_buffer(buffer),
+            None => error!("Could not fine client with ID {}, failed to send buffer", client_id)
+        }
+    }
+
     pub fn run(&mut self) {
         loop {
             loop {
@@ -224,6 +233,12 @@ impl Client {
     pub fn send_packet(&self, packet: ClientBoundPacket) {
         // WriteHandle#send_packet should not panic unless there server is already in an unrecoverable state
         self.connection.lock().unwrap().send_packet(packet);
+    }
+
+    // Note: blocks the thread
+    // This should ONLY be used for the legacy ping response
+    pub fn send_buffer(&self, buffer: ByteBuffer) {
+        self.connection.lock().unwrap().send_buffer(buffer);
     }
 }
 
