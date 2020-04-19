@@ -70,7 +70,7 @@ let packetEnumParser = (packetArr: Packet[]):string => {
 	let packetEnum = '';
 	packetArr.forEach((packet, i) => {
 		// If there are no fields just output an element of the enum with the name of the packet
-		if(packet.fields.length == 0) {
+		if(packet.fields.filter(field => !field.unused).length == 0) {
 			packetEnum += `\t${packet.name.replace(/_/g, '')}${(i == packetArr.length - 1 ? '' : ',')}\n`;
 			return
 		}
@@ -165,11 +165,11 @@ packetInfo.filter(state => state.name != '__internal__').forEach((state, i) => {
 			// Loop over fields to make buffer.read function names
 			packet.fields.forEach((field) => {
 				packetString += '\n\t\t\t\t\t';
-				if (!field.unused) {
+				if (!field.unused || field.referenced) {
 					packetString += `let ${field.name} = `;
 				}
 				packetString += `buffer.read_${field.type + (field.type.includes('(') ? '' : '()')};`;
-				if (field.unused) {
+				if (field.unused && !field.referenced) {
 					packetString += ` // ${field.name}`;
 				}
 			});
@@ -181,13 +181,13 @@ packetInfo.filter(state => state.name != '__internal__').forEach((state, i) => {
 				packetString += `\n\t\t\t\t},`;
 			} else {
 				// otherwise yeet it to the server thread
-				packetString += `\n\t\t\t\t\tconn.forward_to_server(ServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? ');' : ' {'}`;
+				packetString += `\n\t\t\t\t\tconn.forward_to_server(ServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.filter(field => !field.unused).length == 0 ? ');' : ' {'}`;
 
 				// if no fields then just close the function without defining parameters for the struct
-				if (packet.fields.length == 0) return stateString += `${packetString}\n\t\t\t\t},`;
+				if (packet.fields.filter(field => !field.unused).length == 0) return stateString += `${packetString}\n\t\t\t\t},`;
 
 				// put parameters for struct
-				packet.fields.forEach((field, i) => {
+				packet.fields.filter(field => !field.unused).forEach((field, i) => {
 					packetString += `${field.name}${i == packet.fields.length - 1 ? '' : ', '}`;
 				});
 
@@ -321,7 +321,8 @@ type Packet = {
 type Field = {
 	name: string,
 	type: string,
-	unused?: boolean
+	unused?: boolean,
+	referenced?: boolean
 }
 
 type Mappings = {

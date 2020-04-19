@@ -30,7 +30,7 @@
 				"name": "Legacy_Ping",
 				"id": "LEGACY_PING_PACKET_ID",
 				"fields": [
-					{"name": "payload", "type": "u8"}
+					{"name": "data", "type": "byte_array(buffer.remaining())", "unused": true}
 				]
 			}
 		]
@@ -137,9 +137,9 @@
 				"id": "0x01",
 				"async": true,
 				"fields": [
-					{"name": "shared_secret_len", "type": "varint"},
+					{"name": "shared_secret_len", "type": "varint", "unused": true, "referenced": true},
 					{"name": "shared_secret", "type": "byte_array(shared_secret_len as usize)"},
-					{"name": "verify_token_len", "type": "varint"},
+					{"name": "verify_token_len", "type": "varint", "unused": true, "referenced": true},
 					{"name": "verify_token", "type": "byte_array(verify_token_len as usize)"}
 				]
 			},

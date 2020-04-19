@@ -33,7 +33,7 @@ impl AsyncPacketHandler {
 
     }
 
-    fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret_len: i32, shared_secret: &Vec<u8>, verify_token_len: i32, verify_token: &Vec<u8>) {
+    fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret: &Vec<u8>, verify_token: &Vec<u8>) {
 
     }
 
@@ -49,7 +49,7 @@ impl<'a> QuartzServer<'a> {
 
     }
 
-    fn legacy_ping(&mut self, sender: usize, payload: u8) {
+    fn legacy_ping(&mut self, sender: usize) {
         // Load in all needed values from server object
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = self.version;
@@ -101,9 +101,7 @@ pub enum ServerBoundPacket {
         uuid: String, 
         username: String
     },
-    LegacyPing {
-        payload: u8
-    },
+    LegacyPing,
     StatusRequest
 //#end
 }
@@ -160,7 +158,7 @@ pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut 
 //#dispatch_sync_packet
     match &wrapped_packet.packet {
         ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username),
-        ServerBoundPacket::LegacyPing {payload} => handler.legacy_ping(wrapped_packet.sender, *payload),
+        ServerBoundPacket::LegacyPing {} => handler.legacy_ping(wrapped_packet.sender, ),
         ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender)
     }
 //#end
@@ -230,8 +228,8 @@ fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPack
                     async_handler.handshake(conn, version, next_state);
                 },
                 LEGACY_PING_PACKET_ID => {
-                    let payload = buffer.read_u8();
-                    conn.forward_to_server(ServerBoundPacket::LegacyPing {payload});
+                    buffer.read_byte_array(buffer.remaining()); // data
+                    conn.forward_to_server(ServerBoundPacket::LegacyPing);
                 },
                 _ => invalid_packet!(id, buffer.len())
             }
@@ -259,7 +257,7 @@ fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPack
                     let shared_secret = buffer.read_byte_array(shared_secret_len as usize);
                     let verify_token_len = buffer.read_varint();
                     let verify_token = buffer.read_byte_array(verify_token_len as usize);
-                    async_handler.encryption_response(conn, shared_secret_len, &shared_secret, verify_token_len, &verify_token);
+                    async_handler.encryption_response(conn, &shared_secret, &verify_token);
                 },
                 0x02 => {
                     let message_id = buffer.read_varint();
