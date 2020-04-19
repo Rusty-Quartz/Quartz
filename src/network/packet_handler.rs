@@ -45,6 +45,7 @@ impl AsyncPacketHandler {
 impl QuartzServer {
 //#SyncPacketHandler
     fn connection_established(&mut self, sender: usize, write_handle: WriteHandle) {
+        self.add_client(sender, write_handle);
     }
 
     fn login_success_server(&mut self, sender: usize, uuid: String, username: String) {

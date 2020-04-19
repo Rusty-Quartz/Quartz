@@ -2,8 +2,10 @@ use futures::channel::mpsc::UnboundedReceiver;
 use std::thread::JoinHandle;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Mutex;
 use crate::config::Config;
-use crate::network::packet_handler::WrappedServerPacket;
+use crate::network::packet_handler::{WrappedServerPacket, ClientBoundPacket};
+use crate::network::connection::WriteHandle;
 
 use log::{info, error};
 
@@ -32,6 +34,7 @@ pub fn init_server(
                 // Initialize the server
                 let mut server = QuartzServer {
                     config,
+                    client_list: HashMap::new(),
                     sync_packet_receiver,
                     join_handles: HashMap::new(),
                     version: "1.15.2"
@@ -47,18 +50,6 @@ pub fn init_server(
             },
             INITIALIZING | INITIALIZED => panic!("Attempted to initialize server more than once."),
             SHUTDOWN => panic!("Attempted to initialize server after shutdown."),
-            _ => unreachable!("Invalid server state.")
-        }
-    }
-}
-
-#[inline]
-pub fn get_server() -> &'static QuartzServer {
-    unsafe {
-        match SERVER_STATE.load(Ordering::SeqCst) {
-            INITIALIZED => SERVER_INSTANCE.as_ref().unwrap(),
-            UNITIALIZED | INITIALIZING => panic!("Attempted to access server object before it was initialized."),
-            SHUTDOWN => panic!("Attempted to access server object after shutdown."),
             _ => unreachable!("Invalid server state.")
         }
     }
@@ -100,6 +91,7 @@ pub fn shutdown() {
 
 pub struct QuartzServer {
     pub config: Config,
+    client_list: HashMap<usize, Client>,
     sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
     join_handles: HashMap<String, JoinHandle<()>>,
     pub version: &'static str
@@ -113,6 +105,17 @@ impl QuartzServer {
     pub fn add_join_handle(&mut self, thread_name: &str, handle: JoinHandle<()>) {
         self.join_handles.insert(thread_name.to_owned(), handle);
     }
+
+    pub fn add_client(&mut self, client_id: usize, connection: WriteHandle) {
+        self.client_list.insert(client_id, Client::new(connection));
+    }
+
+    pub fn send_packet(&self, client_id: usize, packet: ClientBoundPacket) {
+        match self.client_list.get(&client_id) {
+            Some(client) => client.send_packet(packet),
+            None => error!("Could not find client with ID {}, failed to send packet", client_id)
+        }
+    }
 }
 
 impl Drop for QuartzServer {
@@ -123,5 +126,25 @@ impl Drop for QuartzServer {
                 error!("Failed to join {}", thread_name);
             }
         }
+    }
+}
+
+struct Client {
+    connection: Mutex<WriteHandle>,
+    player_id: Option<usize>
+}
+
+impl Client {
+    pub fn new(connection: WriteHandle) -> Self {
+        Client {
+            connection: Mutex::new(connection),
+            player_id: None
+        }
+    }
+
+    // Note: blocks the thread
+    pub fn send_packet(&self, packet: ClientBoundPacket) {
+        // WriteHandle#send_packet should not panic unless there server is already in an unrecoverable state
+        self.connection.lock().unwrap().send_packet(packet);
     }
 }
