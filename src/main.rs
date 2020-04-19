@@ -45,6 +45,7 @@ pub mod network {
 }
 
 pub mod util {
+    pub mod idlist;
     pub mod ioutil;
 }
 
