@@ -4,5 +4,6 @@ Cargo.lock
 source/
 node_modules/
 parser.js
-parsed.rs
 run/
+logs/
+config.json
