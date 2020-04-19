@@ -90,7 +90,7 @@ impl<'a> QuartzServer<'a> {
     }
 
     fn status_request(&mut self, sender: usize) {
-        self.send_packet(sender, ClientBoundPacket::StatusResponse {json_response: String::from("{\"this\"}")});
+        self.send_packet(sender, ClientBoundPacket::StatusResponse {json_response: self.status()});
     }
 //#end
 }
