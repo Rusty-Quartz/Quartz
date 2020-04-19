@@ -40,6 +40,7 @@ let mappings = new Map<string, string>();
 mappingsRaw.types.forEach((mapping) => mappings.set(mapping.name, mapping.type));
 
 let parseType = (type:string) => mappings.has(type.split('(')[0]) ? mappings.get(type.split('(')[0]) : type.split('(')[0];
+let isPrimitive = (type:string) => mappingsRaw.primitives.includes(type);
 
 
 // Read all the states and packets
@@ -115,7 +116,7 @@ asyncPackets.forEach((packet) => {
 
 	// function parameter
 	packet.fields.filter(field => !field.unused).forEach((field) => {
-		asyncPacket += `, ${field.name}: ${field.type == 'string' ? '&str' : ((field.reference ? '&' : '') + parseType(field.type))}`
+		asyncPacket += `, ${field.name}: ${field.type == 'string' ? '&str' : ((isPrimitive(field.type) ? '' : '&') + parseType(field.type))}`
 	});
 
 	asyncPacket += ') {\n';
@@ -136,7 +137,7 @@ syncPackets.forEach((packet) => {
 
 	// have fields as parameters
 	packet.fields.filter(field => !field.unused).forEach((field) => {
-		syncPacket += `, ${field.name}: ${field.type == 'string' ? '&str' : ((field.reference ? '&' : '') + parseType(field.type))}`
+		syncPacket += `, ${field.name}: ${field.type == 'string' ? '&str' : ((isPrimitive(field.type) ? '' : '&') + parseType(field.type))}`
 	});
 
 	syncPacket += ') {\n';
@@ -176,7 +177,7 @@ packetInfo.filter(state => state.name != '__internal__').forEach((state, i) => {
 			// determine if the packet is async or not
 			if(packet.async) {
 				// if async send packet data to the corrisponding async handler function
-				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.filter(f => !f.unused).map(v => (v.reference || v.type == 'string' ? '&' : '') + v.name).join(', ')});`;
+				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.filter(f => !f.unused).map(v => (!isPrimitive(v.type) || v.type == 'string' ? '&' : '') + v.name).join(', ')});`;
 				packetString += `\n\t\t\t\t},`;
 			} else {
 				// otherwise yeet it to the server thread
@@ -232,7 +233,7 @@ console.log('Parsing sync server bound packets into dispatchSyncPacket functions
 let dispatchSyncPacket = '\tmatch &wrapped_packet.packet {';
 syncPackets.forEach((packet, index) => {
 	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? '' : ` {${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}}`}`;
-	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${packet.fields.length > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => (v.reference || v.type == 'string' ? '' : '*') + v.name).join(', ')})`;
+	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${packet.fields.length > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => (!isPrimitive(v.type) || v.type == 'string' ? '' : '*') + v.name).join(', ')})`;
 	if (index < syncPackets.length - 1) {
 		dispatchSyncPacket += ',';
 	}
@@ -320,12 +321,12 @@ type Packet = {
 type Field = {
 	name: string,
 	type: string,
-	unused?: boolean,
-	reference?: boolean
+	unused?: boolean
 }
 
 type Mappings = {
-	types: TypeMap[]
+	types: TypeMap[],
+	primitives: string[]
 }
 
 type TypeMap = {

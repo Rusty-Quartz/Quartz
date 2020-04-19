@@ -138,9 +138,9 @@
 				"async": true,
 				"fields": [
 					{"name": "shared_secret_len", "type": "varint"},
-					{"name": "shared_secret", "type": "byte_array(shared_secret_len as usize)", "reference": true},
+					{"name": "shared_secret", "type": "byte_array(shared_secret_len as usize)"},
 					{"name": "verify_token_len", "type": "varint"},
-					{"name": "verify_token", "type": "byte_array(verify_token_len as usize)", "reference": true}
+					{"name": "verify_token", "type": "byte_array(verify_token_len as usize)"}
 				]
 			},
 			{
@@ -150,7 +150,7 @@
 				"fields": [
 					{"name": "message_id", "type": "varint"},
 					{"name": "successful", "type": "bool"},
-					{"name": "data", "type": "byte_array(packet_len - buffer.cursor())", "reference": true}
+					{"name": "data", "type": "byte_array(packet_len - buffer.cursor())"}
 				]
 			}
 		]
