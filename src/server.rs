@@ -158,7 +158,7 @@ impl<'a> QuartzServer<'a> {
                     Ok(packet_wrapper) => {
                         match packet_wrapper {
                             Some(packet) => {
-                                dispatch_sync_packet(packet, self);
+                                dispatch_sync_packet(&packet, self);
                             },
                             None => break
                         }

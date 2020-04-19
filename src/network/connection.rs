@@ -37,6 +37,8 @@ impl IOHandle {
         }
     }
 
+    // Encrypts the given source bytes if encryption is enabled and writes them to the stream
+    // using the temporary buffer for the encryption.
     fn write_encrypted(encrypter: Option<&mut Crypter>, source: &mut ByteBuffer, temp: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
         if let Some(encrypter) = encrypter {
             temp.resize(source.len());
@@ -47,9 +49,12 @@ impl IOHandle {
         }
     }
 
+    // Decrypts the given buffer after the given offser if encryption is enabled, writing the
+    // decrypted bytes back to the buffer.
     fn decrypt_buffer(&mut self, buffer: &mut ByteBuffer, offset: usize) {
         if let Some(decrypter) = self.decrypter.as_mut() {
             let len = buffer.len() - offset;
+            self.operation_buffer.reset_cursor();
             self.operation_buffer.resize(len);
             self.operation_buffer.write_bytes(&buffer[offset..]);
             decrypter.update(&self.operation_buffer[..], &mut buffer[offset..]).unwrap();
@@ -66,55 +71,87 @@ impl IOHandle {
     }
 
     pub fn write_packet_data(&mut self, packet_data: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
+        // Prepare the operation buffer
         self.operation_buffer.clear();
         let result: Result<()>;
         
+        // We need to check to see if the packet should be compressed
         if self.compression_threshold >= 0 {
+            // We're past the compression threshold so perform the compression
             if packet_data.cursor() >= self.compression_threshold as usize {
                 let data_len = packet_data.cursor();
+
+                // Compress the packet data and write to the operation buffer
                 let mut encoder = ZlibEncoder::new(self.operation_buffer.inner_mut(), Compression::default());
                 encoder.write_all(&packet_data[..]).unwrap();
                 encoder.finish().unwrap();
+
+                // Use the packet data buffer to write the final packet
                 packet_data.clear();
+
+                // Raw length
                 packet_data.write_varint((ByteBuffer::varint_size(data_len as i32) + self.operation_buffer.len()) as i32);
+                // Data length
                 packet_data.write_varint(data_len as i32);
                 packet_data.write_bytes(&self.operation_buffer[..]);
 
                 result = IOHandle::write_encrypted(self.encrypter.as_mut(), packet_data, &mut self.operation_buffer, stream);
-            } else {
+            }
+            // The packet length is not past the threshold so no need to compress, however the header is still modified
+            else {
+                // Raw length
                 self.operation_buffer.write_varint(packet_data.len() as i32 + 1);
-                self.operation_buffer.write_u8(0); // Data length of 0 signals that this packet is uncompressed
+                // Data length of 0 signals that this packet is uncompressed
+                self.operation_buffer.write_u8(0);
                 self.operation_buffer.write_bytes(&packet_data[..]);
 
                 result = IOHandle::write_encrypted(self.encrypter.as_mut(), &mut self.operation_buffer, packet_data, stream);
             }
-        } else {
+        }
+        // The packet does not need to be compressed, so just record the length and write the raw bytes
+        else {
             self.operation_buffer.write_varint(packet_data.len() as i32);
             self.operation_buffer.write_bytes(&packet_data[..]);
 
             result = IOHandle::write_encrypted(self.encrypter.as_mut(), &mut self.operation_buffer, packet_data, stream);
         }
 
-        packet_data.clear();
         result
     }
 
-    pub fn collect_packet(&mut self, packet_buffer: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
-        self.decrypt_buffer(&mut *packet_buffer, 0);
+    // Reads the packet header, collects the remaining bytes and decrypts and decompresses the packet,
+    // returning the final length of the fully processed packet. The curser of the given packet buffer
+    // will start at the packet ID.
+    pub fn collect_packet(&mut self, packet_buffer: &mut ByteBuffer, stream: &mut TcpStream, decrypt: bool) -> Result<usize> {
+        if decrypt {
+            self.decrypt_buffer(&mut *packet_buffer, 0);
+        }
 
         // Read the packet header
+
+        // Length of the packet in its raw, unaltered form
         let raw_len: usize = packet_buffer.read_varint() as usize;
+        // Length of the uncompressed packet data exluding the raw length header
         let mut data_len: usize;
         let compressed: bool;
+
+        // Compression is active
         if self.compression_threshold >= 0 {
+            // Read the length of the uncompressed packet data
             data_len = packet_buffer.read_varint() as usize;
+
+            // If that length is zero, the packet was not compressed
             if data_len == 0 {
                 data_len = raw_len;
                 compressed = false;
-            } else {
+            }
+            // The packet is compressed
+            else {
                 compressed = true;
             }
-        } else {
+        }
+        // Compression is not active
+        else {
             data_len = raw_len;
             compressed = false;
         }
@@ -131,11 +168,18 @@ impl IOHandle {
 
         // Decompress the packet if needed
         if compressed {
-            self.operation_buffer.reset_cursor();
+            self.operation_buffer.clear();
+            // Write all bytes including any potential bytes that are part of another packet
             self.operation_buffer.write_bytes(&packet_buffer[packet_buffer.cursor()..]);
+
+            // Only decompress to the end of this packet
+            let compressed_end = raw_len - packet_buffer.cursor();
+            let mut decoder = ZlibDecoder::new(&self.operation_buffer[..compressed_end]);
+
+            // Prepare the packet buffer for decompression
             packet_buffer.resize(data_len);
             packet_buffer.reset_cursor();
-            let mut decoder = ZlibDecoder::new(&self.operation_buffer[..]);
+
             match decoder.read(&mut packet_buffer[..]) {
                 Ok(read) => if read != data_len {
                     // TODO: Handle properly
@@ -143,9 +187,16 @@ impl IOHandle {
                 },
                 Err(e) => return Err(e)
             };
+
+            // Copy any bytes at the end of the buffer that were not part of this packet
+            if self.operation_buffer.len() > compressed_end {
+                packet_buffer.set_cursor(packet_buffer.len());
+                packet_buffer.write_bytes(&self.operation_buffer[compressed_end..]);
+                packet_buffer.reset_cursor();
+            }
         }
 
-        Ok(())
+        Ok(data_len)
     }
 }
 
@@ -167,8 +218,9 @@ impl WriteHandle {
     }
 
     pub fn send_packet(&mut self, packet: ClientBoundPacket) {
-        serialize(packet, &mut self.packet_buffer);
-        // This clears the packet buffer when done
+        self.packet_buffer.clear();
+        serialize(&packet, &mut self.packet_buffer);
+
         if let Err(e) = self.io_handle.lock().unwrap().write_packet_data(&mut self.packet_buffer, &mut self.stream) {
             error!("Failed to send packet: {}", e);
         }
@@ -202,8 +254,8 @@ impl AsyncClientConnection {
 
     pub fn send_packet(&mut self, packet: ClientBoundPacket) {
         self.packet_buffer.clear();
-        serialize(packet, &mut self.packet_buffer);
-        // This clears the packet buffer when done
+        serialize(&packet, &mut self.packet_buffer);
+
         if let Err(e) = self.io_handle.lock().unwrap().write_packet_data(&mut self.packet_buffer, &mut self.stream) {
             error!("Failed to send packet: {}", e);
         }
@@ -215,11 +267,14 @@ impl AsyncClientConnection {
         }
     }
 
-    pub fn read_packet(&mut self) -> Result<()> {
+    pub fn read_packet(&mut self) -> Result<usize> {
         // More than one packet was read at once, collect the remaining packet and handle it
         if self.packet_buffer.remaining() > 0 {
-            self.packet_buffer.drawback_cursor();
-            return self.io_handle.lock().unwrap().collect_packet(&mut self.packet_buffer, &mut self.stream)
+            // Move the remaining bytes to the beginning of the buffer
+            self.packet_buffer.zero_remaining();
+
+            // Don't decrypt the remaining bytes since that was already handled
+            return self.io_handle.lock().unwrap().collect_packet(&mut self.packet_buffer, &mut self.stream, false)
         }
         // Prepare for the next packet
         else {
@@ -232,13 +287,23 @@ impl AsyncClientConnection {
         // Read the first chunk, this is what blocks the thread
         match self.stream.read(&mut self.packet_buffer[..]) {
             Ok(read) => {
+                // A read of zero bytes means the stream has closed
                 if read == 0 {
                     self.connection_state = ConnectionState::Disconnected;
                     self.packet_buffer.clear();
-                    Ok(())
-                } else {
+                    Ok(0)
+                }
+                // A packet was received
+                else {
+                    // Adjust the buffer length to be that of the bytes read
                     self.packet_buffer.resize(read);
-                    self.io_handle.lock().unwrap().collect_packet(&mut self.packet_buffer, &mut self.stream)
+
+                    // The legacy ping packet has no length prefix, so only collect the packet if it's not legacy
+                    if !(self.connection_state == ConnectionState::Handshake && self.packet_buffer.peek() as i32 == LEGACY_PING_PACKET_ID) {
+                        return self.io_handle.lock().unwrap().collect_packet(&mut self.packet_buffer, &mut self.stream, true);
+                    }
+
+                    Ok(read)
                 }
             },
             Err(e) => Err(e)

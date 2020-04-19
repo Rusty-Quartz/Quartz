@@ -115,7 +115,7 @@ asyncPackets.forEach((packet) => {
 
 	// function parameter
 	packet.fields.filter(field => !field.unused).forEach((field) => {
-		asyncPacket += `, ${field.name}: ${parseType(field.type)}`
+		asyncPacket += `, ${field.name}: ${field.type == 'string' ? '&str' : ((field.reference ? '&' : '') + parseType(field.type))}`
 	});
 
 	asyncPacket += ') {\n';
@@ -136,7 +136,7 @@ syncPackets.forEach((packet) => {
 
 	// have fields as parameters
 	packet.fields.filter(field => !field.unused).forEach((field) => {
-		syncPacket += `, ${field.name}: ${parseType(field.type)}`
+		syncPacket += `, ${field.name}: ${field.type == 'string' ? '&str' : ((field.reference ? '&' : '') + parseType(field.type))}`
 	});
 
 	syncPacket += ') {\n';
@@ -176,7 +176,7 @@ packetInfo.filter(state => state.name != '__internal__').forEach((state, i) => {
 			// determine if the packet is async or not
 			if(packet.async) {
 				// if async send packet data to the corrisponding async handler function
-				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')});`;
+				packetString += `\n\t\t\t\t\tasync_handler.${packet.name.toLowerCase()}(conn, ${packet.fields.filter(f => !f.unused).map(v => (v.reference || v.type == 'string' ? '&' : '') + v.name).join(', ')});`;
 				packetString += `\n\t\t\t\t},`;
 			} else {
 				// otherwise yeet it to the server thread
@@ -218,7 +218,7 @@ client_bound.forEach((packet, i) => {
 
 	// Write each field to buffer
 	packet.fields.forEach((fields) => {
-		packetString += `\n\t\t\tbuffer.write_${fields.type}(${fields.type == 'string' || fields.type == 'byte_array' ? '&' : ''}${fields.name});`;
+		packetString += `\n\t\t\tbuffer.write_${fields.type}(${fields.type == 'string' || fields.type == 'byte_array' ? '' : '*'}${fields.name});`;
 	});
 
 	packetString += `\n\t\t}${i == client_bound.length - 1 ? '' : ','}`;
@@ -229,10 +229,10 @@ client_bound.forEach((packet, i) => {
 serializers += '\n\t}'
 
 console.log('Parsing sync server bound packets into dispatchSyncPacket functions');
-let dispatchSyncPacket = '\tmatch wrapped_packet.packet {';
+let dispatchSyncPacket = '\tmatch &wrapped_packet.packet {';
 syncPackets.forEach((packet, index) => {
 	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? '' : ` {${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}}`}`;
-	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${packet.fields.length > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')})`;
+	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${packet.fields.length > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => (v.reference || v.type == 'string' ? '' : '*') + v.name).join(', ')})`;
 	if (index < syncPackets.length - 1) {
 		dispatchSyncPacket += ',';
 	}
@@ -320,7 +320,8 @@ type Packet = {
 type Field = {
 	name: string,
 	type: string,
-	unused?: boolean
+	unused?: boolean,
+	reference?: boolean
 }
 
 type Mappings = {

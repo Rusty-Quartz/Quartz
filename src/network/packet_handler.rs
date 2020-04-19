@@ -4,6 +4,7 @@ use crate::server::{self, QuartzServer};
 use log::{debug, warn, error};
 
 pub const PROTOCOL_VERSION: i32 = 578;
+pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
 struct AsyncPacketHandler {
 
@@ -28,15 +29,15 @@ impl AsyncPacketHandler {
         conn.send_packet(ClientBoundPacket::Pong {payload});
     }
 
-    fn login_start(&mut self, conn: &mut AsyncClientConnection, name: String) {
+    fn login_start(&mut self, conn: &mut AsyncClientConnection, name: &str) {
 
     }
 
-    fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret_len: i32, shared_secret: Vec<u8>, verify_token_len: i32, verify_token: Vec<u8>) {
+    fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret_len: i32, shared_secret: &Vec<u8>, verify_token_len: i32, verify_token: &Vec<u8>) {
 
     }
 
-    fn login_plugin_response(&mut self, conn: &mut AsyncClientConnection, message_id: i32, successful: bool, data: Vec<u8>) {
+    fn login_plugin_response(&mut self, conn: &mut AsyncClientConnection, message_id: i32, successful: bool, data: &Vec<u8>) {
 
     }
 //#end
@@ -44,7 +45,7 @@ impl AsyncPacketHandler {
 
 impl<'a> QuartzServer<'a> {
 //#SyncPacketHandler
-    fn login_success_server(&mut self, sender: usize, uuid: String, username: String) {
+    fn login_success_server(&mut self, sender: usize, uuid: &str, username: &str) {
 
     }
 
@@ -155,53 +156,53 @@ pub enum ClientBoundPacket {
 //#end
 }
 
-pub fn dispatch_sync_packet(wrapped_packet: WrappedServerPacket, handler: &mut QuartzServer) {
+pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut QuartzServer) {
 //#dispatch_sync_packet
-    match wrapped_packet.packet {
+    match &wrapped_packet.packet {
         ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username),
-        ServerBoundPacket::LegacyPing {payload} => handler.legacy_ping(wrapped_packet.sender, payload),
+        ServerBoundPacket::LegacyPing {payload} => handler.legacy_ping(wrapped_packet.sender, *payload),
         ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender)
     }
 //#end
 }
 
-pub fn serialize(packet: ClientBoundPacket, buffer: &mut ByteBuffer) {
+pub fn serialize(packet: &ClientBoundPacket, buffer: &mut ByteBuffer) {
 //#serialize
     match packet {
         ClientBoundPacket::StatusResponse {json_response} => {
             buffer.write_varint(0x00);
-            buffer.write_string(&json_response);
+            buffer.write_string(json_response);
         },
         ClientBoundPacket::Pong {payload} => {
             buffer.write_varint(0x01);
-            buffer.write_i64(payload);
+            buffer.write_i64(*payload);
         },
         ClientBoundPacket::Disconnect {reason} => {
             buffer.write_varint(0x00);
-            buffer.write_string(&reason);
+            buffer.write_string(reason);
         },
         ClientBoundPacket::EncryptionRequest {server_id, pub_key_len, pub_key, verify_token_len, verify_token} => {
             buffer.write_varint(0x01);
-            buffer.write_string(&server_id);
-            buffer.write_varint(pub_key_len);
-            buffer.write_byte_array(&pub_key);
-            buffer.write_varint(verify_token_len);
-            buffer.write_byte_array(&verify_token);
+            buffer.write_string(server_id);
+            buffer.write_varint(*pub_key_len);
+            buffer.write_byte_array(pub_key);
+            buffer.write_varint(*verify_token_len);
+            buffer.write_byte_array(verify_token);
         },
         ClientBoundPacket::LoginSuccess {uuid, username} => {
             buffer.write_varint(0x02);
-            buffer.write_string(&uuid);
-            buffer.write_string(&username);
+            buffer.write_string(uuid);
+            buffer.write_string(username);
         },
         ClientBoundPacket::SetCompression {threshold} => {
             buffer.write_varint(0x03);
-            buffer.write_varint(threshold);
+            buffer.write_varint(*threshold);
         },
         ClientBoundPacket::LoginPluginRequest {message_id, channel, data} => {
             buffer.write_varint(0x04);
-            buffer.write_varint(message_id);
-            buffer.write_string(&channel);
-            buffer.write_byte_array(&data);
+            buffer.write_varint(*message_id);
+            buffer.write_string(channel);
+            buffer.write_byte_array(data);
         }
     }
 //#end
@@ -213,7 +214,7 @@ macro_rules! invalid_packet {
     };
 }
 
-fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler) {
+fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, packet_len: usize) {
     let buffer = &mut conn.packet_buffer;
     let id = buffer.read_varint();
 
@@ -228,7 +229,7 @@ fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPack
                     let next_state = buffer.read_varint();
                     async_handler.handshake(conn, version, next_state);
                 },
-                0xFE => {
+                LEGACY_PING_PACKET_ID => {
                     let payload = buffer.read_u8();
                     conn.forward_to_server(ServerBoundPacket::LegacyPing {payload});
                 },
@@ -251,20 +252,20 @@ fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPack
             match id {
                 0x00 => {
                     let name = buffer.read_string();
-                    async_handler.login_start(conn, name);
+                    async_handler.login_start(conn, &name);
                 },
                 0x01 => {
                     let shared_secret_len = buffer.read_varint();
                     let shared_secret = buffer.read_byte_array(shared_secret_len as usize);
                     let verify_token_len = buffer.read_varint();
                     let verify_token = buffer.read_byte_array(verify_token_len as usize);
-                    async_handler.encryption_response(conn, shared_secret_len, shared_secret, verify_token_len, verify_token);
+                    async_handler.encryption_response(conn, shared_secret_len, &shared_secret, verify_token_len, &verify_token);
                 },
                 0x02 => {
                     let message_id = buffer.read_varint();
                     let successful = buffer.read_bool();
-                    let data = buffer.read_byte_array(buffer.remaining());
-                    async_handler.login_plugin_response(conn, message_id, successful, data);
+                    let data = buffer.read_byte_array(packet_len - buffer.cursor());
+                    async_handler.login_plugin_response(conn, message_id, successful, &data);
                 },
                 _ => invalid_packet!(id, buffer.len())
             }
@@ -279,7 +280,16 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection) {
 
     while conn.connection_state != ConnectionState::Disconnected {
         match conn.read_packet() {
-            Ok(_) => handle_packet(&mut conn, &mut async_handler),
+            Ok(packet_len) => {
+                // Client disconnected
+                if packet_len == 0 {
+                    break;
+                }
+                // Handle the packet
+                else {
+                    handle_packet(&mut conn, &mut async_handler, packet_len)
+                }
+            },
             Err(e) => {
                 // TODO: handle properly
                 error!("Error in connection handler: {}", e);

@@ -106,7 +106,16 @@ impl ByteBuffer {
         self.cursor = 0;
     }
 
-    pub fn drawback_cursor(&mut self) {
+    #[inline]
+    pub fn set_cursor(&mut self, cursor: usize) {
+        if cursor > self.inner.len() {
+            self.cursor = self.inner.len();
+        } else {
+            self.cursor = cursor;
+        }
+    }
+
+    pub fn zero_remaining(&mut self) {
         if self.cursor == self.inner.len() {
             self.cursor = 0;
             return;
@@ -139,6 +148,15 @@ impl ByteBuffer {
     }
 
     #[inline]
+    pub fn peek(&self) -> u8 {
+        if self.cursor >= self.inner.len() {
+            return 0;
+        }
+
+        self.inner[self.cursor]
+    }
+
+    #[inline]
     pub fn read(&mut self) -> u8 {
         if self.cursor >= self.inner.len() {
             return 0;
@@ -149,6 +167,7 @@ impl ByteBuffer {
         byte
     }
 
+    #[inline]
     pub fn read_bytes(&mut self, dest: &mut Vec<u8>) {
         let len = dest.len();
         dest.copy_from_slice(&self.inner[self.cursor..self.cursor + len]);
