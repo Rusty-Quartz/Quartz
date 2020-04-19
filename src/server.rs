@@ -1,10 +1,11 @@
 use futures::channel::mpsc::UnboundedReceiver;
-use std::thread::JoinHandle;
+use std::thread::{self, JoinHandle};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 use crate::config::Config;
-use crate::network::packet_handler::{WrappedServerPacket, ClientBoundPacket};
+use crate::network::packet_handler::{WrappedServerPacket, ClientBoundPacket, dispatch_sync_packet};
 use crate::network::connection::WriteHandle;
 
 use log::{info, error};
@@ -114,6 +115,16 @@ impl QuartzServer {
         match self.client_list.get(&client_id) {
             Some(client) => client.send_packet(packet),
             None => error!("Could not find client with ID {}, failed to send packet", client_id)
+        }
+    }
+
+    pub fn run(&mut self) {
+        loop {
+            while let Ok(Some(packet)) = self.sync_packet_receiver.try_next() {
+                dispatch_sync_packet(packet, self);
+            }
+
+            thread::sleep(Duration::from_millis(50));
         }
     }
 }

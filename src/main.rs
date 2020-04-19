@@ -112,8 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let server = server::init_server(config, sync_packet_receiver);
     server.add_join_handle("TCP Server Thread", server_handle);
 
-    // Temporary thread blocker
-    let _ = console_interface.read_line();
+    server.run();
 
     server::shutdown_if_initialized();
     logging::cleanup();
