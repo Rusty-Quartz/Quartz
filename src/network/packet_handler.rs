@@ -1,9 +1,9 @@
 use crate::network::connection::{AsyncClientConnection, ConnectionState, WriteHandle};
 use crate::util::ioutil::ByteBuffer;
-use crate::server::QuartzServer;
+use crate::server::*;
 use log::{debug, warn, error};
 
-const PROTOCOL_VERSION: i32 = 578;
+pub const PROTOCOL_VERSION: i32 = 578;
 
 struct AsyncPacketHandler {
 
@@ -93,7 +93,14 @@ impl QuartzServer {
     }
 
     fn status_request(&mut self, sender: usize) {
+        let json_response = self.status();
 
+        let response_packet = ClientBoundPacket::StatusResponse {
+            json_length: json_response.len() as i32,
+            json_response
+        };
+
+        self.send_packet(sender, response_packet);
     }
 //#end
 }

@@ -5,8 +5,10 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use crate::config::Config;
-use crate::network::packet_handler::{WrappedServerPacket, ClientBoundPacket, dispatch_sync_packet};
+use crate::network::packet_handler::{WrappedServerPacket, ClientBoundPacket, dispatch_sync_packet, PROTOCOL_VERSION};
 use crate::network::connection::WriteHandle;
+
+use serde::Serialize;
 
 use log::{info, error};
 
@@ -127,6 +129,30 @@ impl QuartzServer {
             thread::sleep(Duration::from_millis(50));
         }
     }
+    
+    pub fn status(&self) -> String {
+        let player_sample: Vec<ServerPingPlayer> = Vec::new();
+
+        // TODO: add sample players to player_sample
+
+
+        let status_object = ServerPingResponse {
+            version: ServerPingVersion {
+                name: String::from(self.version),
+                protocol: PROTOCOL_VERSION
+            },
+            players: ServerPingPlayersList {
+                max: self.config.max_players,
+                online: self.client_list.len() as u16,
+                sample: player_sample
+            },
+            description: ServerPingChatObject {
+                text: self.config.motd.to_owned()
+            },
+            favicon: None
+        };
+        serde_json::to_string(&status_object).unwrap()
+    }
 }
 
 impl Drop for QuartzServer {
@@ -158,4 +184,37 @@ impl Client {
         // WriteHandle#send_packet should not panic unless there server is already in an unrecoverable state
         self.connection.lock().unwrap().send_packet(packet);
     }
+}
+
+#[derive(Serialize)]
+struct ServerPingResponse {
+    version: ServerPingVersion,
+    players: ServerPingPlayersList,
+    description: ServerPingChatObject,
+    favicon: Option<String>
+
+}
+
+#[derive(Serialize)]
+struct ServerPingVersion {
+    name: String,
+    protocol: i32
+}
+
+#[derive(Serialize)]
+struct ServerPingPlayersList {
+    max: u16,
+    online: u16,
+    sample: Vec<ServerPingPlayer>
+}
+
+#[derive(Serialize)]
+struct ServerPingPlayer {
+    name: String,
+    id: String
+}
+
+#[derive(Serialize)]
+struct ServerPingChatObject {
+    text: String
 }
