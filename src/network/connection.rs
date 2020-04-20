@@ -200,17 +200,18 @@ impl IOHandle {
     }
 }
 
+// A handle for writing packets to a client connection
 pub struct WriteHandle {
-    pub id: usize,
+    pub client_id: usize,
     stream: TcpStream,
     packet_buffer: ByteBuffer,
     io_handle: Arc<Mutex<IOHandle>>
 }
 
 impl WriteHandle {
-    pub fn new(id: usize, stream: TcpStream, io_handle: Arc<Mutex<IOHandle>>) -> Self {
+    pub fn new(client_id: usize, stream: TcpStream, io_handle: Arc<Mutex<IOHandle>>) -> Self {
         WriteHandle {
-            id,
+            client_id,
             stream,
             packet_buffer: ByteBuffer::new(4096),
             io_handle

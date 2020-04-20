@@ -1,7 +1,8 @@
-use crate::network::connection::{AsyncClientConnection, ConnectionState};
-use crate::util::ioutil::ByteBuffer;
-use crate::server::{self, QuartzServer};
 use log::{debug, warn, error};
+
+use crate::network::connection::{AsyncClientConnection, ConnectionState, WriteHandle};
+use crate::util::ioutil::ByteBuffer;
+use crate::server::{self, QuartzServer, Client};
 
 pub const PROTOCOL_VERSION: i32 = 578;
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
@@ -43,16 +44,24 @@ impl AsyncPacketHandler {
 //#end
 }
 
-impl<'a> QuartzServer<'a> {
+impl QuartzServer {
 //#SyncPacketHandler
-    fn login_success_server(&mut self, sender: usize, uuid: &str, username: &str) {
+    fn add_client(&mut self, sender: usize, connection: WriteHandle) {
+        self.client_list.insert(sender, Client::new(connection));
+    }
 
+    fn remove_client(&mut self, sender: usize) {
+        self.client_list.remove(&sender);
+    }
+
+    fn login_success_server(&mut self, sender: usize, uuid: &str, username: &str) {
+        
     }
 
     fn legacy_ping(&mut self, sender: usize) {
         // Load in all needed values from server object
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
-        let version = self.version;
+        let version = server::VERSION;
         let motd = &self.config.motd;
         let player_count = "0"; // TODO: change this once we have a way to get this
         let max_players = self.config.max_players.to_string();
@@ -90,13 +99,27 @@ impl<'a> QuartzServer<'a> {
     }
 
     fn status_request(&mut self, sender: usize) {
-        self.send_packet(sender, ClientBoundPacket::StatusResponse {json_response: self.status()});
+        let json_response = format!(
+            "{{\"version\":{{\"name\":\"{}\",\"protocol\":{}}},\"players\":{{\"max\":{},\"online\":{},\"sample\":[{}]}},\"description\":{{\"text\":\"{}\"}}{}}}",
+            server::VERSION,
+            PROTOCOL_VERSION,
+            self.config.max_players,
+            self.client_list.len(), // TODO: replace with online count
+            "", // This (player sample) is optional to implement, it's not really useful or often used
+            self.config.motd,
+            "" // TODO: implement favicon support
+        );
+        self.send_packet(sender, ClientBoundPacket::StatusResponse {json_response});
     }
 //#end
 }
 
 pub enum ServerBoundPacket {
 //#ServerBoundPacket
+    AddClient {
+        connection: WriteHandle
+    },
+    RemoveClient,
     LoginSuccessServer {
         uuid: String, 
         username: String
@@ -154,10 +177,12 @@ pub enum ClientBoundPacket {
 //#end
 }
 
-pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut QuartzServer) {
+pub fn dispatch_sync_packet(wrapped_packet: WrappedServerPacket, handler: &mut QuartzServer) {
 //#dispatch_sync_packet
-    match &wrapped_packet.packet {
-        ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username),
+    match wrapped_packet.packet {
+        ServerBoundPacket::AddClient {connection} => handler.add_client(wrapped_packet.sender, connection),
+        ServerBoundPacket::RemoveClient => handler.remove_client(wrapped_packet.sender),
+        ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, &uuid, &username),
         ServerBoundPacket::LegacyPing {} => handler.legacy_ping(wrapped_packet.sender, ),
         ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender)
     }
@@ -214,7 +239,12 @@ macro_rules! invalid_packet {
 
 fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, packet_len: usize) {
     let buffer = &mut conn.packet_buffer;
-    let id = buffer.read_varint();
+    let id;
+    if conn.connection_state == ConnectionState::Handshake && buffer.peek() == LEGACY_PING_PACKET_ID as u8 {
+        id = LEGACY_PING_PACKET_ID;
+    } else {
+        id = buffer.read_varint();
+    }
 
 //#handle_packet
     match conn.connection_state {
@@ -296,6 +326,6 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection) {
         }
     }
 
-    server::remove_client(conn.id);
+    conn.forward_to_server(ServerBoundPacket::RemoveClient);
     debug!("Client disconnected");
 }

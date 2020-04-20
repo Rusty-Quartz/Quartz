@@ -18,9 +18,15 @@ use network::{
     connection::AsyncClientConnection,
     packet_handler::{
         handle_async_connection,
-        WrappedServerPacket
+        WrappedServerPacket,
+        ServerBoundPacket
     }
 };
+use server::QuartzServer;
+
+pub mod chat {
+    pub mod component;
+}
 
 pub mod data {
     mod uuid;
@@ -63,11 +69,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port))?;
     listener.set_nonblocking(true).expect("Failed to create non-blocking TCP listener");
 
+    let mut server = QuartzServer::new(config, sync_packet_receiver);
+    server.init();
+
     let server_handle = thread::spawn(move || {
         let mut next_connection_id: usize = 0;
-
-        // Wait for the server to start
-        while !server::is_running() {}
 
         info!("Started TCP Server Thread");
 
@@ -82,10 +88,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     debug!("Client connected");
                     let packet_sender = sync_packet_sender.clone();
-                    let conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
+                    let mut conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
                     next_connection_id += 1;
 
-                    server::add_client(conn.id, conn.create_write_handle());
+                    conn.forward_to_server(ServerBoundPacket::AddClient {
+                        connection: conn.create_write_handle()
+                    });
 
                     thread::spawn(move || {
                         handle_async_connection(conn);
@@ -107,12 +115,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let server = server::init_server(config, sync_packet_receiver);
     server.add_join_handle("TCP Server Thread", server_handle);
 
     server.run();
 
-    server::shutdown_if_initialized();
+    drop(server);
     logging::cleanup();
 
     Ok(())
