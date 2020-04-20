@@ -412,7 +412,7 @@ impl SnbtParser {
             let new_tag = new_tag.unwrap();
 
             // Check if values are of same type
-            if list_tag.len() > 0 && std::mem::discriminant(list_tag.get(list_tag.len()-1)) != std::mem::discriminant(&new_tag) {
+            if !SnbtParser::is_same_types(&list_tag, &new_tag) {
                 return Err(format!("Values in list are not of same type, {}: {}", self.cursor, &self.data[start_index..self.cursor]))
             }
 
@@ -421,11 +421,33 @@ impl SnbtParser {
 
             // check to see if we should close the list or if its malformed
             if &self.data[self.cursor..self.cursor+1] == "]" {self.cursor += 1; break}
-            if &self.data[self.cursor..self.cursor+1] != "," {return Err(format!("Invalid list at {}, {}", &self.cursor, &self.data[start_index..self.cursor]))}
+            if &self.data[self.cursor..self.cursor+1] != "," {return Err(format!("Invalid list at {}, {}", &self.cursor, &self.data[start_index..self.cursor+1]))}
             self.cursor += 1;
         }
 
         // Return the list
         Ok(list_tag)
+    }
+
+    fn is_same_types(list: &NbtList, tag: &NbtTag) -> bool {
+        if list.len() == 0{
+            true
+        }
+        else if std::mem::discriminant(list.get(list.len()-1)) != std::mem::discriminant(&tag) {
+           false
+        }
+        else {
+            match tag {
+                NbtTag::List(val) => {
+                    match list.get(list.len()-1) {
+                        NbtTag::List(val2) => {
+                            SnbtParser::is_same_types(val2, val.get(val.len()-1))
+                        }
+                        _ => false
+                    }
+                },
+                _ => true
+            }
+        }
     }
 }
