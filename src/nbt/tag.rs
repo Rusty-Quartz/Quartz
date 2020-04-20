@@ -209,6 +209,10 @@ impl NbtList {
         self.0.push(tag);
     }
 
+    pub fn get(&self, index: usize) -> &NbtTag {
+        self.0.get(index).unwrap()
+    }
+
     list_add!(i8, add_byte);
     list_add!(i16, add_short);
     list_add!(i32, add_int);

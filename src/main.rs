@@ -38,6 +38,7 @@ pub mod nbt {
     mod tag;
     pub mod read;
     pub mod write;
+    pub mod snbt;
 
     pub use self::tag::NbtTag;
     pub use self::tag::NbtCompound;
