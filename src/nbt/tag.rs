@@ -42,7 +42,7 @@ impl fmt::Display for NbtTag {
             NbtTag::Long(value) => write!(f, "{}L", value),
             NbtTag::Float(value) => write!(f, "{}f", value),
             NbtTag::Double(value) => write!(f, "{}d", value),
-            NbtTag::ByteArray(value) => write_list!(f, value, ", {}b"),
+            NbtTag::ByteArray(value) => write_list!(f, value, ",{}b"),
             NbtTag::StringModUtf8(value) => {
                 let surrounding: char;
                 if value.contains("\"") {
@@ -62,8 +62,8 @@ impl fmt::Display for NbtTag {
             },
             NbtTag::List(value) => write!(f, "{}", value),
             NbtTag::Compound(value) => write!(f, "{}", value),
-            NbtTag::IntArray(value) => write_list!(f, value, ", {}"),
-            NbtTag::LongArray(value) => write_list!(f, value, ", {}L")
+            NbtTag::IntArray(value) => write_list!(f, value, ",{}"),
+            NbtTag::LongArray(value) => write_list!(f, value, ",{}L")
         }
     }
 }
@@ -237,7 +237,7 @@ impl NbtList {
 
 impl fmt::Display for NbtList {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write_list!(f, self, ", {}")
+        write_list!(f, self, ",{}")
     }
 }
 
@@ -400,9 +400,9 @@ impl fmt::Display for NbtCompound {
             let mut i: usize = 0;
             for (name, tag) in self.iter() {
                 if i < self.len() - 1 {
-                    write!(f, "{}: {}, ", name, tag)?;
+                    write!(f, "{}:{},", name, tag)?;
                 } else {
-                    write!(f, "{}: {}", name, tag)?;
+                    write!(f, "{}:{}", name, tag)?;
                 }
                 i += 1;
             }

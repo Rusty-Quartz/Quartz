@@ -41,6 +41,7 @@ mappingsRaw.types.forEach((mapping) => mappings.set(mapping.name, mapping.type))
 
 let parseType = (type:string) => mappings.has(type.split('(')[0]) ? mappings.get(type.split('(')[0]) : type.split('(')[0];
 let isReference = (field:Field) => !mappingsRaw.primitives.includes(field.type) && !field.pass_raw;
+let usedFields = (packet:Packet) => packet.fields.filter(field => !field.unused).length
 
 
 // Read all the states and packets
@@ -70,7 +71,7 @@ let packetEnumParser = (packetArr: Packet[]):string => {
 	let packetEnum = '';
 	packetArr.forEach((packet, i) => {
 		// If there are no fields just output an element of the enum with the name of the packet
-		if(packet.fields.filter(field => !field.unused).length == 0) {
+		if(usedFields(packet) == 0) {
 			packetEnum += `\t${packet.name.replace(/_/g, '')}${(i == packetArr.length - 1 ? '' : ',')}\n`;
 			return
 		}
@@ -81,7 +82,7 @@ let packetEnumParser = (packetArr: Packet[]):string => {
 		
 		packet.fields.filter(field => !field.unused).forEach((field, i) => {
 			// format the fields into rust struct elements
-			packetString += `\n\t\t${field.name}: ${parseType(field.type)}${i == packet.fields.length-1 ? '' : ', '}`;
+			packetString += `\n\t\t${field.name}: ${parseType(field.type)}${i == usedFields(packet) - 1 ? '' : ', '}`;
 		});
 		
 		packetString += `\n\t}${(i == packetArr.length - 1 ? '' : ',')}\n`;
@@ -181,14 +182,14 @@ packetInfo.filter(state => state.name != '__internal__').forEach((state, i) => {
 				packetString += `\n\t\t\t\t},`;
 			} else {
 				// otherwise yeet it to the server thread
-				packetString += `\n\t\t\t\t\tconn.forward_to_server(ServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.filter(field => !field.unused).length == 0 ? ');' : ' {'}`;
+				packetString += `\n\t\t\t\t\tconn.forward_to_server(ServerBoundPacket::${packet.name.replace(/_/g, '')}${usedFields(packet) == 0 ? ');' : ' {'}`;
 
 				// if no fields then just close the function without defining parameters for the struct
-				if (packet.fields.filter(field => !field.unused).length == 0) return stateString += `${packetString}\n\t\t\t\t},`;
+				if (usedFields(packet) == 0) return stateString += `${packetString}\n\t\t\t\t},`;
 
 				// put parameters for struct
 				packet.fields.filter(field => !field.unused).forEach((field, i) => {
-					packetString += `${field.name}${i == packet.fields.length - 1 ? '' : ', '}`;
+					packetString += `${field.name}${i == usedFields(packet) - 1 ? '' : ', '}`;
 				});
 
 				packetString += `});\n\t\t\t\t},`;
@@ -230,10 +231,10 @@ client_bound.forEach((packet, i) => {
 serializers += '\n\t}'
 
 console.log('Parsing sync server bound packets into dispatchSyncPacket functions');
-let dispatchSyncPacket = '\tmatch wrapped_packet.packet {';
+let dispatchSyncPacket = '\tmatch &wrapped_packet.packet {';
 syncPackets.forEach((packet, index) => {
-	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${packet.fields.length == 0 ? '' : ` {${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}}`}`;
-	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${packet.fields.length > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => (isReference(v) ? '&' : '') + v.name).join(', ')})`;
+	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${usedFields(packet) == 0 ? '' : ` {${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}}`}`;
+	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${usedFields(packet) > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')})`;
 	if (index < syncPackets.length - 1) {
 		dispatchSyncPacket += ',';
 	}

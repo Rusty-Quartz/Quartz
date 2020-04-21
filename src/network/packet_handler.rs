@@ -1,8 +1,10 @@
 use log::{debug, warn, error};
 
-use crate::network::connection::{AsyncClientConnection, ConnectionState, WriteHandle};
+use serde_json::json;
+
+use crate::network::connection::{AsyncClientConnection, ConnectionState};
 use crate::util::ioutil::ByteBuffer;
-use crate::server::{self, QuartzServer, Client};
+use crate::server::{self, QuartzServer};
 
 pub const PROTOCOL_VERSION: i32 = 578;
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
@@ -27,7 +29,7 @@ impl AsyncPacketHandler {
     }
 
     fn ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
-        conn.send_packet(ClientBoundPacket::Pong {payload});
+        conn.send_packet(&ClientBoundPacket::Pong {payload});
     }
 
     fn login_start(&mut self, conn: &mut AsyncClientConnection, name: &str) {
@@ -46,14 +48,6 @@ impl AsyncPacketHandler {
 
 impl QuartzServer {
 //#SyncPacketHandler
-    fn add_client(&mut self, sender: usize, connection: WriteHandle) {
-        self.client_list.insert(sender, Client::new(connection));
-    }
-
-    fn remove_client(&mut self, sender: usize) {
-        self.client_list.remove(&sender);
-    }
-
     fn login_success_server(&mut self, sender: usize, uuid: &str, username: &str) {
         
     }
@@ -95,31 +89,34 @@ impl QuartzServer {
             buffer.write_u16(bytes);
         }
 
-        self.send_buffer(sender, buffer);
+        self.client_list.send_buffer(sender, &buffer);
     }
 
     fn status_request(&mut self, sender: usize) {
-        let json_response = format!(
-            "{{\"version\":{{\"name\":\"{}\",\"protocol\":{}}},\"players\":{{\"max\":{},\"online\":{},\"sample\":[{}]}},\"description\":{{\"text\":\"{}\"}}{}}}",
-            server::VERSION,
-            PROTOCOL_VERSION,
-            self.config.max_players,
-            self.client_list.len(), // TODO: replace with online count
-            "", // This (player sample) is optional to implement, it's not really useful or often used
-            self.config.motd,
-            "" // TODO: implement favicon support
-        );
-        self.send_packet(sender, ClientBoundPacket::StatusResponse {json_response});
+        let json_response = json!({
+            "version": {
+                "name": server::VERSION,
+                "protocol": PROTOCOL_VERSION
+            },
+            "players": {
+                "max": self.config.max_players,
+                "online": self.client_list.online_count(),
+                "sample": [] // Maybe implement this in the future
+            },
+            "description": self.config.motd
+        });
+
+        // TODO: implement favicon
+
+        self.client_list.send_packet(sender, &ClientBoundPacket::StatusResponse {
+            json_response: json_response.to_string()
+        });
     }
 //#end
 }
 
 pub enum ServerBoundPacket {
 //#ServerBoundPacket
-    AddClient {
-        connection: WriteHandle
-    },
-    RemoveClient,
     LoginSuccessServer {
         uuid: String, 
         username: String
@@ -177,13 +174,11 @@ pub enum ClientBoundPacket {
 //#end
 }
 
-pub fn dispatch_sync_packet(wrapped_packet: WrappedServerPacket, handler: &mut QuartzServer) {
+pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut QuartzServer) {
 //#dispatch_sync_packet
-    match wrapped_packet.packet {
-        ServerBoundPacket::AddClient {connection} => handler.add_client(wrapped_packet.sender, connection),
-        ServerBoundPacket::RemoveClient => handler.remove_client(wrapped_packet.sender),
-        ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, &uuid, &username),
-        ServerBoundPacket::LegacyPing {} => handler.legacy_ping(wrapped_packet.sender, ),
+    match &wrapped_packet.packet {
+        ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username),
+        ServerBoundPacket::LegacyPing => handler.legacy_ping(wrapped_packet.sender),
         ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender)
     }
 //#end
@@ -326,6 +321,6 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection) {
         }
     }
 
-    conn.forward_to_server(ServerBoundPacket::RemoveClient);
+    //conn.forward_to_server(ServerBoundPacket::RemoveClient);
     debug!("Client disconnected");
 }

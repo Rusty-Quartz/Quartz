@@ -18,8 +18,7 @@ use network::{
     connection::AsyncClientConnection,
     packet_handler::{
         handle_async_connection,
-        WrappedServerPacket,
-        ServerBoundPacket
+        WrappedServerPacket
     }
 };
 use server::QuartzServer;
@@ -71,6 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     listener.set_nonblocking(true).expect("Failed to create non-blocking TCP listener");
 
     let mut server = QuartzServer::new(config, sync_packet_receiver);
+    let client_list = server.client_list.clone();
     server.init();
 
     let server_handle = thread::spawn(move || {
@@ -89,15 +89,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     debug!("Client connected");
                     let packet_sender = sync_packet_sender.clone();
-                    let mut conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
+                    let conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
                     next_connection_id += 1;
 
-                    conn.forward_to_server(ServerBoundPacket::AddClient {
-                        connection: conn.create_write_handle()
-                    });
+                    client_list.add_client(conn.id, conn.create_write_handle());
 
+                    let client_list_clone = client_list.clone();
                     thread::spawn(move || {
+                        let client_id = conn.id;
                         handle_async_connection(conn);
+                        client_list_clone.remove_client(client_id);
                     });
                 },
 

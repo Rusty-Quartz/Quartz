@@ -3,18 +3,6 @@
 		"name": "__internal__",
 		"server_bound": [
 			{
-				"name": "Add_Client",
-				"id": "0xFF",
-				"fields": [
-					{"name": "connection", "type": "WriteHandle", "pass_raw": true}
-				]
-			},
-			{
-				"name": "Remove_Client",
-				"id": "0xFF",
-				"fields": []
-			},
-			{
 				"name": "Login_Success_Server",
 				"id": "0xFF",
 				"fields": [

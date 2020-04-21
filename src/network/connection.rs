@@ -218,16 +218,16 @@ impl WriteHandle {
         }
     }
 
-    pub fn send_packet(&mut self, packet: ClientBoundPacket) {
+    pub fn send_packet(&mut self, packet: &ClientBoundPacket) {
         self.packet_buffer.clear();
-        serialize(&packet, &mut self.packet_buffer);
+        serialize(packet, &mut self.packet_buffer);
 
         if let Err(e) = self.io_handle.lock().unwrap().write_packet_data(&mut self.packet_buffer, &mut self.stream) {
             error!("Failed to send packet: {}", e);
         }
     }
 
-    pub fn send_buffer(&mut self, buffer: ByteBuffer) {
+    pub fn send_buffer(&mut self, buffer: &ByteBuffer) {
         if let Err(e) = self.stream.write_all(&buffer[..]) {
             error!("Failed to send buffer: {}", e);
         }
@@ -259,9 +259,9 @@ impl AsyncClientConnection {
         WriteHandle::new(self.id, self.stream.try_clone().expect("Failed to clone client connection stream"), self.io_handle.clone())
     }
 
-    pub fn send_packet(&mut self, packet: ClientBoundPacket) {
+    pub fn send_packet(&mut self, packet: &ClientBoundPacket) {
         self.packet_buffer.clear();
-        serialize(&packet, &mut self.packet_buffer);
+        serialize(packet, &mut self.packet_buffer);
 
         if let Err(e) = self.io_handle.lock().unwrap().write_packet_data(&mut self.packet_buffer, &mut self.stream) {
             error!("Failed to send packet: {}", e);

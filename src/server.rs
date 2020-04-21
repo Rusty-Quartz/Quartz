@@ -1,6 +1,6 @@
 use std::thread::{self, JoinHandle};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, Duration};
 
@@ -23,7 +23,7 @@ pub fn is_running() -> bool {
 
 pub struct QuartzServer {
     pub config: Config,
-    pub client_list: HashMap<usize, Client>,
+    pub client_list: ClientList,
     sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
     join_handles: HashMap<String, JoinHandle<()>>
 }
@@ -36,7 +36,7 @@ impl QuartzServer {
 
         QuartzServer {
             config,
-            client_list: HashMap::new(),
+            client_list: ClientList::new(),
             sync_packet_receiver,
             join_handles: HashMap::new()
         }
@@ -48,21 +48,6 @@ impl QuartzServer {
 
     pub fn add_join_handle(&mut self, thread_name: &str, handle: JoinHandle<()>) {
         self.join_handles.insert(thread_name.to_owned(), handle);
-    }
-
-    pub fn send_packet(&self, client_id: usize, packet: ClientBoundPacket) {
-        match self.client_list.get(&client_id) {
-            Some(client) => client.send_packet(packet),
-            None => error!("Could not find client with ID {}, failed to send packet", client_id)
-        }
-    }
-
-    // This should be used ONLY for the legacy ping response
-    pub fn send_buffer(&self, client_id: usize, buffer: ByteBuffer) {
-        match self.client_list.get(&client_id) {
-            Some(client) => client.send_buffer(buffer),
-            None => error!("Could not fine client with ID {}, failed to send buffer", client_id)
-        }
     }
 
     pub fn run(&mut self) {
@@ -98,7 +83,7 @@ impl QuartzServer {
                 Ok(packet_wrapper) => {
                     match packet_wrapper {
                         Some(packet) => {
-                            dispatch_sync_packet(packet, self);
+                            dispatch_sync_packet(&packet, self);
                         },
                         None => break
                     }
@@ -120,29 +105,64 @@ impl<'a> Drop for QuartzServer {
     }
 }
 
-#[derive(Clone)]
-pub struct Client {
-    connection: Arc<Mutex<WriteHandle>>,
-    player_id: Option<usize>
+#[repr(transparent)]
+pub struct ClientList(Arc<Mutex<HashMap<usize, Client>>>);
+
+impl ClientList {
+    pub fn new() -> Self {
+        ClientList(Arc::new(Mutex::new(HashMap::new())))
+    }
+
+    fn lock(&self) -> MutexGuard<HashMap<usize, Client>> {
+        match self.0.lock() {
+            Ok(guard) => guard,
+            Err(_) => panic!("Client list mutex poisoned.")
+        }
+    }
+
+    pub fn add_client(&self, client_id: usize, connection: WriteHandle) {
+        self.lock().insert(client_id, Client::new(connection));
+    }
+
+    pub fn remove_client(&self, client_id: usize) {
+        self.lock().remove(&client_id);
+    }
+
+    pub fn online_count(&self) -> usize {
+        self.lock().iter().map(|(_id, client)| client.player_id).flatten().count()
+    }
+
+    pub fn send_packet(&self, client_id: usize, packet: &ClientBoundPacket) {
+        match self.lock().get_mut(&client_id) {
+            Some(client) => client.connection.send_packet(packet),
+            None => warn!("Attempted to send packet to disconnected client.")
+        }
+    }
+
+    pub fn send_buffer(&self, client_id: usize, buffer: &ByteBuffer) {
+        match self.lock().get_mut(&client_id) {
+            Some(client) => client.connection.send_buffer(buffer),
+            None => warn!("Attempted to send buffer to disconnected client.")
+        }
+    }
+}
+
+impl Clone for ClientList {
+    fn clone(&self) -> Self {
+        ClientList(self.0.clone())
+    }
+}
+
+struct Client {
+    pub connection: WriteHandle,
+    pub player_id: Option<usize>
 }
 
 impl Client {
     pub fn new(connection: WriteHandle) -> Self {
         Client {
-            connection: Arc::new(Mutex::new(connection)),
+            connection,
             player_id: None
         }
-    }
-
-    // Note: blocks the thread
-    pub fn send_packet(&self, packet: ClientBoundPacket) {
-        // WriteHandle#send_packet should not panic unless there server is already in an unrecoverable state
-        self.connection.lock().unwrap().send_packet(packet);
-    }
-
-    // Note: blocks the thread
-    // This should ONLY be used for the legacy ping response
-    pub fn send_buffer(&self, buffer: ByteBuffer) {
-        self.connection.lock().unwrap().send_buffer(buffer);
     }
 }
