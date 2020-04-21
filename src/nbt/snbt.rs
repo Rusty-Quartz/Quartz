@@ -2,6 +2,8 @@ use crate::nbt::*;
 
 use regex::Regex;
 
+use log::*;
+
 use lazy_static::lazy_static;
 
 pub struct SnbtParser {
@@ -107,7 +109,7 @@ impl SnbtParser {
             },
 
             _ => {
-                Err(format!("Error parsing compound tag at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
+                Err(format!("Error parsing compound tag ending at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
             }
         }
     }
@@ -208,6 +210,7 @@ impl SnbtParser {
             static ref SHORT: Regex = Regex::new(r"\d+(?:(s|S))").unwrap();
             static ref FLOAT: Regex = Regex::new(r"(\d+(\.\d+)?)(?:(f|F))").unwrap();
             static ref INT: Regex = Regex::new(r"\d+").unwrap();
+            static ref NOT_INT: Regex = Regex::new(r"[\d.]+(d|D|l|L|b|B|s|S|f|F)").unwrap(); // part of int test, makes sure there isn't a letter after the num
         }
         
         // Don't go out of bounds
@@ -268,7 +271,7 @@ impl SnbtParser {
                 output
             },
 
-            num if INT.is_match(num) && !num.ends_with("l") => {
+            num if INT.is_match(num) && !NOT_INT.is_match(num) => {
                 let capture = INT.find(&self.data[self.cursor..limit]);
     
                 // Make sure int exists and is at the current index
