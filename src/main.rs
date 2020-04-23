@@ -23,6 +23,8 @@ use network::{
 };
 use server::QuartzServer;
 
+use openssl::rsa::Rsa;
+
 pub mod chat {
     pub mod component;
 }
@@ -78,6 +80,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         info!("Started TCP Server Thread");
 
+        let key_pair = Arc::new(Rsa::generate(1024).unwrap());
+
         loop {
             match listener.accept() {
                 // Successful connection
@@ -92,12 +96,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
                     next_connection_id += 1;
 
+                    let key_pair_clone = key_pair.clone();
+
                     client_list.add_client(conn.id, conn.create_write_handle());
 
                     let client_list_clone = client_list.clone();
                     thread::spawn(move || {
                         let client_id = conn.id;
-                        handle_async_connection(conn);
+                        handle_async_connection(conn, key_pair_clone);
                         client_list_clone.remove_client(client_id);
                     });
                 },

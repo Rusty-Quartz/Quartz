@@ -274,6 +274,10 @@ impl AsyncClientConnection {
         }
     }
 
+    pub fn initiate_encryption(&mut self, shared_secret: &[u8]) {
+        self.io_handle.lock().unwrap().enable_encryption(shared_secret)
+    }
+
     pub fn read_packet(&mut self) -> Result<usize> {
         // More than one packet was read at once, collect the remaining packet and handle it
         if self.packet_buffer.remaining() > 0 {

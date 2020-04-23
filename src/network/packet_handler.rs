@@ -1,16 +1,44 @@
 use log::{debug, warn, error};
 
+use serde::Deserialize;
 use serde_json::json;
+
+use openssl::rsa::{Rsa, Padding};
+use openssl::pkey::Private;
+use openssl::sha;
+
+use std::sync::Arc;
+
+use rand::{thread_rng, Rng};
+
+use regex::Regex;
+
+use lazy_static::lazy_static;
+
+use hex::ToHex;
 
 use crate::network::connection::{AsyncClientConnection, ConnectionState};
 use crate::util::ioutil::ByteBuffer;
 use crate::server::{self, QuartzServer};
+use crate::data::Uuid;
 
 pub const PROTOCOL_VERSION: i32 = 578;
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
 struct AsyncPacketHandler {
+    key_pair: Arc<Rsa<Private>>,
+    username: String,
+    verify_token: Vec<u8>
+}
 
+impl AsyncPacketHandler {
+    fn new(key_pair: Arc<Rsa<Private>>) -> Self {
+        AsyncPacketHandler {
+            key_pair,
+            username: String::new(),
+            verify_token: Vec::new()
+        }
+    }
 }
 
 impl AsyncPacketHandler {
@@ -33,11 +61,102 @@ impl AsyncPacketHandler {
     }
 
     fn login_start(&mut self, conn: &mut AsyncClientConnection, name: &str) {
+        self.username = String::from(name);
 
+        let pub_key_der = self.key_pair.public_key_to_der().unwrap(); 
+
+        let mut verify_token = [0_u8; 4];
+        thread_rng().fill(&mut verify_token);
+
+        self.verify_token = verify_token.to_vec();
+
+        conn.send_packet(&ClientBoundPacket::EncryptionRequest {
+            server_id: String::from(""),
+            pub_key_len: pub_key_der.len() as i32,
+            pub_key: pub_key_der,
+            verify_token_len: verify_token.len() as i32,
+            verify_token: verify_token.to_vec()
+        })
     }
 
     fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret: &Vec<u8>, verify_token: &Vec<u8>) {
 
+        let mut decrypted_verify = vec![0; self.key_pair.size() as usize];
+        
+        self.key_pair.private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1).unwrap();
+        
+        decrypted_verify = decrypted_verify[..self.verify_token.len()].to_vec();
+        if self.verify_token != decrypted_verify {
+            error!("verify for client {} didn't match, {:x?}, {:x?}", conn.id, self.verify_token, decrypted_verify);
+            return conn.send_packet(&ClientBoundPacket::Disconnect {
+                reason: String::from("Error verifying encryption")
+            });
+        }
+
+        let mut hasher = sha::Sha1::new();
+
+        let mut decrypted_secret = vec![0; self.key_pair.size() as usize];
+        self.key_pair.private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1).unwrap();
+        decrypted_secret = decrypted_secret[..16].to_vec();
+        
+        hasher.update(decrypted_secret.as_slice());
+        hasher.update(&*self.key_pair.public_key_to_der().unwrap());
+        
+        let mut hash = hasher.finish();
+        let hash_hex;
+        
+        // Big thanks to https://gist.github.com/RoccoDev/8fa130f1946f89702f799f89b8469bc9 for writing this minecraft hashing code
+        lazy_static! {
+            static ref LEADING_ZERO_REGEX: Regex = Regex::new(r#"^0+"#).unwrap();
+        }
+
+        let negative = (hash[0] & 0x80) == 0x80;
+        
+        if negative {
+            let mut carry = true;
+            for i in (0..hash.len()).rev() {
+                hash[i] = !hash[i] & 0xff;
+                if carry {
+                    carry = hash[i] == 0xff;
+                    hash[i] = hash[i] + 1;
+                }
+            }
+            
+            hash_hex = format!("-{}", LEADING_ZERO_REGEX.replace(&hash.encode_hex::<String>(), ""));
+        }
+        else {
+            hash_hex = LEADING_ZERO_REGEX.replace(&hash.encode_hex::<String>(), "").to_string();
+        }
+        
+        // TODO: Implement prevent-proxy-connections by adding client ip to post req
+        let url = format!("https://sessionserver.mojang.com/session/minecraft/hasJoined?username={}&serverId={}", &self.username, &hash_hex);
+
+        #[derive(Deserialize)]
+        struct Properties {
+            name: String,
+            value: String,
+            signature: String
+        }
+
+        #[derive(Deserialize)]
+        struct AuthResponse {
+            id: String,
+            name: String,
+            properties: [Properties; 1]
+        }
+
+
+        let res: AuthResponse = reqwest::blocking::get(&url).unwrap().json().unwrap();
+
+        conn.initiate_encryption(decrypted_secret.as_slice());
+
+        // Currently disabled cause no need rn, will enable via config later
+        // conn.send_packet(&ClientBoundPacket::SetCompression{threshhold: /* maximum size of uncompressed packet */})
+
+        conn.send_packet(&ClientBoundPacket::LoginSuccess {
+            uuid: format!("{}", Uuid::from_string(&res.id).unwrap()),
+            username: self.username.clone()
+        });
     }
 
     fn login_plugin_response(&mut self, conn: &mut AsyncClientConnection, message_id: i32, successful: bool, data: &Vec<u8>) {
@@ -298,8 +417,8 @@ fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPack
 //#end
 }
 
-pub fn handle_async_connection(mut conn: AsyncClientConnection) {
-    let mut async_handler = AsyncPacketHandler {};
+pub fn handle_async_connection(mut conn: AsyncClientConnection, private_key: Arc<Rsa<Private>>) {
+    let mut async_handler = AsyncPacketHandler::new(private_key);
 
     while conn.connection_state != ConnectionState::Disconnected {
         match conn.read_packet() {

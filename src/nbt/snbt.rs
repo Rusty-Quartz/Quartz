@@ -2,8 +2,6 @@ use crate::nbt::*;
 
 use regex::Regex;
 
-use log::*;
-
 use lazy_static::lazy_static;
 
 pub struct SnbtParser {
