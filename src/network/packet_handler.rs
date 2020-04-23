@@ -61,14 +61,16 @@ impl AsyncPacketHandler {
     }
 
     fn login_start(&mut self, conn: &mut AsyncClientConnection, name: &str) {
+        // Store username for later
         self.username = String::from(name);
 
-        let pub_key_der = self.key_pair.public_key_to_der().unwrap(); 
-
+        // Generate and store verify token
         let mut verify_token = [0_u8; 4];
         thread_rng().fill(&mut verify_token);
-
         self.verify_token = verify_token.to_vec();
+        
+        // Format public key to send to client
+        let pub_key_der = self.key_pair.public_key_to_der().unwrap(); 
 
         conn.send_packet(&ClientBoundPacket::EncryptionRequest {
             server_id: String::from(""),
@@ -81,11 +83,11 @@ impl AsyncPacketHandler {
 
     fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret: &Vec<u8>, verify_token: &Vec<u8>) {
 
+        // Decrypt and check verify token
         let mut decrypted_verify = vec![0; self.key_pair.size() as usize];
-        
         self.key_pair.private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1).unwrap();
-        
         decrypted_verify = decrypted_verify[..self.verify_token.len()].to_vec();
+
         if self.verify_token != decrypted_verify {
             error!("verify for client {} didn't match, {:x?}, {:x?}", conn.id, self.verify_token, decrypted_verify);
             return conn.send_packet(&ClientBoundPacket::Disconnect {
@@ -93,11 +95,13 @@ impl AsyncPacketHandler {
             });
         }
 
-        let mut hasher = sha::Sha1::new();
-
+        // Decrypt shared secret
         let mut decrypted_secret = vec![0; self.key_pair.size() as usize];
         self.key_pair.private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1).unwrap();
         decrypted_secret = decrypted_secret[..16].to_vec();
+        
+        // Generate server id hash
+        let mut hasher = sha::Sha1::new();
         
         hasher.update(decrypted_secret.as_slice());
         hasher.update(&*self.key_pair.public_key_to_der().unwrap());
@@ -127,10 +131,13 @@ impl AsyncPacketHandler {
         else {
             hash_hex = LEADING_ZERO_REGEX.replace(&hash.encode_hex::<String>(), "").to_string();
         }
-        
+
+
+        // use hash and username to generate link to mojang's servers
         // TODO: Implement prevent-proxy-connections by adding client ip to post req
         let url = format!("https://sessionserver.mojang.com/session/minecraft/hasJoined?username={}&serverId={}", &self.username, &hash_hex);
 
+        // Structs used to allow serde to parse response json into struct
         #[derive(Deserialize)]
         struct Properties {
             name: String,
@@ -145,9 +152,10 @@ impl AsyncPacketHandler {
             properties: [Properties; 1]
         }
 
-
+        // Make a put request
         let res: AuthResponse = reqwest::blocking::get(&url).unwrap().json().unwrap();
 
+        // Initiate encryption
         conn.initiate_encryption(decrypted_secret.as_slice());
 
         // Currently disabled cause no need rn, will enable via config later
