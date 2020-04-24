@@ -67,14 +67,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     logging::init_logger(console_interface.clone())?;
 
-    match component!("&(gold,underline)blah &(bold)blah {bleh &(red)bloop} &(!underline)ope") {
-        Ok(c) => {
-            info!("{}", c);
-            info!("{}", serde_json::to_string(&c)?);
-        },
-        Err(msg) => error!("{}", msg)
-    }
-
     let config = load_config(String::from("./config.json"));
     let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded::<WrappedServerPacket>();
 
