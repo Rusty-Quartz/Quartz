@@ -147,6 +147,7 @@
 				"name": "Login_Plugin_Response",
 				"id": "0x02",
 				"async": true,
+				"unimplemented": true,
 				"fields": [
 					{"name": "message_id", "type": "varint"},
 					{"name": "successful", "type": "bool"},

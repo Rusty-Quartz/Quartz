@@ -1,5 +1,3 @@
-mod config;
-
 use std::error::Error;
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -13,7 +11,7 @@ use linefeed::Interface;
 
 use log::*;
 
-use config::load_config;
+use config::*;
 use network::{
     connection::AsyncClientConnection,
     packet_handler::{
@@ -58,6 +56,7 @@ pub mod util {
     pub mod ioutil;
 }
 
+mod config;
 mod logging;
 mod server;
 
@@ -67,7 +66,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     logging::init_logger(console_interface.clone())?;
 
-    let config = load_config(String::from("./config.json"));
+    let config: Config;
+    match load_config(String::from("./config.json")) {
+        Ok(cfg) => config = cfg,
+        Err(e) => {
+            error!("Failed to load config: {}", e);
+            return Ok(())
+        }
+    }
+
     let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded::<WrappedServerPacket>();
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port))?;

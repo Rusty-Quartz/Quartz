@@ -237,7 +237,8 @@ impl WriteHandle {
 pub struct AsyncClientConnection {
     pub id: usize,
     pub stream: TcpStream,
-    pub packet_buffer: ByteBuffer,
+    pub read_buffer: ByteBuffer,
+    write_buffer: ByteBuffer,
     io_handle: Arc<Mutex<IOHandle>>,
     pub connection_state: ConnectionState,
     sync_packet_sender: UnboundedSender<WrappedServerPacket>
@@ -248,7 +249,8 @@ impl AsyncClientConnection {
         AsyncClientConnection {
             id,
             stream,
-            packet_buffer: ByteBuffer::new(4096),
+            read_buffer: ByteBuffer::new(4096),
+            write_buffer: ByteBuffer::new(4096),
             io_handle: Arc::new(Mutex::new(IOHandle::new())),
             connection_state: ConnectionState::Handshake,
             sync_packet_sender
@@ -260,10 +262,10 @@ impl AsyncClientConnection {
     }
 
     pub fn send_packet(&mut self, packet: &ClientBoundPacket) {
-        self.packet_buffer.clear();
-        serialize(packet, &mut self.packet_buffer);
+        self.write_buffer.clear();
+        serialize(packet, &mut self.write_buffer);
 
-        if let Err(e) = self.io_handle.lock().unwrap().write_packet_data(&mut self.packet_buffer, &mut self.stream) {
+        if let Err(e) = self.io_handle.lock().unwrap().write_packet_data(&mut self.write_buffer, &mut self.stream) {
             error!("Failed to send packet: {}", e);
         }
     }
@@ -280,38 +282,38 @@ impl AsyncClientConnection {
 
     pub fn read_packet(&mut self) -> Result<usize> {
         // More than one packet was read at once, collect the remaining packet and handle it
-        if self.packet_buffer.remaining() > 0 {
+        if self.read_buffer.remaining() > 0 {
             // Move the remaining bytes to the beginning of the buffer
-            self.packet_buffer.zero_remaining();
+            self.read_buffer.zero_remaining();
 
             // Don't decrypt the remaining bytes since that was already handled
-            return self.io_handle.lock().unwrap().collect_packet(&mut self.packet_buffer, &mut self.stream, false)
+            return self.io_handle.lock().unwrap().collect_packet(&mut self.read_buffer, &mut self.stream, false)
         }
         // Prepare for the next packet
         else {
-            self.packet_buffer.reset_cursor();
+            self.read_buffer.reset_cursor();
         }
 
         // Inflate the buffer so we can read to its capacity
-        self.packet_buffer.inflate();
+        self.read_buffer.inflate();
 
         // Read the first chunk, this is what blocks the thread
-        match self.stream.read(&mut self.packet_buffer[..]) {
+        match self.stream.read(&mut self.read_buffer[..]) {
             Ok(read) => {
                 // A read of zero bytes means the stream has closed
                 if read == 0 {
                     self.connection_state = ConnectionState::Disconnected;
-                    self.packet_buffer.clear();
+                    self.read_buffer.clear();
                     Ok(0)
                 }
                 // A packet was received
                 else {
                     // Adjust the buffer length to be that of the bytes read
-                    self.packet_buffer.resize(read);
+                    self.read_buffer.resize(read);
 
                     // The legacy ping packet has no length prefix, so only collect the packet if it's not legacy
-                    if !(self.connection_state == ConnectionState::Handshake && self.packet_buffer.peek() as i32 == LEGACY_PING_PACKET_ID) {
-                        return self.io_handle.lock().unwrap().collect_packet(&mut self.packet_buffer, &mut self.stream, true);
+                    if !(self.connection_state == ConnectionState::Handshake && self.read_buffer.peek() as i32 == LEGACY_PING_PACKET_ID) {
+                        return self.io_handle.lock().unwrap().collect_packet(&mut self.read_buffer, &mut self.stream, true);
                     }
 
                     Ok(read)

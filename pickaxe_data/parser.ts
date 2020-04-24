@@ -113,11 +113,11 @@ asyncPackets.forEach((packet) => {
 	let asyncPacket = '';
 
 	// Function definition header
-	asyncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self, conn: &mut AsyncClientConnection`;
+	asyncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self, ${packet.unimplemented ? '_' : ''}conn: &mut AsyncClientConnection`;
 
 	// function parameter
 	packet.fields.filter(field => !field.unused).forEach((field) => {
-		asyncPacket += `, ${field.name}: ${field.type == 'string' ? '&str' : ((isReference(field) ? '&' : '') + parseType(field.type))}`
+		asyncPacket += `, ${(packet.unimplemented ? '_' : '') + field.name}: ${field.type == 'string' ? '&str' : ((isReference(field) ? '&' : '') + parseType(field.type))}`
 	});
 
 	asyncPacket += ') {\n';
@@ -134,11 +134,11 @@ syncPackets.forEach((packet) => {
 	let syncPacket = '';
 
 	// define function for each sync packet
-	syncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self, sender: usize`;
+	syncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self, ${packet.unimplemented ? '_' : ''}sender: usize`;
 
 	// have fields as parameters
 	packet.fields.filter(field => !field.unused).forEach((field) => {
-		syncPacket += `, ${field.name}: ${field.type == 'string' ? '&str' : ((isReference(field) ? '&' : '') + parseType(field.type))}`
+		syncPacket += `, ${(packet.unimplemented ? '_' : '') + field.name}: ${field.type == 'string' ? '&str' : ((isReference(field) ? '&' : '') + parseType(field.type))}`
 	});
 
 	syncPacket += ') {\n';
@@ -314,6 +314,7 @@ type State = {
 
 type Packet = {
 	async?: boolean,
+	unimplemented?: boolean,
 	name: string,
 	id: string,
 	fields: Field[]

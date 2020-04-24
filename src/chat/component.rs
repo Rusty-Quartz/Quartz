@@ -154,6 +154,16 @@ impl Component {
     pub fn from_json(json: &str) -> SerdeResult<Self> {
         serde_json::from_str(json)
     }
+
+    pub fn as_json(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
+}
+
+impl Default for Component {
+    fn default() -> Self {
+        Component::Text(TextComponent::new(String::new(), None))
+    }
 }
 
 impl fmt::Display for Component {

@@ -78,17 +78,12 @@ impl QuartzServer {
     }
 
     fn handle_packets(&mut self) {
-        loop {
-            match self.sync_packet_receiver.try_next() {
-                Ok(packet_wrapper) => {
-                    match packet_wrapper {
-                        Some(packet) => {
-                            dispatch_sync_packet(&packet, self);
-                        },
-                        None => break
-                    }
+        while let Ok(packet_wrapper) = self.sync_packet_receiver.try_next() {
+            match packet_wrapper {
+                Some(packet) => {
+                    dispatch_sync_packet(&packet, self);
                 },
-                Err(_) => break
+                None => break
             }
         }
     }

@@ -139,6 +139,7 @@ impl AsyncPacketHandler {
 
         // Structs used to allow serde to parse response json into struct
         #[derive(Deserialize)]
+        #[allow(unused)]
         struct Properties {
             name: String,
             value: String,
@@ -146,6 +147,7 @@ impl AsyncPacketHandler {
         }
 
         #[derive(Deserialize)]
+        #[allow(unused)]
         struct AuthResponse {
             id: String,
             name: String,
@@ -167,7 +169,7 @@ impl AsyncPacketHandler {
         });
     }
 
-    fn login_plugin_response(&mut self, conn: &mut AsyncClientConnection, message_id: i32, successful: bool, data: &Vec<u8>) {
+    fn login_plugin_response(&mut self, _conn: &mut AsyncClientConnection, _message_id: i32, _successful: bool, _data: &Vec<u8>) {
 
     }
 //#end
@@ -230,7 +232,7 @@ impl QuartzServer {
                 "online": self.client_list.online_count(),
                 "sample": [] // Maybe implement this in the future
             },
-            "description": self.config.motd
+            "description": self.config.motd_component
         });
 
         // TODO: implement favicon
@@ -360,7 +362,7 @@ macro_rules! invalid_packet {
 }
 
 fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, packet_len: usize) {
-    let buffer = &mut conn.packet_buffer;
+    let buffer = &mut conn.read_buffer;
     let id;
     if conn.connection_state == ConnectionState::Handshake && buffer.peek() == LEGACY_PING_PACKET_ID as u8 {
         id = LEGACY_PING_PACKET_ID;
@@ -437,7 +439,7 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection, private_key: Arc
                 }
                 // Handle the packet
                 else {
-                    handle_packet(&mut conn, &mut async_handler, packet_len)
+                    handle_packet(&mut conn, &mut async_handler, packet_len);
                 }
             },
             Err(e) => {
@@ -448,6 +450,5 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection, private_key: Arc
         }
     }
 
-    //conn.forward_to_server(ServerBoundPacket::RemoveClient);
     debug!("Client disconnected");
 }
