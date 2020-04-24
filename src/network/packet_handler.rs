@@ -186,7 +186,7 @@ impl QuartzServer {
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
         let motd = &self.config.motd;
-        let player_count = "0"; // TODO: change this once we have a way to get this
+        let player_count = self.client_list.online_count().to_string();
         let max_players = self.config.max_players.to_string();
 
         // Add String header
@@ -199,7 +199,7 @@ impl QuartzServer {
         string_vec.append(&mut version.encode_utf16().collect::<Vec<u16>>());
         string_vec.push(0x0000);
 
-        string_vec.append(&mut motd.encode_utf16().collect::<Vec<u16>>());
+        string_vec.append(&mut motd.as_plain_text().encode_utf16().collect::<Vec<u16>>());
         string_vec.push(0x0000);
 
         string_vec.append(&mut player_count.encode_utf16().collect::<Vec<u16>>());
@@ -232,7 +232,7 @@ impl QuartzServer {
                 "online": self.client_list.online_count(),
                 "sample": [] // Maybe implement this in the future
             },
-            "description": self.config.motd_component
+            "description": self.config.motd
         });
 
         // TODO: implement favicon
@@ -445,7 +445,7 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection, private_key: Arc
             Err(e) => {
                 // TODO: handle properly
                 error!("Error in connection handler: {}", e);
-                return;
+                break;
             }
         }
     }

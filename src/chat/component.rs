@@ -151,12 +151,28 @@ pub enum Component {
 }
 
 impl Component {
+    pub fn text(text: String) -> Self {
+        Component::Text(TextComponent::new(text, None))
+    }
+
+    pub fn colored(text: String, color: PredefinedColor) -> Self {
+        Component::Text(TextComponent::new(text, Some(Color::Predefined(color))))
+    }
+
     pub fn from_json(json: &str) -> SerdeResult<Self> {
         serde_json::from_str(json)
     }
 
     pub fn as_json(&self) -> String {
         serde_json::to_string(self).unwrap()
+    }
+
+    pub fn as_plain_text(&self) -> String {
+        match self {
+            Component::Text(text_component) => text_component.as_plain_text(),
+            // TODO: Implement this for other component types
+            _ => self.as_json()
+        }
     }
 }
 
@@ -239,6 +255,19 @@ impl TextComponent {
     // Returns if the text is empty
     pub fn is_empty(&self) -> bool {
         self.text.is_empty()
+    }
+
+    pub fn as_plain_text(&self) -> String {
+        let mut text = self.text.clone();
+
+        // Append children's text
+        if let Some(children) = &self.extra {
+            for child in children.iter() {
+                text.push_str(&child.as_plain_text());
+            }
+        }
+
+        text
     }
 
     // Adds the given child, creating the children array if needed

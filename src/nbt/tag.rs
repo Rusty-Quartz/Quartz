@@ -4,6 +4,7 @@ use std::iter::*;
 use std::fmt;
 use std::fmt::Write;
 
+// Contains all tag types
 pub enum NbtTag {
     Byte(i8),
     Short(i16),
@@ -19,6 +20,7 @@ pub enum NbtTag {
     LongArray(Vec<i64>)
 }
 
+// Formats some kind of list to the given formatter
 macro_rules! write_list {
     ($formatter:expr, $list:expr, $element:expr) => {
         if $list.is_empty() {
@@ -33,6 +35,7 @@ macro_rules! write_list {
     };
 }
 
+// Display the tag in valid SNBT format
 impl fmt::Display for NbtTag {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -68,6 +71,7 @@ impl fmt::Display for NbtTag {
     }
 }
 
+// Implement the from trait for all the tag's internal types
 macro_rules! tag_from {
     ($($type:ty, $tag:ident),*) => {
         $(
@@ -95,15 +99,18 @@ tag_from!(
     Vec<i64>, LongArray
 );
 
+// String slices are a special case
 impl<'a> From<&'a str> for NbtTag {
     fn from(value: &'a str) -> NbtTag {
-        NbtTag::StringModUtf8(value.into())
+        NbtTag::StringModUtf8(value.to_owned())
     }
 }
 
+// Nbt list type, just a wrapper for a vec of nbt tags
 #[repr(transparent)]
 pub struct NbtList(Vec<NbtTag>);
 
+// Gets an element from the list, returning a default value if the types do not match
 macro_rules! list_get {
     ($type:ty, $method:ident, $tag:ident, $default:expr) => {
         pub fn $method(&self, index: usize) -> $type {
@@ -119,6 +126,8 @@ macro_rules! list_get {
     };
 }
 
+// Generates get and get_mut functions that return references to tag values
+// Returns None on a type mismatch
 macro_rules! list_get_ref {
     ($type:ty, $method:ident, $method_mut:ident, $tag:ident) => {
         pub fn $method(&self, index: usize) -> Option<&$type> {
@@ -139,6 +148,7 @@ macro_rules! list_get_ref {
     };
 }
 
+// Generates a function for wrapping a rust type in a nbt tag and adding it to the list
 macro_rules! list_add {
     ($type:ty, $method:ident) => {
         pub fn $method(&mut self, value: $type) {
@@ -155,6 +165,8 @@ impl NbtList {
     pub fn with_capacity(capacity: usize) -> Self {
         NbtList(Vec::with_capacity(capacity))
     }
+
+    // The following are just calling the corresponding functions in the underlying vec
 
     #[inline(always)]
     pub fn iter(&self) -> std::slice::Iter<'_, NbtTag> {
@@ -181,6 +193,12 @@ impl NbtList {
         self.0.remove(index)
     }
 
+    // Generic function for getting a tag of any type
+    pub fn get(&self, index: usize) -> &NbtTag {
+        &self.0[index]
+    }
+
+    // Generate the get functions
     list_get!(i8, get_byte, Byte);
     list_get!(i16, get_short, Short);
     list_get!(i32, get_int, Int);
@@ -193,6 +211,7 @@ impl NbtList {
     list_get_ref!(Vec<i32>, get_int_array, get_int_array_mut, IntArray);
     list_get_ref!(Vec<i64>, get_long_array, get_long_array_mut, LongArray);
 
+    // Return strings as references
     pub fn get_string(&self, index: usize) -> &str {
         if let NbtTag::StringModUtf8(value) = &self.0[index] {
             value
@@ -201,18 +220,23 @@ impl NbtList {
         }
     }
 
+    // Bool is also a special case and can be represented as any integer
     pub fn get_bool(&self, index: usize) -> bool {
-        self.get_byte(index) != 0
+        match self.0[index] {
+            NbtTag::Byte(value) => value != 0,
+            NbtTag::Short(value) => value != 0,
+            NbtTag::Int(value) => value != 0,
+            NbtTag::Long(value) => value != 0,
+            _ => false
+        }
     }
 
+    // Generic function for adding a tag of any type
     pub fn add(&mut self, tag: NbtTag) {
         self.0.push(tag);
     }
 
-    pub fn get(&self, index: usize) -> &NbtTag {
-        self.0.get(index).unwrap()
-    }
-
+    // Generate the add functions
     list_add!(i8, add_byte);
     list_add!(i16, add_short);
     list_add!(i32, add_int);
@@ -226,6 +250,7 @@ impl NbtList {
     list_add!(Vec<i32>, add_int_array);
     list_add!(Vec<i64>, add_long_array);
 
+    // Bool is just added as a byte
     pub fn add_bool(&mut self, value: bool) {
         if value {
             self.add_byte(1);
@@ -255,9 +280,12 @@ impl IndexMut<usize> for NbtList {
     }
 }
 
+// Nbt compound type, just a wrapper of a hash map
 #[repr(transparent)]
 pub struct NbtCompound(HashMap<String, NbtTag>);
 
+// Generates a get function for a compound returning a default value if
+// the name is invalid or the types do not match
 macro_rules! compound_get {
     ($type:ty, $method:ident, $tag:ident, $default:expr) => {
         pub fn $method(&self, name: &str) -> $type {
@@ -273,6 +301,8 @@ macro_rules! compound_get {
     };
 }
 
+// Generates get and get_mut functions returning references to tag value
+// or None if the tag name is invalid or the types do not match
 macro_rules! compound_get_ref {
     ($type:ty, $method:ident, $method_mut:ident, $tag:ident) => {
         pub fn $method(&self, name: &str) -> Option<&$type> {
@@ -293,6 +323,8 @@ macro_rules! compound_get_ref {
     };
 }
 
+// Generates an insert function that wraps the given rust type in an nbt tag
+// and inserts it into the inner map
 macro_rules! compound_insert {
     ($type:ty, $method:ident) => {
         pub fn $method(&mut self, name: String, value: $type) {
@@ -305,6 +337,8 @@ impl NbtCompound {
     pub fn new() -> Self {
         NbtCompound(HashMap::new())
     }
+
+    // The following just call the corresponding hash map functions
 
     #[inline(always)]
     pub fn keys(&self) -> std::collections::hash_map::Keys<'_, String, NbtTag> {
@@ -341,6 +375,12 @@ impl NbtCompound {
         self.0.remove(name)
     }
 
+    // Generic get function for a tag of any type
+    pub fn get(&self, name: &str) -> Option<&NbtTag> {
+        self.0.get(name)
+    }
+
+    // Generate the get functions
     compound_get!(i8, get_byte, Byte);
     compound_get!(i16, get_short, Short);
     compound_get!(i32, get_int, Int);
@@ -353,6 +393,7 @@ impl NbtCompound {
     compound_get_ref!(Vec<i32>, get_int_array, get_int_array_mut, IntArray);
     compound_get_ref!(Vec<i64>, get_long_array, get_long_array_mut, LongArray);
 
+    // Get string should return a slice
     pub fn get_string(&self, name: &str) -> &str {
         if let Some(NbtTag::StringModUtf8(value)) = self.0.get(name) {
             value
@@ -361,14 +402,28 @@ impl NbtCompound {
         }
     }
 
+    // Get bool should support all integer types
     pub fn get_bool(&self, name: &str) -> bool {
-        return self.get_byte(name) != 0;
+        match self.0.get(name) {
+            Some(tag) => {
+                match *tag {
+                    NbtTag::Byte(value) => value != 0,
+                    NbtTag::Short(value) => value != 0,
+                    NbtTag::Int(value) => value != 0,
+                    NbtTag::Long(value) => value != 0,
+                    _ => false
+                }
+            },
+            None => false
+        }
     }
 
+    // Generic set function for a tag of any type
     pub fn set(&mut self, name: String, tag: NbtTag) {
         self.0.insert(name, tag);
     }
 
+    // Generate set functions
     compound_insert!(i8, set_byte);
     compound_insert!(i16, set_short);
     compound_insert!(i32, set_int);
@@ -382,6 +437,7 @@ impl NbtCompound {
     compound_insert!(Vec<i32>, set_int_array);
     compound_insert!(Vec<i64>, set_long_array);
 
+    // Bool just sets a byte to 0 or 1
     pub fn set_bool(&mut self, name: String, value: bool) {
         if value {
             self.set_byte(name, 1);
@@ -391,6 +447,7 @@ impl NbtCompound {
     }
 }
 
+// Display the compound as valid SNBT format
 impl fmt::Display for NbtCompound {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_empty() {
