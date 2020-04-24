@@ -100,17 +100,14 @@ macro_rules! id_list_iter {
             type Item = $itype;
         
             fn next(&mut self) -> Option<Self::Item> {
-                loop {
-                    match self.inner.next() {
-                        Some(value) => {
-                            match value {
-                                Some(item) => return Some(item),
-                                None => continue
-                            }
-                        },
-                        None => return None
+                while let Some(value) = self.inner.next() {
+                    match value {
+                        Some(item) => return Some(item),
+                        None => continue
                     }
                 }
+
+                None
             }
         }
     };

@@ -1,5 +1,6 @@
 use std::u128;
 use std::fmt;
+
 use rand::prelude::*;
 
 #[repr(transparent)]
@@ -35,6 +36,12 @@ impl Uuid {
             Ok(inner) => Ok(Uuid(inner)),
             Err(_) => Err("Invalid UUID string.")
         }
+    }
+}
+
+impl From<u128> for Uuid {
+    fn from(inner: u128) -> Self {
+        Uuid(inner)
     }
 }
 

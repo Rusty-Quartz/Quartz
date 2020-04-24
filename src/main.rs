@@ -27,6 +27,8 @@ use openssl::rsa::Rsa;
 
 pub mod chat {
     pub mod component;
+    #[macro_use]
+    pub mod cfmt;
 }
 
 pub mod data {
@@ -64,6 +66,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     console_interface.set_prompt("> ")?;
 
     logging::init_logger(console_interface.clone())?;
+
+    match component!("&(gold,underline)blah &(bold)blah {bleh &(red)bloop} &(!underline)ope") {
+        Ok(c) => {
+            info!("{}", c);
+            info!("{}", serde_json::to_string(&c)?);
+        },
+        Err(msg) => error!("{}", msg)
+    }
 
     let config = load_config(String::from("./config.json"));
     let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded::<WrappedServerPacket>();
