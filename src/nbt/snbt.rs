@@ -144,8 +144,9 @@ impl SnbtParser {
     fn parse_value(&mut self) -> Result<NbtTag, String> {
         
         lazy_static!{
-            static ref DIGIT: Regex = Regex::new(r"\d").unwrap();
+            static ref DIGIT: Regex = Regex::new(r"\d|\.").unwrap();
             static ref STRING: Regex = Regex::new("[\"\']").unwrap();
+            static ref STRING_NO_QUOTES: Regex = Regex::new("[a-zA-Z]").unwrap();
         }
         
         // Don't go out of bounds
@@ -184,8 +185,14 @@ impl SnbtParser {
                 Ok(string_tag.unwrap())
             },
 
-            "[" => {
+            char if STRING_NO_QUOTES.is_match(char) => {
+                let string_tag = self.parse_string_no_quotes();
+                if string_tag.is_err() {return Err(string_tag.err().unwrap())}
 
+                Ok(string_tag.unwrap())
+            },
+
+            "[" => {
                 // increment off the [ and parse the list
                 self.cursor += 1;
                 let list_tag = self.parse_list();
@@ -199,16 +206,83 @@ impl SnbtParser {
         }
     }
     
+    fn parse_string(&mut self) -> Result<NbtTag, String>{
+        
+        lazy_static!{
+            static ref STRING: Regex = Regex::new(r#"(?:[^"\\]|\\.)*(?:([^\\]"|[^\\]'))"#).unwrap();
+            // I hate \s
+            static ref BACKSLASH: Regex = Regex::new("\\\\\\\\").unwrap();
+            static ref ESCAPE_DOUBLE_QUOTE: Regex = Regex::new("\\\\\"").unwrap();
+            static ref ESCAPE_SINGLE_QUOTE: Regex = Regex::new("\\\\\'").unwrap();
+        }
+
+        // Don't go out of bounds
+        if self.cursor >= self.data.len()  {
+            return Err(format!("NBT not closed"))
+        }
+
+        // Find the string data
+        let capture = STRING.find(&self.data[self.cursor..]);
+
+        // Make sure its at the current index and exists
+        if capture.is_none() || capture.unwrap().start() != 0 {
+            return Err(format!("Invalid string at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
+        }
+        let capture = capture.unwrap();
+
+        let mut captured_str = self.data[self.cursor..capture.end()+self.cursor-1].to_owned();
+
+        // Parse escapped \s and "s
+        captured_str = ESCAPE_DOUBLE_QUOTE.replace_all(&captured_str, "\"").to_string();
+        captured_str = ESCAPE_SINGLE_QUOTE.replace_all(&captured_str, "\'").to_string();
+        captured_str = BACKSLASH.replace_all(&captured_str, "\\").to_string();
+
+        // Write the string to an nbt tag and return it
+        
+        let output = Ok(NbtTag::StringModUtf8(captured_str.clone()));
+        self.cursor += capture.end();
+        
+        output
+    }
+
+    fn parse_string_no_quotes(&mut self) -> Result<NbtTag, String>{
+        
+        lazy_static!{
+            static ref STRING: Regex = Regex::new(r#"([a-zA-Z][a-zA-Z\-_$0-9]+(?:[^"']))"#).unwrap();
+        }
+
+        // Don't go out of bounds
+        if self.cursor >= self.data.len()  {
+            return Err(format!("NBT not closed"))
+        }
+
+        // Find the string data
+        let capture = STRING.find(&self.data[self.cursor..]);
+
+        // Make sure its at the current index and exists
+        if capture.is_none() || capture.unwrap().start() != 0 {
+            return Err(format!("Invalid string at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
+        }
+        let capture = capture.unwrap();
+
+        // Write the string to an nbt tag and return it
+        let captured_str = self.data[self.cursor..capture.end()+self.cursor-1].to_owned();
+        let output = Ok(NbtTag::StringModUtf8(captured_str.clone()));
+        self.cursor += capture.end() - 1;
+        
+        output
+    }
+
     fn parse_num(&mut self) -> Result<NbtTag, String> {
         lazy_static! {
             static ref LIMITER: Regex = Regex::new(r"[\d\.]+\D").unwrap();
             static ref LONG: Regex = Regex::new(r"\d+(?:(l|L))").unwrap();
-            static ref DOUBLE: Regex = Regex::new(r"(\d+(\.\d+)?)(?:(d|D))").unwrap();
+            static ref DOUBLE: Regex = Regex::new(r"(((\d+(\.\d+))(?:(d|D)))|((\d+\.|\.)\d+[^a-zA-Z]))").unwrap();
             static ref BYTE: Regex = Regex::new(r"\d+(?:(b|B))").unwrap();
             static ref SHORT: Regex = Regex::new(r"\d+(?:(s|S))").unwrap();
             static ref FLOAT: Regex = Regex::new(r"(\d+(\.\d+)?)(?:(f|F))").unwrap();
             static ref INT: Regex = Regex::new(r"\d+").unwrap();
-            static ref NOT_INT: Regex = Regex::new(r"[\d.]+(d|D|l|L|b|B|s|S|f|F)").unwrap(); // part of int test, makes sure there isn't a letter after the num
+            static ref NOT_INT: Regex = Regex::new(r"((\d+\.|\.)\d+)|([\d\.]+(d|D|l|L|b|B|s|S|f|F))").unwrap(); // part of int test, makes sure there isn't a letter after the num
         }
         
         // Don't go out of bounds
@@ -219,6 +293,8 @@ impl SnbtParser {
         // Get how far ahead we should check to get the number's type
         let limit_capture = LIMITER.find(&self.data[self.cursor..]).unwrap();
         let limit = limit_capture.end() + self.cursor;
+
+        
         
         // Check which number type we're parsing
         match &self.data[self.cursor..limit] {
@@ -357,7 +433,7 @@ impl SnbtParser {
 
                 // Return the double and increase the current index
                 let output = Ok(NbtTag::Double(parsed_double.unwrap()));
-                self.cursor += capture.end();
+                self.cursor += capture.end()-1;
                 output
             },
 
@@ -365,32 +441,6 @@ impl SnbtParser {
                 Err(format!("Invalid number at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
             }
         }
-    }
-
-    fn parse_string(&mut self) -> Result<NbtTag, String>{
-        
-        lazy_static!{
-            static ref STRING: Regex = Regex::new("(?:[^\"\\\\]|\\.)*(?:(\"|'))").unwrap();
-        }
-
-        // Don't go out of bounds
-        if self.cursor >= self.data.len()  {
-            return Err(format!("NBT not closed"))
-        }
-
-        // Find the string data
-        let capture = STRING.find(&self.data[self.cursor..]);
-
-        // Make sure its at the current index and exists
-        if capture.is_none() || capture.unwrap().start() != 0 {
-            return Err(format!("Invalid string at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
-        }
-        let capture = capture.unwrap();
-
-        // Write the string to an nbt tag and return it
-        let output = Ok(NbtTag::StringModUtf8(self.data[self.cursor..capture.end()+self.cursor-1].to_owned()));
-        self.cursor += capture.end();
-        output
     }
 
     fn parse_list(&mut self) -> Result<NbtList, String> {
