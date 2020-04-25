@@ -6,7 +6,7 @@
 				"name": "Login_Success_Server",
 				"id": "0xFF",
 				"fields": [
-					{"name": "uuid", "type": "string"},
+					{"name": "uuid", "type": "Uuid"},
 					{"name": "username", "type": "string"}
 				]
 			}
@@ -100,7 +100,7 @@
 				"id": "0x02",
 				"async": true,
 				"fields": [
-					{"name": "uuid", "type": "string"},
+					{"name": "uuid", "type": "Uuid"},
 					{"name": "username", "type": "string"}
 				]
 			},

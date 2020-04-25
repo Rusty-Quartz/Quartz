@@ -220,7 +220,7 @@ client_bound.forEach((packet, i) => {
 
 	// Write each field to buffer
 	packet.fields.forEach((fields) => {
-		packetString += `\n\t\t\tbuffer.write_${fields.type}(${fields.type == 'string' || fields.type == 'byte_array' ? '' : '*'}${fields.name});`;
+		packetString += `\n\t\t\tbuffer.write_${fields.type.toLowerCase()}(${fields.type == 'string' || fields.type == 'byte_array' ? '' : '*'}${fields.name});`;
 	});
 
 	packetString += `\n\t\t}${i == client_bound.length - 1 ? '' : ','}`;

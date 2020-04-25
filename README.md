@@ -1,6 +1,6 @@
 # Quartz
 A reimplementation of a minecraft server in rust.  
-Currently working on supporting 1.15.2
+Currently working on supporting 20w17a (1.16 snapshots)
 
 ## Current TODO List
 Everything

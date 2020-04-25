@@ -37,6 +37,10 @@ impl Uuid {
             Err(_) => Err("Invalid UUID string.")
         }
     }
+
+    pub fn as_u128(&self) -> u128 {
+        self.0
+    }
 }
 
 impl From<u128> for Uuid {

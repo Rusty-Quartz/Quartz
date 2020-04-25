@@ -2,6 +2,7 @@ use std::mem::transmute;
 use std::str;
 use std::fmt;
 use std::ptr;
+use crate::data::Uuid;
 
 pub struct ByteBuffer {
     inner: Vec<u8>,
@@ -358,6 +359,28 @@ impl ByteBuffer {
     }
 
     #[inline]
+    pub fn write_u128(&mut self, value: u128) {
+        self.ensure_size(self.cursor + 16);
+        self.inner[self.cursor] = (value >> 120) as u8;
+        self.inner[self.cursor + 1] = (value >> 112) as u8;
+        self.inner[self.cursor + 2] = (value >> 104) as u8;
+        self.inner[self.cursor + 3] = (value >> 96) as u8;
+        self.inner[self.cursor + 4] = (value >> 88) as u8;
+        self.inner[self.cursor + 5] = (value >> 80) as u8;
+        self.inner[self.cursor + 6] = (value >> 72) as u8;
+        self.inner[self.cursor + 7] = (value >> 64) as u8;
+        self.inner[self.cursor + 8] = (value >> 56) as u8;
+        self.inner[self.cursor + 9] = (value >> 48) as u8;
+        self.inner[self.cursor + 10] = (value >> 40) as u8;
+        self.inner[self.cursor + 11] = (value >> 32) as u8;
+        self.inner[self.cursor + 12] = (value >> 24) as u8;
+        self.inner[self.cursor + 13] = (value >> 16) as u8;
+        self.inner[self.cursor + 14] = (value >> 8) as u8;
+        self.inner[self.cursor + 15] = value as u8;
+        self.cursor += 16;
+    }
+
+    #[inline]
     pub fn write_f32(&mut self, value: f32) {
         unsafe {
             self.write_i32(transmute::<f32, i32>(value));
@@ -412,5 +435,10 @@ impl ByteBuffer {
     pub fn write_byte_array(&mut self, value: &[u8]) {
         self.ensure_size(self.cursor + value.len());
         self.write_bytes_unchecked(value);
+    }
+
+    #[inline]
+    pub fn write_uuid(&mut self, value: Uuid) {
+        self.write_u128(value.as_u128());
     }
 }
