@@ -3,7 +3,15 @@ A reimplementation of a minecraft server in rust.
 Currently working on supporting 20w17a (1.16 snapshots)
 
 ## Current TODO List
-Everything
+- [x] Logging
+- [x] Packet Reading and Writing
+- [x] Status packets
+- [x] Login Packets
+- [x] nbt reading/writing
+- [x] snbt parsing
+- [x] Chat Component
+- [x] cfmt parsing
+- [ ] Everything Else
 
 ### Credits
 Packet info for Pickaxe and minecraft datatypes from the [minecraft protocol wiki](https://wiki.vg/)  
