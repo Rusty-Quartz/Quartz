@@ -15,8 +15,10 @@
         "i64",
         "f32",
         "f64",
+        "u128",
         "usize",
         "varint",
-        "varlong"
+        "varlong",
+        "uuid"
     ]
 }

@@ -22,7 +22,7 @@ use crate::util::ioutil::ByteBuffer;
 use crate::server::{self, QuartzServer};
 use crate::data::Uuid;
 
-pub const PROTOCOL_VERSION: i32 = 578;
+pub const PROTOCOL_VERSION: i32 = 713;
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
 struct AsyncPacketHandler {
@@ -164,7 +164,7 @@ impl AsyncPacketHandler {
         // conn.send_packet(&ClientBoundPacket::SetCompression{threshhold: /* maximum size of uncompressed packet */})
 
         conn.send_packet(&ClientBoundPacket::LoginSuccess {
-            uuid: format!("{}", Uuid::from_string(&res.id).unwrap()),
+            uuid: Uuid::from_string(&res.id).unwrap(),
             username: self.username.clone()
         });
     }
@@ -177,7 +177,7 @@ impl AsyncPacketHandler {
 
 impl QuartzServer {
 //#SyncPacketHandler
-    fn login_success_server(&mut self, sender: usize, uuid: &str, username: &str) {
+    fn login_success_server(&mut self, sender: usize, uuid: &Uuid, username: &str) {
         
     }
 
@@ -247,7 +247,7 @@ impl QuartzServer {
 pub enum ServerBoundPacket {
 //#ServerBoundPacket
     LoginSuccessServer {
-        uuid: String, 
+        uuid: Uuid, 
         username: String
     },
     LegacyPing,
@@ -289,7 +289,7 @@ pub enum ClientBoundPacket {
         verify_token: Vec<u8>
     },
     LoginSuccess {
-        uuid: String, 
+        uuid: Uuid, 
         username: String
     },
     SetCompression {
@@ -338,7 +338,7 @@ pub fn serialize(packet: &ClientBoundPacket, buffer: &mut ByteBuffer) {
         },
         ClientBoundPacket::LoginSuccess {uuid, username} => {
             buffer.write_varint(0x02);
-            buffer.write_string(uuid);
+            buffer.write_uuid(*uuid);
             buffer.write_string(username);
         },
         ClientBoundPacket::SetCompression {threshold} => {
