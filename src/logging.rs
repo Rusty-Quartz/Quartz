@@ -20,6 +20,7 @@ use log4rs::append::{
         }
     }
 };
+use log4rs::filter::{Filter, Response};
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Root};
 
@@ -55,8 +56,8 @@ pub fn init_logger(console_interface: Arc<Interface<DefaultTerminal>>) -> Result
     
     // Build the log4rs config
     let config = Config::builder()
-            .appender(Appender::builder().build("console", Box::new(console)))
-            .appender(Appender::builder().build("logfile", Box::new(logfile)))
+            .appender(Appender::builder().filter(Box::new(CrateFilter)).build("console", Box::new(console)))
+            .appender(Appender::builder().filter(Box::new(CrateFilter)).build("logfile", Box::new(logfile)))
             .build(
                 Root::builder()
                     .appender("console")
@@ -74,6 +75,36 @@ pub fn cleanup() {
     // There's no reason to handle an error here, and thanks to the jackass who decided to avoid calling
     // drop on the log4rs objects
     let _ = CustomLogRoller::new().roll_threaded(Path::new("./logs/latest.log"), false);
+}
+
+// Only allow logging from out crate
+struct CrateFilter;
+
+impl Filter for CrateFilter {
+    #[cfg(debug_assertions)]
+    fn filter(&self, record: &Record) -> Response {
+        match record.module_path() {
+            Some(path) => {
+                if path.starts_with("quartz") {
+                    Response::Accept
+                } else {
+                    Response::Reject
+                }
+            },
+            None => Response::Reject
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn filter(&self, _record: &Record) -> Response {
+        Response::Neutral
+    }
+}
+
+impl fmt::Debug for CrateFilter {
+    fn fmt(&self, _f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        Ok(())
+    }
 }
 
 // Custom implementation for a console logger so that it doesn't mangle the user's commands
