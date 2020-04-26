@@ -31,6 +31,7 @@ pub mod chat {
 
 pub mod command {
     pub mod executor;
+    pub mod commands;
     pub mod arg;
     mod sender;
 
