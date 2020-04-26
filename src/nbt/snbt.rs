@@ -282,7 +282,9 @@ impl SnbtParser {
             static ref SHORT: Regex = Regex::new(r"\d+(?:(s|S))").unwrap();
             static ref FLOAT: Regex = Regex::new(r"(\d+(\.\d+)?)(?:(f|F))").unwrap();
             static ref INT: Regex = Regex::new(r"\d+").unwrap();
-            static ref NOT_INT: Regex = Regex::new(r"((\d+\.|\.)\d+)|([\d\.]+(d|D|l|L|b|B|s|S|f|F))").unwrap(); // part of int test, makes sure there isn't a letter after the num
+            
+            // part of int test, makes sure there isn't a letter after the num indicating that it is a different type and that there isn't a decimal
+            static ref NOT_INT: Regex = Regex::new(r"((\d+\.|\.)\d+)|([\d\.]+(d|D|l|L|b|B|s|S|f|F))").unwrap(); 
         }
         
         // Don't go out of bounds
@@ -291,8 +293,13 @@ impl SnbtParser {
         }
         
         // Get how far ahead we should check to get the number's type
-        let limit_capture = LIMITER.find(&self.data[self.cursor..]).unwrap();
-        let limit = limit_capture.end() + self.cursor;
+        let limit_capture = LIMITER.find(&self.data[self.cursor..]);
+
+        if limit_capture.is_none() {
+            return Err(format!("Tag not closed after num, {} {}", &self.cursor, &self.data[self.cursor..self.data.len()]));
+        }
+
+        let limit = limit_capture.unwrap().end() + self.cursor;
 
         
         
