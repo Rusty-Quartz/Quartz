@@ -9,6 +9,13 @@
 					{"name": "uuid", "type": "Uuid"},
 					{"name": "username", "type": "string"}
 				]
+			},
+			{
+				"name": "Handle_Console_Command",
+				"id": "0xFF",
+				"fields": [
+					{"name": "command", "type": "string"}
+				]
 			}
 		]
 	},

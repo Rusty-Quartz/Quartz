@@ -1,12 +1,41 @@
 use crate::chat::component::*;
 
 #[macro_export]
+macro_rules! custom_color {
+    ($red:expr, $green:expr, $blue:expr) => {
+        format!("#{:06X}", ($red as u32) << 16 | ($green as u32) << 8 | ($blue as u32))
+    };
+}
+
+#[macro_export]
+macro_rules! color {
+    ($text:expr, $color:ident, $($arg:expr),*) => {
+        crate::chat::component::Component::Text(
+            crate::chat::component::TextComponent::new(
+                format!($text, $($arg,)*),
+                Some(crate::chat::component::Color::Predefined(crate::chat::component::PredefinedColor::$color))
+            )
+        )
+    };
+}
+
+#[macro_export]
 macro_rules! component {
-    ($cfmt:expr, $($arg:expr)*) => {
-        crate::chat::cfmt::from_cfmt(&format!($cfmt, $($arg)*))
+    ($cfmt:expr, $($arg:expr),*) => {
+        crate::chat::cfmt::from_cfmt(&format!($cfmt, $($arg,)*))
     };
     ($cfmt:expr) => {
         crate::chat::cfmt::from_cfmt($cfmt)
+    };
+}
+
+#[macro_export]
+macro_rules! unchecked_component {
+    ($cfmt:expr, $($arg:expr),*) => {
+        crate::chat::cfmt::from_cfmt(&format!($cfmt, $($arg,)*)).unwrap()
+    };
+    ($cfmt:expr) => {
+        crate::chat::cfmt::from_cfmt($cfmt).unwrap()
     };
 }
 
@@ -52,7 +81,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
 
     // Return an error formatted to the given format
     macro_rules! error {
-        ($format:expr, $len:expr $(, $arg:tt)*) => {{
+        ($format:expr, $len:expr) => {{
             let idx = *index_stack.last().unwrap();
 
             let mut right = idx + $len.min(35);
@@ -60,10 +89,24 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                 right = cfmt.len();
             }
 
-            return Err(format!($format, &cfmt[idx..right], $($arg)*));
+            return Err(format!($format, &cfmt[idx..right]));
         }};
         ($msg:expr) => {{
             return Err(String::from($msg));
+        }};
+    }
+
+    // Use the default format for the error
+    macro_rules! error_default {
+        ($msg:expr, $len:expr) => {{
+            let idx = *index_stack.last().unwrap();
+
+            let mut right = idx + $len.min(35);
+            if right > cfmt.len() {
+                right = cfmt.len();
+            }
+
+            return Err(format!("{}: \"{}\"", $msg, &cfmt[idx..right]));
         }};
     }
 
@@ -87,88 +130,6 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
     macro_rules! current_token {
         () => {
             token_stack.last_mut().unwrap()
-        };
-    }
-
-    macro_rules! finish_event {
-        () => {
-            // Handle stack operations and retrieve the component argument
-            if component_type == EVENT {
-                // Add any remaining child
-                if has_children.pop().unwrap() {
-                    let child = stack.pop().unwrap();
-                    add_child(stack.last_mut().unwrap(), child);
-                }
-
-                // Apply the event (currently only the show_text event)
-                let text = stack.pop().unwrap();
-                stack.last_mut().unwrap().hover_event = Some(Box::new(HoverEvent::show_text(text)));
-
-                // Reset the component type
-                component_type = NORMAL;
-            }
-            // Every other event type
-            else {
-                let event_arg = token_stack.pop().unwrap();
-                let event_name = token_stack.pop().unwrap();
-                let event_type = token_stack.pop().unwrap();
-                let component = stack.last_mut().unwrap();
-
-                // Hover events
-                if event_type == "hover" {
-                    match event_name.as_ref() {
-                        "show_item" => {
-                            // Make sure it parses the JSON correctly
-                            match HoverEvent::show_item(&event_arg) {
-                                Some(event) => component.hover_event = Some(Box::new(event)),
-                                None => {
-                                    error!(
-                                        "Invalid argument for hover event \"show_item\": \"{}\"",
-                                        index - index_stack.last().unwrap()
-                                    );
-                                }
-                            }
-                        },
-
-                        "show_entity" => {
-                            // Make sure it parses the JSON correctly
-                            match HoverEvent::show_entity(&event_arg) {
-                                Some(event) => component.hover_event = Some(Box::new(event)),
-                                None => {
-                                    error!(
-                                        "Invalid argument for hover event \"show_entity\": \"{}\"",
-                                        index - index_stack.last().unwrap()
-                                    );
-                                }
-                            }
-                        },
-
-                        // Checks beforehand make this unreachable
-                        _ => {}
-                    }
-                }
-                // Click events
-                else {
-                    match event_name.as_ref() {
-                        "open_url" => component.click_event = Some(Box::new(ClickEvent::open_url(event_arg))),
-                        "run_command" => component.click_event = Some(Box::new(ClickEvent::run_command(event_arg))),
-                        "suggest_command" => component.click_event = Some(Box::new(ClickEvent::suggest_command(event_arg))),
-                        "change_page" => {
-                            // Parse the page index
-                            match event_arg.parse::<u32>() {
-                                Ok(index) => component.click_event = Some(Box::new(ClickEvent::change_page(index))),
-                                Err(_) => {
-                                    error!(
-                                        "Invalid page index for click event \"change_page\": \"{}\"",
-                                        index - index_stack.last().unwrap()
-                                    );
-                                }
-                            }
-                        },
-                        _ => {}
-                    }
-                }
-            }
         };
     }
 
@@ -285,11 +246,16 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                     ')' => {
                         // This only happens for event components
                         if component_type == EVENT {
-                            finish_event!();
+                            if let Err(error) = finish_event(&mut stack, &mut has_children, &mut token_stack, true) {
+                                error_default!(error, index - index_stack.last().unwrap())
+                            }
 
                             state = ADD_TEXT;
+                            component_type = NORMAL;
 
                             unmark!();
+                        } else {
+                            stack.last_mut().unwrap().text.push(ch);
                         }
                     },
 
@@ -526,7 +492,9 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
             EVENT_BUILD_ARG => {
                 // Event sequence ends with a close parentehsis
                 if ch == ')' {
-                    finish_event!();
+                    if let Err(error) = finish_event(&mut stack, &mut has_children, &mut token_stack, false) {
+                        error_default!(error, index - index_stack.last().unwrap())
+                    }
 
                     state = ADD_TEXT;
 
@@ -596,6 +564,75 @@ fn finish_component(stack: &mut Vec<TextComponent>, has_children: &mut Vec<bool>
             *has_children.last_mut().unwrap() = true;
         }
     }
+}
+
+fn finish_event(
+    stack: &mut Vec<TextComponent>,
+    has_children: &mut Vec<bool>,
+    token_stack: &mut Vec<String>,
+    has_component: bool
+) -> Result<(), &'static str> {
+    // Handle stack operations and retrieve the component argument
+    if has_component {
+        // Add any remaining child
+        if has_children.pop().unwrap() {
+            let child = stack.pop().unwrap();
+            add_child(stack.last_mut().unwrap(), child);
+        }
+
+        // Apply the event (currently only the show_text event)
+        let text = stack.pop().unwrap();
+        stack.last_mut().unwrap().hover_event = Some(Box::new(HoverEvent::show_text(text)));
+    }
+    // Every other event type
+    else {
+        let event_arg = token_stack.pop().unwrap();
+        let event_name = token_stack.pop().unwrap();
+        let event_type = token_stack.pop().unwrap();
+        let component = stack.last_mut().unwrap();
+
+        // Hover events
+        if event_type == "hover" {
+            match event_name.as_ref() {
+                "show_item" => {
+                    // Make sure it parses the JSON correctly
+                    match HoverEvent::show_item(&event_arg) {
+                        Some(event) => component.hover_event = Some(Box::new(event)),
+                        None => return Err("Invalid argument for hover event \"show_item\"")
+                    }
+                },
+
+                "show_entity" => {
+                    // Make sure it parses the JSON correctly
+                    match HoverEvent::show_entity(&event_arg) {
+                        Some(event) => component.hover_event = Some(Box::new(event)),
+                        None => return Err("Invalid argument for hover event \"show_entity\"")
+                    }
+                },
+
+                // Checks beforehand make this unreachable
+                _ => {}
+            }
+        }
+        // Click events
+        else {
+            match event_name.as_ref() {
+                "open_url" => component.click_event = Some(Box::new(ClickEvent::open_url(event_arg))),
+                "run_command" => component.click_event = Some(Box::new(ClickEvent::run_command(event_arg))),
+                "suggest_command" => component.click_event = Some(Box::new(ClickEvent::suggest_command(event_arg))),
+                "change_page" => {
+                    // Parse the page index
+                    match event_arg.parse::<u32>() {
+                        Ok(index) => component.click_event = Some(Box::new(ClickEvent::change_page(index))),
+                        Err(_) => return Err("Invalid page index for click event \"change_page\"")
+                    }
+                },
+                _ => {}
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // Add the child component but check to see if the previous child is just white space and can be

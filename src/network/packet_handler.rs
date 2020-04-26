@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use log::{debug, warn, error};
 
 use serde::Deserialize;
@@ -21,6 +23,8 @@ use crate::network::connection::{AsyncClientConnection, ConnectionState};
 use crate::util::ioutil::ByteBuffer;
 use crate::server::{self, QuartzServer};
 use crate::data::Uuid;
+use crate::command::CommandSender;
+use crate::check_return;
 
 pub const PROTOCOL_VERSION: i32 = 713;
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
@@ -70,7 +74,14 @@ impl AsyncPacketHandler {
         self.verify_token = verify_token.to_vec();
         
         // Format public key to send to client
-        let pub_key_der = self.key_pair.public_key_to_der().unwrap(); 
+        let pub_key_der;
+        match self.key_pair.public_key_to_der() {
+            Ok(der) => pub_key_der = der,
+            Err(e) => {
+                error!("Failed to convert public key to der: {}", e);
+                return;
+            }
+        }
 
         conn.send_packet(&ClientBoundPacket::EncryptionRequest {
             server_id: String::from(""),
@@ -85,7 +96,7 @@ impl AsyncPacketHandler {
 
         // Decrypt and check verify token
         let mut decrypted_verify = vec![0; self.key_pair.size() as usize];
-        self.key_pair.private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1).unwrap();
+        check_return!(self.key_pair.private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1), "Failed to decrypt verify token: {}");
         decrypted_verify = decrypted_verify[..self.verify_token.len()].to_vec();
 
         if self.verify_token != decrypted_verify {
@@ -97,14 +108,23 @@ impl AsyncPacketHandler {
 
         // Decrypt shared secret
         let mut decrypted_secret = vec![0; self.key_pair.size() as usize];
-        self.key_pair.private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1).unwrap();
+        check_return!(self.key_pair.private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1), "Failed to decrypt secret key: {}");
         decrypted_secret = decrypted_secret[..16].to_vec();
+
+        // Initiate encryption
+        conn.initiate_encryption(decrypted_secret.as_slice());
         
         // Generate server id hash
         let mut hasher = sha::Sha1::new();
         
         hasher.update(decrypted_secret.as_slice());
-        hasher.update(&*self.key_pair.public_key_to_der().unwrap());
+        match self.key_pair.public_key_to_der() {
+            Ok(der) => hasher.update(&*der),
+            Err(e) => {
+                error!("Failed to convert public key to der: {}", e);
+                return;
+            }
+        }
         
         let mut hash = hasher.finish();
         let hash_hex;
@@ -154,19 +174,25 @@ impl AsyncPacketHandler {
             properties: [Properties; 1]
         }
 
-        // Make a put request
-        let res: AuthResponse = reqwest::blocking::get(&url).unwrap().json().unwrap();
-
-        // Initiate encryption
-        conn.initiate_encryption(decrypted_secret.as_slice());
-
         // Currently disabled cause no need rn, will enable via config later
         // conn.send_packet(&ClientBoundPacket::SetCompression{threshhold: /* maximum size of uncompressed packet */})
 
-        conn.send_packet(&ClientBoundPacket::LoginSuccess {
-            uuid: Uuid::from_string(&res.id).unwrap(),
-            username: self.username.clone()
-        });
+        // Make a put request
+        match reqwest::blocking::get(&url) {
+            Ok(response) => match response.json::<AuthResponse>() {
+                Ok(json) => match Uuid::from_string(&json.id) {
+                    Ok(uuid) => {
+                        conn.send_packet(&ClientBoundPacket::LoginSuccess {
+                            uuid,
+                            username: self.username.clone()
+                        });
+                    },
+                    Err(e) => error!("Malformed UUID encountered in auth response: {}", e)
+                },
+                Err(e) => error!("Failed to unpack JSON from session server response: {}", e)
+            },
+            Err(e) => error!("Failed to make session server request: {}", e)
+        }
     }
 
     fn login_plugin_response(&mut self, _conn: &mut AsyncClientConnection, _message_id: i32, _successful: bool, _data: &Vec<u8>) {
@@ -175,10 +201,15 @@ impl AsyncPacketHandler {
 //#end
 }
 
-impl QuartzServer {
+impl QuartzServer<'_> {
 //#SyncPacketHandler
     fn login_success_server(&mut self, sender: usize, uuid: &Uuid, username: &str) {
         
+    }
+
+    fn handle_console_command(&mut self, sender: usize, command: &str) {
+        self.command_executor.dispatch(command, &*self, CommandSender::Console(self.console_interface.clone()));
+        self.read_stdin.store(true, Ordering::SeqCst);
     }
 
     fn legacy_ping(&mut self, sender: usize) {
@@ -250,6 +281,9 @@ pub enum ServerBoundPacket {
         uuid: Uuid, 
         username: String
     },
+    HandleConsoleCommand {
+        command: String
+    },
     LegacyPing,
     StatusRequest
 //#end
@@ -303,10 +337,11 @@ pub enum ClientBoundPacket {
 //#end
 }
 
-pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut QuartzServer) {
+pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut QuartzServer<'_>) {
 //#dispatch_sync_packet
     match &wrapped_packet.packet {
         ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username),
+        ServerBoundPacket::HandleConsoleCommand {command} => handler.handle_console_command(wrapped_packet.sender, command),
         ServerBoundPacket::LegacyPing => handler.legacy_ping(wrapped_packet.sender),
         ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender)
     }

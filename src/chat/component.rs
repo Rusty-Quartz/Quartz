@@ -35,7 +35,7 @@ impl Color {
     where
         S: Serializer
     {
-        serializer.serialize_str(&format!("#{:6X}", (*r as u32) << 16 | (*g as u32) << 8 | (*b as u32)))
+        serializer.serialize_str(&format!("#{:06X}", (*r as u32) << 16 | (*g as u32) << 8 | (*b as u32)))
     }
 
     fn deserialize_custom<'de, D>(deserializer: D) -> Result<(u8, u8, u8), D::Error>

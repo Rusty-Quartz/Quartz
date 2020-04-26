@@ -10,6 +10,7 @@ use crate::network::packet_handler::*;
 use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
 use log::*;
+use crate::check;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ConnectionState {
@@ -42,7 +43,7 @@ impl IOHandle {
     fn write_encrypted(encrypter: Option<&mut Crypter>, source: &mut ByteBuffer, temp: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
         if let Some(encrypter) = encrypter {
             temp.resize(source.len());
-            encrypter.update(&source[..], &mut temp[..]).unwrap();
+            encrypter.update(&source[..], &mut temp[..])?;
             stream.write_all(&temp[..])
         } else {
             stream.write_all(&source[..])
@@ -57,13 +58,19 @@ impl IOHandle {
             self.operation_buffer.reset_cursor();
             self.operation_buffer.resize(len);
             self.operation_buffer.write_bytes(&buffer[offset..]);
-            decrypter.update(&self.operation_buffer[..], &mut buffer[offset..]).unwrap();
+            check!(decrypter.update(&self.operation_buffer[..], &mut buffer[offset..]), "Failed to decrypt packet data: {}");
         }
     }
 
     pub fn enable_encryption(&mut self, shared_secret: &[u8]) {
-        self.encrypter = Some(Crypter::new(Cipher::aes_128_cfb8(), Mode::Encrypt, shared_secret, Some(shared_secret)).unwrap());
-        self.decrypter = Some(Crypter::new(Cipher::aes_128_cfb8(), Mode::Decrypt, shared_secret, Some(shared_secret)).unwrap());
+        match Crypter::new(Cipher::aes_128_cfb8(), Mode::Encrypt, shared_secret, Some(shared_secret)) {
+            Ok(crypter) => self.encrypter = Some(crypter),
+            Err(e) => error!("Failed to enable encrypter: {}", e)
+        }
+        match Crypter::new(Cipher::aes_128_cfb8(), Mode::Decrypt, shared_secret, Some(shared_secret)) {
+            Ok(crypter) => self.decrypter = Some(crypter),
+            Err(e) => error!("Failed to enable encrypter: {}", e)
+        }
     }
 
     pub fn set_compression_threshold(&mut self, compression_threshold: i32) {
@@ -83,8 +90,8 @@ impl IOHandle {
 
                 // Compress the packet data and write to the operation buffer
                 let mut encoder = ZlibEncoder::new(self.operation_buffer.inner_mut(), Compression::default());
-                encoder.write_all(&packet_data[..]).unwrap();
-                encoder.finish().unwrap();
+                encoder.write_all(&packet_data[..])?;
+                encoder.finish()?;
 
                 // Use the packet data buffer to write the final packet
                 packet_data.clear();

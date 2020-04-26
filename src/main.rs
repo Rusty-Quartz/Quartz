@@ -29,6 +29,14 @@ pub mod chat {
     pub mod cfmt;
 }
 
+pub mod command {
+    pub mod executor;
+    pub mod arg;
+    mod sender;
+
+    pub use self::sender::CommandSender;
+}
+
 pub mod data {
     mod uuid;
 
@@ -57,6 +65,7 @@ pub mod util {
 }
 
 mod config;
+#[macro_use]
 mod logging;
 mod server;
 
@@ -77,18 +86,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded::<WrappedServerPacket>();
 
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port))?;
+    let listener = TcpListener::bind(format!("{}:{}", config.server_ip, config.port))?;
     listener.set_nonblocking(true).expect("Failed to create non-blocking TCP listener");
 
-    let mut server = QuartzServer::new(config, sync_packet_receiver);
+    let mut server = QuartzServer::new(config, sync_packet_receiver, console_interface);
     let client_list = server.client_list.clone();
-    server.init();
+    server.init(sync_packet_sender.clone());
 
     let server_handle = thread::spawn(move || {
         let mut next_connection_id: usize = 0;
 
         info!("Started TCP Server Thread");
 
+        // If this fails a panic is justified
         let key_pair = Arc::new(Rsa::generate(1024).unwrap());
 
         loop {
