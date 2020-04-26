@@ -17,6 +17,14 @@ macro_rules! color {
             )
         )
     };
+    ($text:expr, $color:ident) => {
+        crate::chat::component::Component::Text(
+            crate::chat::component::TextComponent::new(
+                $text,
+                Some(crate::chat::component::Color::Predefined(crate::chat::component::PredefinedColor::$color))
+            )
+        )
+    };
 }
 
 #[macro_export]

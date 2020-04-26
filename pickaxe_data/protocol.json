@@ -13,6 +13,7 @@
 			{
 				"name": "Handle_Console_Command",
 				"id": "0xFF",
+				"sender_independent": true,
 				"fields": [
 					{"name": "command", "type": "string"}
 				]

@@ -134,7 +134,7 @@ syncPackets.forEach((packet) => {
 	let syncPacket = '';
 
 	// define function for each sync packet
-	syncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self, ${packet.unimplemented ? '_' : ''}sender: usize`;
+	syncPacket += `\tfn ${packet.name.toLowerCase()}(&mut self${packet.sender_independent ? '' : (', ' + (packet.unimplemented ? '_' : '') + 'sender: usize')}`;
 
 	// have fields as parameters
 	packet.fields.filter(field => !field.unused).forEach((field) => {
@@ -234,7 +234,7 @@ console.log('Parsing sync server bound packets into dispatchSyncPacket functions
 let dispatchSyncPacket = '\tmatch &wrapped_packet.packet {';
 syncPackets.forEach((packet, index) => {
 	dispatchSyncPacket += `\n\t\tServerBoundPacket::${packet.name.replace(/_/g, '')}${usedFields(packet) == 0 ? '' : ` {${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')}}`}`;
-	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(wrapped_packet.sender${usedFields(packet) > 0 ? ', ' : ''}${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')})`;
+	dispatchSyncPacket += ` => handler.${packet.name.toLowerCase()}(${packet.sender_independent ? '' : ('wrapped_packet.sender' + (usedFields(packet) > 0 ? ', ' : ''))}${packet.fields.filter(f => !f.unused).map(v => v.name).join(', ')})`;
 	if (index < syncPackets.length - 1) {
 		dispatchSyncPacket += ',';
 	}
@@ -315,6 +315,7 @@ type State = {
 type Packet = {
 	async?: boolean,
 	unimplemented?: boolean,
+	sender_independent?: boolean,
 	name: string,
 	id: string,
 	fields: Field[]

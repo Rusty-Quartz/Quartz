@@ -207,8 +207,8 @@ impl QuartzServer<'_> {
         
     }
 
-    fn handle_console_command(&mut self, sender: usize, command: &str) {
-        self.command_executor.dispatch(command, &*self, CommandSender::Console(self.console_interface.clone()));
+    fn handle_console_command(&mut self, command: &str) {
+        self.command_executor.dispatch(command, self, CommandSender::Console(self.console_interface.clone()));
         self.read_stdin.store(true, Ordering::SeqCst);
     }
 
@@ -341,7 +341,7 @@ pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut 
 //#dispatch_sync_packet
     match &wrapped_packet.packet {
         ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username),
-        ServerBoundPacket::HandleConsoleCommand {command} => handler.handle_console_command(wrapped_packet.sender, command),
+        ServerBoundPacket::HandleConsoleCommand {command} => handler.handle_console_command(command),
         ServerBoundPacket::LegacyPing => handler.legacy_ping(wrapped_packet.sender),
         ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender)
     }

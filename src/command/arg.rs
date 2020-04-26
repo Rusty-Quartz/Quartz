@@ -16,7 +16,15 @@ impl<'cmd> ArgumentTraverser<'cmd> {
     }
 
     pub fn has_next(&self) -> bool {
-        self.anchor < self.command.len()
+        self.index < self.command.len()
+    }
+
+    pub fn remaining_string(&self, truncate_to: usize) -> &'cmd str {
+        if self.command.len() - self.anchor > truncate_to {
+            &self.command[self.anchor..self.anchor + truncate_to]
+        } else {
+            &self.command[self.anchor..]
+        }
     }
 }
 
@@ -72,18 +80,22 @@ impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
 
 pub enum Argument {
     Any,
-    Literal(&'static str)
+    Literal(&'static str),
+    Integer(i64),
+    FloatingPoint(f64),
+    String(String)
 }
 
 impl Argument {
-    fn matches(&self, argument: &str) -> bool {
+    pub fn matches(&self, argument: &str) -> bool {
         match self {
             Argument::Any => true,
-            Argument::Literal(literal) => literal.eq_ignore_ascii_case(argument)
+            Argument::Literal(literal) => literal.eq_ignore_ascii_case(argument),
+            _ => false // TODO
         }
     }
 
-    fn apply(&self, context: &mut CommandContext, argument: &str) -> Result<(), String> {
+    pub fn apply(&self, context: &mut CommandContext, name: &'static str, argument: &str) -> Result<(), String> {
         // Default: do nothing
         Ok(())
     }
