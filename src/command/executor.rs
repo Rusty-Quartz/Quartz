@@ -18,8 +18,14 @@ impl<'ex> CommandExecutor<'ex> {
         }
     }
 
-    pub fn register(&mut self, command: &str, node: CommandNode<'ex>) {
-        self.commands.insert(command.to_owned(), node);
+    pub fn register(&mut self, node: CommandNode<'ex>) {
+        match node.argument {
+            Argument::Literal(name) => {
+                self.commands.insert(name.to_owned(), node);
+            },
+            // Perhaps consider handling this error
+            _ => {}
+        }
     }
 
     pub fn dispatch(&self, command: &str, server: &QuartzServer<'_>, sender: CommandSender) {
@@ -123,6 +129,11 @@ impl<'ex> CommandNode<'ex> {
         }
     }
 
+    pub fn then(mut self, child: CommandNode<'ex>) -> CommandNode<'ex> {
+        self.children.push(child);
+        self
+    }
+
     pub fn executes(mut self, executor: impl Fn(&mut CommandContext) + 'ex) -> Self {
         self.executor = Some(Box::new(executor));
         self
@@ -141,6 +152,14 @@ impl<'ex> CommandNode<'ex> {
 
 pub fn executor<'a>(executor: impl Fn(&mut CommandContext) + 'a) -> CommandNode<'a> {
     CommandNode::new("", Argument::Any).executes(executor)
+}
+
+pub fn argchain(args: Vec<CommandNode>) -> CommandNode {
+    while args.len() > 1 {
+        let node = args.pop().unwrap();
+        args.last_mut().unwrap().children.push(node);
+    }
+    args.pop().unwrap()
 }
 
 #[inline]
