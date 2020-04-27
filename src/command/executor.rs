@@ -75,16 +75,26 @@ impl<'ex> CommandExecutor<'ex> {
                         } else {
                             Self::expect_args(node, &context);
                         }
-
-                        return;
                     }
+                }
+
+                // Look for and load in default argument values
+                'default_loop: while !node.children.is_empty() {
+                    for child in node.children.iter() {
+                        if child.default {
+                           node = child;
+                           context.arguments.insert(child.name.to_owned(), child.argument.clone());
+                        continue 'default_loop;
+                        }
+                    }
+                    break;
                 }
 
                 // Handle the expectation for more arguments if needed
                 if !node.execute(&mut context) && !node.children.is_empty() {
                     if node.children.len() == 1 {
                         context.sender.send_message(color!("Expected value for argument \"{}\"", Red, node.children[0].name));
-                    } else {
+                    } else if node.children.len() > 1 {
                         Self::expect_args(node, &context);
                     }
                 }
@@ -111,11 +121,54 @@ pub struct CommandContext<'ctx> {
     pub arguments: HashMap<String, Argument>
 }
 
+impl<'ctx> CommandContext<'ctx> {
+    pub fn get_integer(&self, key: &str) -> i64{
+        match self.arguments.get(key) {
+            Some(arg) => match arg {
+                Argument::Integer(value) => *value,
+                _ => 0
+            },
+            None => 0
+        }
+    }
+
+    pub fn get_float(&self, key: &str) -> f64 {
+        match self.arguments.get(key) {
+            Some(arg) => match arg {
+                Argument::FloatingPoint(value) => *value,
+                _ => 0_f64
+            },
+            None =>0_f64
+        }
+    }
+
+    pub fn get_string(&self, key: &str) -> String {
+        match self.arguments.get(key) {
+            Some(arg) => match arg {
+                Argument::String(value) => String::from(value),
+                _ => "".to_owned()
+            },
+            None => "".to_owned()
+        }
+    }
+
+    pub fn get_literal(&self, key: &str) -> String {
+        match self.arguments.get(key) {
+            Some(arg) => match arg {
+                Argument::Literal(value) => String::from(*value),
+                _ => "".to_owned()
+            },
+            None => "".to_owned()
+        }
+    }
+}
+
 pub struct CommandNode<'ex> {
     name: &'static str,
     argument: Argument,
     executor: Option<Box<dyn Fn(&mut CommandContext) + 'ex>>,
-    children: Vec<CommandNode<'ex>>
+    children: Vec<CommandNode<'ex>>,
+    default: bool
 }
 
 impl<'ex> CommandNode<'ex> {
@@ -125,7 +178,8 @@ impl<'ex> CommandNode<'ex> {
             name,
             argument: arg,
             executor: None,
-            children: Vec::new()
+            children: Vec::new(),
+            default: false
         }
     }
 
@@ -154,7 +208,8 @@ pub fn executor<'a>(executor: impl Fn(&mut CommandContext) + 'a) -> CommandNode<
     CommandNode::new("", Argument::Any).executes(executor)
 }
 
-pub fn argchain(args: Vec<CommandNode>) -> CommandNode {
+pub fn after<'a>(mut args: Vec<CommandNode<'a>>, last: CommandNode<'a>) -> CommandNode<'a> {
+    args.last_mut().unwrap().children.push(last);
     while args.len() > 1 {
         let node = args.pop().unwrap();
         args.last_mut().unwrap().children.push(node);
@@ -170,4 +225,35 @@ pub fn literal(literal: &'static str) -> CommandNode {
 #[inline]
 pub fn integer(name: &'static str) -> CommandNode {
     CommandNode::new(name, Argument::Integer(0))
+}
+
+#[inline]
+pub fn integer_default(name: &'static str, default: i64) -> CommandNode {
+    let mut node = CommandNode::new(name, Argument::Integer(default));
+    node.default = true;
+    node
+}
+
+#[inline]
+pub fn float(name: &'static str) -> CommandNode {
+    CommandNode::new(name, Argument::Integer(0))
+}
+
+#[inline]
+pub fn float_default(name: &'static str, default: f64) -> CommandNode {
+    let mut node = CommandNode::new(name, Argument::FloatingPoint(default));
+    node.default = true;
+    node
+}
+
+#[inline]
+pub fn string(name: &'static str) -> CommandNode {
+    CommandNode::new(name, Argument::String("".to_owned()))
+}
+
+#[inline]
+pub fn string_default(name: &'static str, default: String) -> CommandNode {
+    let mut node = CommandNode::new(name, Argument::String(default));
+    node.default = true;
+    node
 }

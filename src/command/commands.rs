@@ -5,11 +5,11 @@ use crate::{unchecked_component, custom_color};
 use crate::server::RUNNING;
 
 pub fn init_commands(command_executor: &mut CommandExecutor) {
-    command_executor.register("stop", executor(|_ctx| {
+    command_executor.register(literal("stop").executes(|_ctx| {
         RUNNING.compare_and_swap(true, false, Ordering::SeqCst);
     }));
 
-    command_executor.register("tps", executor(|ctx| {
+    command_executor.register(literal("tps").executes(|ctx| {
         let mspt = ctx.server.clock.mspt();
         let tps = ctx.server.clock.as_tps(mspt);
         let red: f32;

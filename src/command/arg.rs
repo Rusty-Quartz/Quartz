@@ -1,5 +1,8 @@
 use crate::command::executor::CommandContext;
 
+use lazy_static::lazy_static;
+use regex::Regex;
+
 pub struct ArgumentTraverser<'cmd> {
     command: &'cmd str,
     anchor: usize,
@@ -78,6 +81,7 @@ impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
     }
 }
 
+#[derive(Clone)]
 pub enum Argument {
     Any,
     Literal(&'static str),
@@ -88,15 +92,53 @@ pub enum Argument {
 
 impl Argument {
     pub fn matches(&self, argument: &str) -> bool {
+        lazy_static! {
+            static ref FLOAT: Regex = Regex::new(r"^(\d+\.\d*)|(\d*\.\d+)$").unwrap();
+            static ref INT: Regex = Regex::new(r"^\d+$").unwrap();
+        }
+
+
         match self {
             Argument::Any => true,
             Argument::Literal(literal) => literal.eq_ignore_ascii_case(argument),
+            Argument::Integer(_value) => INT.is_match(argument),
+            Argument::FloatingPoint(_value) => FLOAT.is_match(argument),
+            Argument::String(_value) => true,
             _ => false // TODO
         }
     }
 
     pub fn apply(&self, context: &mut CommandContext, name: &'static str, argument: &str) -> Result<(), String> {
-        // Default: do nothing
-        Ok(())
+        match self {
+            Argument::Any => {
+                context.arguments.insert(name.to_owned(), Argument::Any);
+                Ok(())
+            },
+            Argument::Literal(_value) => {
+                context.arguments.insert(name.to_owned(), self.clone());
+                Ok(())
+            },
+            Argument::Integer(_value) => {
+                let parsed = argument.parse::<i64>();
+                if parsed.is_err() {Err("Invalid Integer".to_owned())}
+                else {
+                    context.arguments.insert(name.to_owned(), Argument::Integer(parsed.unwrap()));
+                    Ok(())
+                }
+            },
+            Argument::FloatingPoint(_value) => {
+                let parsed = argument.parse::<f64>();
+                if parsed.is_err() {Err("Invalid Integer".to_owned())}
+                else {
+                    context.arguments.insert(name.to_owned(), Argument::FloatingPoint(parsed.unwrap()));
+                    Ok(())
+                }
+            },
+            Argument::String(_value) => {
+                context.arguments.insert(name.to_owned(), Argument::String(argument.to_owned()));
+                Ok(())
+            }
+            _ => Err("Invalid argument type".to_owned())
+        }
     }
 }
