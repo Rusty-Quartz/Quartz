@@ -3,10 +3,12 @@ use crate::command::executor::CommandContext;
 use lazy_static::lazy_static;
 use regex::Regex;
 
+// Iterates over the individual arguments in a command accounting for ignored spaces
 pub struct ArgumentTraverser<'cmd> {
     command: &'cmd str,
     anchor: usize,
-    index: usize
+    index: usize,
+    breakpoint: bool
 }
 
 impl<'cmd> ArgumentTraverser<'cmd> {
@@ -14,7 +16,8 @@ impl<'cmd> ArgumentTraverser<'cmd> {
         ArgumentTraverser {
             command,
             anchor: 0,
-            index: 0
+            index: 0,
+            breakpoint: false
         }
     }
 
@@ -22,7 +25,26 @@ impl<'cmd> ArgumentTraverser<'cmd> {
         self.index < self.command.len()
     }
 
-    pub fn remaining_string(&self, truncate_to: usize) -> &'cmd str {
+    pub fn set_breakpoint(&mut self) {
+        self.breakpoint = true;
+    }
+
+    pub fn check_breakpoint(&mut self) -> bool {
+        if self.breakpoint {
+            self.index = self.anchor;
+            self.breakpoint = false;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn remaining(&self) -> &'cmd str {
+        &self.command[self.anchor..]
+    }
+
+    // Returns the remaining string portion from the current anchor position to the end of the string
+    pub fn remaining_truncated(&self, truncate_to: usize) -> &'cmd str {
         if self.command.len() - self.anchor > truncate_to {
             &self.command[self.anchor..self.anchor + truncate_to]
         } else {
@@ -35,11 +57,11 @@ impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
     type Item = &'cmd str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.anchor = self.index;
-
-        if self.anchor >= self.command.len() {
+        if self.index >= self.command.len() {
             return None;
         }
+
+        self.anchor = self.index;
 
         // Single or double quotes
         let mut quote_type: u8 = 0;
@@ -81,9 +103,10 @@ impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
     }
 }
 
+// Acts both as a wrapper for argument values and argument type definition
 #[derive(Clone)]
 pub enum Argument {
-    Any,
+    Remaining,
     Literal(&'static str),
     Integer(i64),
     FloatingPoint(f64),
@@ -91,27 +114,30 @@ pub enum Argument {
 }
 
 impl Argument {
+    // Whether or not this argument type matches the given string (does not guarantee a successful parse)
     pub fn matches(&self, argument: &str) -> bool {
         lazy_static! {
-            static ref FLOAT: Regex = Regex::new(r"^(\d+\.\d*)|(\d*\.\d+)$").unwrap();
-            static ref INT: Regex = Regex::new(r"^\d+$").unwrap();
+            static ref FLOAT: Regex = Regex::new(r"^(-+)?(\d+\.\d*)|(\d*\.\d+)$").unwrap();
+            static ref INT: Regex = Regex::new(r"^(-+)?\d+$").unwrap();
         }
 
 
         match self {
-            Argument::Any => true,
+            Argument::Remaining => true,
             Argument::Literal(literal) => literal.eq_ignore_ascii_case(argument),
             Argument::Integer(_value) => INT.is_match(argument),
             Argument::FloatingPoint(_value) => FLOAT.is_match(argument),
-            Argument::String(_value) => true,
-            _ => false // TODO
+            Argument::String(_value) => true
         }
     }
 
+    // Attempts to parse the given argument according to this arguments type. If the parse is successful, an argument
+    // of the same type is added to the context with the parsed value of the given string argument with the given name.
     pub fn apply(&self, context: &mut CommandContext, name: &'static str, argument: &str) -> Result<(), String> {
         match self {
-            Argument::Any => {
-                context.arguments.insert(name.to_owned(), Argument::Any);
+            Argument::Remaining => {
+                // Notify the arg loop that it should break
+                context.raw_args.set_breakpoint();
                 Ok(())
             },
             Argument::Literal(_value) => {
@@ -138,7 +164,6 @@ impl Argument {
                 context.arguments.insert(name.to_owned(), Argument::String(argument.to_owned()));
                 Ok(())
             }
-            _ => Err("Invalid argument type".to_owned())
         }
     }
 }

@@ -5,6 +5,9 @@ use crate::{unchecked_component, custom_color};
 use crate::server::RUNNING;
 
 pub fn init_commands(command_executor: &mut CommandExecutor) {
+    
+    /* NOTE: Please keep commands in alphabetical order */
+
     command_executor.register(literal("stop").executes(|_ctx| {
         RUNNING.compare_and_swap(true, false, Ordering::SeqCst);
     }));
@@ -37,9 +40,10 @@ pub fn init_commands(command_executor: &mut CommandExecutor) {
         }
 
         ctx.sender.send_message(unchecked_component!(
-            "&(gold)Server TPS: &({}){:.2} ({:.3} mspt)",
+            "&(gold)Server TPS: &({}){:.2} ({}%), {:.3} mspt",
             custom_color!(red, green, 0),
             tps,
+            ((tps / ctx.server.clock.max_tps()) * 100_f32) as u32,
             mspt
         ));
     }));

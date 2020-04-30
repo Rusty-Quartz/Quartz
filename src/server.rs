@@ -124,7 +124,7 @@ impl<'a> QuartzServer<'a> {
         while let Ok(packet_wrapper) = self.sync_packet_receiver.try_next() {
             match packet_wrapper {
                 Some(packet) => {
-                    dispatch_sync_packet(&packet, &mut *self);
+                    dispatch_sync_packet(&packet, self);
                 },
                 None => break
             }
@@ -134,6 +134,9 @@ impl<'a> QuartzServer<'a> {
 
 impl<'a> Drop for QuartzServer<'a> {
     fn drop(&mut self) {
+        // In case this is reached due to a panic
+        RUNNING.store(false, Ordering::SeqCst);
+
         for (thread_name, handle) in self.join_handles.drain() {
             info!("Shutting down {}", thread_name);
             if let Err(_) = handle.join() {
@@ -143,9 +146,9 @@ impl<'a> Drop for QuartzServer<'a> {
     }
 }
 
+// Keeps track of the time each tick takes and regulates the server TPS
 pub struct ServerClock {
-    micros_readings: [u32; 100],
-    micros_index: usize,
+    micros_ema: f32,
     full_tick_millis: u128,
     full_tick: Duration,
     time: SystemTime
@@ -154,23 +157,23 @@ pub struct ServerClock {
 impl ServerClock {
     pub fn new(tick_length: u128) -> Self {
         ServerClock {
-            micros_readings: [0_u32; 100],
-            micros_index: 0,
+            micros_ema: 0_f32,
             full_tick_millis: tick_length,
             full_tick: Duration::from_millis(tick_length as u64),
             time: SystemTime::now()
         }
     }
 
+    // Start of a new tick
     pub fn start(&mut self) {
         self.time = SystemTime::now();
     }
 
+    // The tick code has finished executing, so record the time and sleep if extra time remains
     pub fn finish_tick(&mut self) {
         match self.time.elapsed() {
             Ok(duration) => {
-                self.micros_readings[self.micros_index] = duration.as_micros() as u32;
-                self.micros_index = (self.micros_index + 1) % 100;
+                self.micros_ema = (99_f32 * self.micros_ema + duration.as_micros() as f32) / 100_f32;
 
                 if duration.as_millis() < self.full_tick_millis {
                     thread::sleep(self.full_tick - duration);
@@ -180,20 +183,26 @@ impl ServerClock {
         }
     }
 
+    // Milliseconds per tick
+    #[inline]
     pub fn mspt(&self) -> f32 {
-        let mut sum: f32 = 0.0;
-        for i in 0..100 {
-            sum += self.micros_readings[i] as f32;
-        }
-        sum / 100_000_f32
+        self.micros_ema / 1000_f32
     }
 
+    // Convert mspt to tps
+    #[inline]
     pub fn as_tps(&self, mspt: f32) -> f32 {
         if mspt < self.full_tick_millis as f32 {
             1000_f32 / (self.full_tick_millis as f32)
         } else {
             1000_f32 / mspt
         }
+    }
+
+    // The maximum tps the server will tick at
+    #[inline]
+    pub fn max_tps(&self) -> f32 {
+        1000_f32 / self.full_tick_millis as f32
     }
 }
 
