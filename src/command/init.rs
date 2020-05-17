@@ -1,10 +1,12 @@
 use std::sync::atomic::{Ordering};
+use log::info;
 
 use crate::command::executor::*;
 use crate::{unchecked_component, custom_color};
 use crate::server::RUNNING;
 
 pub fn init_commands(command_executor: &mut CommandExecutor) {
+    info!("Registering commands");
     
     /* NOTE: Please keep commands in alphabetical order */
 

@@ -11,7 +11,13 @@ use linefeed::ReadResult;
 
 use log::*;
 
+use crate::block::{
+    init_blocks,
+    block::BLOCK_COUNT,
+    state::STATE_COUNT
+};
 use crate::config::Config;
+use crate::data::Registry;
 use crate::network::packet_handler::{
     WrappedServerPacket,
     ServerBoundPacket,
@@ -21,7 +27,7 @@ use crate::network::packet_handler::{
 use crate::network::connection::WriteHandle;
 use crate::util::ioutil::ByteBuffer;
 use crate::command::executor::*;
-use crate::command::commands::init_commands;
+use crate::command::init_commands;
 
 pub const VERSION: &str = "1.15.2";
 
@@ -39,7 +45,8 @@ pub struct QuartzServer<'a> {
     sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
     join_handles: HashMap<String, JoinHandle<()>>,
     pub command_executor: CommandExecutor<'a>,
-    pub clock: ServerClock
+    pub clock: ServerClock,
+    pub registry: Registry
 }
 
 impl<'a> QuartzServer<'a> {
@@ -60,13 +67,14 @@ impl<'a> QuartzServer<'a> {
             sync_packet_receiver,
             join_handles: HashMap::new(),
             command_executor: CommandExecutor::new(),
-            clock: ServerClock::new(50)
+            clock: ServerClock::new(50),
+            registry: Registry::new(BLOCK_COUNT, STATE_COUNT)
         }
     }
 
     pub fn init(&mut self, command_pipe: UnboundedSender<WrappedServerPacket>) {      
-
-        // Register commands in commands.rs
+        // Register all of the things
+        init_blocks(&mut self.registry);
         init_commands(&mut self.command_executor);
 
         // Setup the command handler thread

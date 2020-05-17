@@ -11,5 +11,4 @@ fn main() {
     println!("cargo:rerun-if-changed=Pickaxe/data/Pickaxe.js");
 
     println!("cargo:rerun-if-changed=build.rs");
-    panic!("test")
 }
