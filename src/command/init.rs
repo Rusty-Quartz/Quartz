@@ -1,6 +1,5 @@
 use std::sync::atomic::{Ordering};
-use std::collections::HashMap;
-use log::{info, debug};
+use log::info;
 
 use crate::command::executor::*;
 use crate::{unchecked_component, custom_color, color};
