@@ -355,7 +355,13 @@ impl fmt::Display for TextComponent {
 
     #[cfg(not(unix))]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.text)
+		write!(f, "{}", self.text)?;
+		if let Some(children) = &self.extra {
+			for child in children.iter() {
+	    		child.fmt(f)?;
+	  		}
+		}
+		Ok(())
     }
 }
 
