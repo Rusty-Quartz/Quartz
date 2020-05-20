@@ -11,13 +11,8 @@ use linefeed::ReadResult;
 
 use log::*;
 
-use crate::block::{
-    init_blocks,
-    block::BLOCK_COUNT,
-    state::STATE_COUNT
-};
+use crate::block::init_blocks;
 use crate::config::Config;
-use crate::data::Registry;
 use crate::network::packet_handler::{
     WrappedServerPacket,
     ServerBoundPacket,
@@ -37,19 +32,18 @@ pub fn is_running() -> bool {
     RUNNING.load(Ordering::SeqCst)
 }
 
-pub struct QuartzServer<'a> {
+pub struct QuartzServer<'sv> {
     pub config: Config,
     pub client_list: ClientList,
     pub console_interface: Arc<Interface<DefaultTerminal>>,
     pub read_stdin: Arc<AtomicBool>,
     sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
     join_handles: HashMap<String, JoinHandle<()>>,
-    pub command_executor: CommandExecutor<'a>,
-    pub clock: ServerClock,
-    pub registry: Registry
+    pub command_executor: CommandExecutor<'sv>,
+    pub clock: ServerClock
 }
 
-impl<'a> QuartzServer<'a> {
+impl<'sv> QuartzServer<'sv> {
     pub fn new(
         config: Config,
         sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
@@ -67,14 +61,13 @@ impl<'a> QuartzServer<'a> {
             sync_packet_receiver,
             join_handles: HashMap::new(),
             command_executor: CommandExecutor::new(),
-            clock: ServerClock::new(50),
-            registry: Registry::new(BLOCK_COUNT, STATE_COUNT)
+            clock: ServerClock::new(50)
         }
     }
 
     pub fn init(&mut self, command_pipe: UnboundedSender<WrappedServerPacket>) {      
         // Register all of the things
-        init_blocks(&mut self.registry);
+        init_blocks();
         init_commands(&mut self.command_executor);
 
         // Setup the command handler thread
@@ -140,7 +133,7 @@ impl<'a> QuartzServer<'a> {
     }
 }
 
-impl<'a> Drop for QuartzServer<'a> {
+impl<'sv> Drop for QuartzServer<'sv> {
     fn drop(&mut self) {
         // In case this is reached due to a panic
         RUNNING.store(false, Ordering::SeqCst);

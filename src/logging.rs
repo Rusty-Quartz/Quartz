@@ -208,17 +208,10 @@ impl CustomLogRoller {
             let today = format!("{}", Local::now().format("%Y-%m-%d"));
 
             // Find the logs that match today's date and determine the highest index ({date}-{index}.log).
-            // This is incredibly ugly, find a better way to do it.
             for path in paths.flatten().map(|entry| entry.file_name().into_string()).flatten().filter(|name| name.starts_with(&today)) {
-                if let Some(dash_index) = path.rfind("-") {
-                    if let Some(dot_index) = path.find(".") {
-                        if dash_index + 1 < dot_index {
-                            if let Ok(index) = path[dash_index + 1..dot_index].parse::<u32>() {
-                                if index > max_index {
-                                    max_index = index;
-                                }
-                            }
-                        }
+                if let Some(index) = Self::index_from_path(&path) {
+                    if index > max_index {
+                        max_index = index;
                     }
                 }
             }
@@ -226,6 +219,16 @@ impl CustomLogRoller {
 
         CustomLogRoller {
             name_info: StdMutex::new((Local::now().ordinal(), max_index))
+        }
+    }
+
+    fn index_from_path(path: &str) -> Option<u32> {
+        let dash_index = path.rfind("-")?;
+        let dot_index = path.find(".")?;
+        if dash_index + 1 < dot_index {
+            path[dash_index + 1..dot_index].parse::<u32>().ok()
+        } else {
+            None
         }
     }
 

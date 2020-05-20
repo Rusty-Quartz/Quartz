@@ -1,4 +1,4 @@
-use crate::data::StateID;
+use crate::block::StateID;
 
 pub struct Chunk {
     block_data: Box<[StateID; 4096]>

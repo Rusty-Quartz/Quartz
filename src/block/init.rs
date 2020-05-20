@@ -1,24 +1,127 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use log::info;
-use crate::data::{Registry, StateID};
-use crate::block::{block, StateData};
+use serde::{Serialize, Deserialize};
+use serde_json;
+use once_cell::sync::OnceCell;
+use crate::block::{StateID, Block, BlockState, StateBuilder};
+use crate::data::UnlocalizedName;
 
-pub fn init_blocks(registry: &mut Registry) {
-    info!("Loading block data");
+static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block>> = OnceCell::new();
+static GLOBAL_PALETTE: OnceCell<Vec<BlockState>> = OnceCell::new();
 
-    // Register each block
-    registry.register_block(&block::AIR);
-
-    // Register each state
+#[inline(always)]
+pub fn get_block_list() -> &'static HashMap<UnlocalizedName, Block> {
+    BLOCK_LIST.get().expect("Block list not initialized.")
 }
 
+#[inline(always)]
+pub fn get_global_palette() -> &'static Vec<BlockState> {
+    GLOBAL_PALETTE.get().expect("Global palette not initialized.")
+}
+
+#[inline]
+pub fn get_block(block_name: &UnlocalizedName) -> Option<&'static Block> {
+    get_block_list().get(block_name)
+}
+
+#[inline]
+pub fn default_state(block_name: &UnlocalizedName) -> Option<StateID> {
+    get_block_list().get(block_name).map(|block| block.default_state)
+}
+
+#[inline]
+pub fn get_state(id: StateID) -> Option<&'static BlockState> {
+    get_global_palette().get(id as usize)
+}
+
+#[inline]
+pub fn new_state(block_name: &UnlocalizedName) -> Option<StateBuilder> {
+    get_block_list().get(block_name).map(|block| StateBuilder::new(&get_global_palette()[block.default_state as usize]))
+}
+
+pub fn init_blocks() {
+    info!("Loading block data");
+
+    let parsed_data = serde_json::from_str::<HashMap<String, RawBlockInfo>>(include_str!("../assets/blocks.json"))
+        .expect("assets/blocks.json is corrupted.");
+
+    let mut block_list: HashMap<UnlocalizedName, Block> = HashMap::with_capacity(parsed_data.len());
+    let mut name_map: HashMap<String, UnlocalizedName> = HashMap::with_capacity(parsed_data.len());
+    let mut largest_state: u16 = 0;
+
+    for (name, block_info) in parsed_data.iter() {
+        let uln = UnlocalizedName::parse(name).expect("Invalid block name encountered during registration.");
+        name_map.insert(name.clone(), uln.clone());
+
+        // This should never happen if the data integrity is not compromised
+        if block_info.states.is_empty() {
+            panic!("Invalid block encountered: {}, no states found.", name);
+        }
+
+        block_list.insert(uln.clone(), Block {
+            name: uln,
+            properties: block_info.properties.clone(),
+            base_state: block_info.states[0].id,
+            default_state: block_info.default
+        });
+
+        // Use this to determine the size of the global palette
+        let id = block_info.states.last().unwrap().id;
+        if id > largest_state {
+            largest_state = id;
+        }
+    }
+
+    match BLOCK_LIST.set(block_list) {
+        Err(_) => panic!("Block list already initialized."),
+        _ => {}
+    }
+
+    let mut global_palette: Vec<BlockState> = Vec::with_capacity((largest_state as usize) + 1);
+
+    // Since we expand to the capacity it's fine
+    unsafe {
+        global_palette.set_len(global_palette.capacity());
+    }
+
+    for (name, block) in parsed_data {
+        // All of the unwraps are guaranteed to succeed
+        let handle: &'static Block = BLOCK_LIST.get().unwrap().get(name_map.get(&name).unwrap()).unwrap();
+        
+        for state_info in block.states {
+            // Make sure we're not going out of bounds
+            assert!((state_info.id as usize) < global_palette.len(), "Invalid state ID encountered: {} > {}", state_info.id, global_palette.len());
+
+            let state = BlockState {
+                handle,
+                properties: state_info.properties
+            };
+
+            // Make sure the computed ID matches the ID we registered the state with
+            assert_eq!(state_info.id, state.id(), "Computed ID for {} does not match stored ID.", state);
+
+            global_palette[state_info.id as usize] = state;
+        }
+    }
+
+    match GLOBAL_PALETTE.set(global_palette) {
+        Err(_) => panic!("Global palette already initialized."),
+        _ => {}
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 struct RawBlockInfo {
-    properties: Option<HashMap<String, Vec<String>>>,
+    // Use a BTreeMap for ordering so that we can compute state IDs
+    #[serde(default = "BTreeMap::new")]
+    properties: BTreeMap<String, Vec<String>>,
     default: StateID,
     states: Vec<RawStateInfo>
 }
 
+#[derive(Serialize, Deserialize)]
 struct RawStateInfo {
     id: StateID,
-    properties: Option<StateData>
+    #[serde(default = "HashMap::new")]
+    properties: HashMap<String, String>
 }

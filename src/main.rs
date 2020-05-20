@@ -24,15 +24,21 @@ use server::QuartzServer;
 use openssl::rsa::Rsa;
 
 pub mod block {
-    pub mod block;
     mod init;
     pub mod state;
 
-    pub use self::block::Block;
-    pub use self::init::init_blocks;
+    pub use self::init::{
+        default_state,
+        get_block,
+        get_state,
+        init_blocks,
+        new_state
+    };
     pub use self::state::{
+        StateID,
+        Block,
         BlockState,
-        StateData
+        StateBuilder
     };
 }
 
@@ -54,15 +60,10 @@ pub mod command {
 
 pub mod data {
     mod chunk;
-    mod registry;
     mod uln;
     mod uuid;
 
     pub use self::chunk::Chunk;
-    pub use self::registry::{
-        Registry,
-        StateID
-    };
     pub use self::uln::UnlocalizedName;
     pub use self::uuid::Uuid;
 }

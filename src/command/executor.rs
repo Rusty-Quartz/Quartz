@@ -8,11 +8,11 @@ use crate::command::CommandSender;
 use crate::color;
 
 // Contains a map of commands which can be executed
-pub struct CommandExecutor<'ex> {
-    commands: HashMap<String, CommandNode<'ex>>
+pub struct CommandExecutor<'sv> {
+    commands: HashMap<String, CommandNode<'sv>>
 }
 
-impl<'ex> CommandExecutor<'ex> {
+impl<'sv> CommandExecutor<'sv> {
     pub fn new() -> Self {
         CommandExecutor {
             commands: HashMap::new()
@@ -21,7 +21,7 @@ impl<'ex> CommandExecutor<'ex> {
 
     // Register the given command node with its defined syntax. If the node is not a literal
     // this function currently just ignores it and does nothing.
-    pub fn register(&mut self, node: CommandNode<'ex>) {
+    pub fn register(&mut self, node: CommandNode<'sv>) {
         match node.argument {
             Argument::Literal(name) => {
                 self.commands.insert(name.to_owned(), node);
@@ -179,17 +179,17 @@ impl<'ctx> CommandContext<'ctx> {
 }
 
 // The basic structural unit of a command syntax tree
-pub struct CommandNode<'ex> {
+pub struct CommandNode<'sv> {
     name: &'static str,
     argument: Argument,
-    executor: Option<Box<dyn Fn(CommandContext) + 'ex>>,
-    children: Vec<CommandNode<'ex>>,
+    executor: Option<Box<dyn Fn(CommandContext) + 'sv>>,
+    children: Vec<CommandNode<'sv>>,
     default: bool
 }
 
-impl<'ex> CommandNode<'ex> {
+impl<'sv> CommandNode<'sv> {
     #[inline]
-    fn new(name: &'static str, arg: Argument, default: bool) -> CommandNode<'ex> {
+    fn new(name: &'static str, arg: Argument, default: bool) -> CommandNode<'sv> {
         CommandNode {
             name,
             argument: arg,
@@ -200,13 +200,13 @@ impl<'ex> CommandNode<'ex> {
     }
 
     // Adds a child
-    pub fn then(mut self, child: CommandNode<'ex>) -> CommandNode<'ex> {
+    pub fn then(mut self, child: CommandNode<'sv>) -> CommandNode<'sv> {
         self.children.push(child);
         self
     }
 
     // Adds an executor
-    pub fn executes(mut self, executor: impl Fn(CommandContext) + 'ex) -> Self {
+    pub fn executes(mut self, executor: impl Fn(CommandContext) + 'sv) -> Self {
         self.executor = Some(Box::new(executor));
         self
     }
