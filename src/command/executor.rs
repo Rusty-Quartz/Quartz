@@ -9,22 +9,25 @@ use crate::color;
 
 // Contains a map of commands which can be executed
 pub struct CommandExecutor<'sv> {
-    commands: HashMap<String, CommandNode<'sv>>
+	commands: HashMap<String, CommandNode<'sv>>,
+	descriptions: HashMap<String, String>
 }
 
 impl<'sv> CommandExecutor<'sv> {
     pub fn new() -> Self {
         CommandExecutor {
-            commands: HashMap::new()
+			commands: HashMap::new(),
+			descriptions: HashMap::new()
         }
     }
 
     // Register the given command node with its defined syntax. If the node is not a literal
     // this function currently just ignores it and does nothing.
-    pub fn register(&mut self, node: CommandNode<'sv>) {
+    pub fn register(&mut self, node: CommandNode<'sv>, description: &str) {
         match node.argument {
             Argument::Literal(name) => {
-                self.commands.insert(name.to_owned(), node);
+				self.commands.insert(name.to_owned(), node);
+				self.descriptions.insert(name.to_owned(), description.to_owned());
             },
             // Perhaps consider handling this error
             _ => {}
@@ -132,7 +135,15 @@ impl<'sv> CommandExecutor<'sv> {
             message.push_str(child.name);
         }
         context.sender.send_message(color!(message, Red));
-    }
+	}
+	
+	pub fn get_command_names(&self) -> Vec<&String>{
+		self.commands.keys().collect()
+	}
+
+	pub fn get_command_description(&self, command: &str) -> Option<&String> {
+		self.descriptions.get(command)
+	}
 }
 
 // The context in which a command is executed. This has no use outside the lifecycle
