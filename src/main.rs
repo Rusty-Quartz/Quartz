@@ -23,18 +23,53 @@ use server::QuartzServer;
 
 use openssl::rsa::Rsa;
 
+pub mod item {
+    pub mod item;
+    pub mod inventory;
+    pub mod item_info;
+	mod init;
+
+	pub use item::{
+		ItemStack,
+        Item
+	};
+
+    pub use inventory::Inventory;
+    
+    pub use init::{
+        init_items,
+        get_item,
+        get_item_list
+    };
+
+    pub use item_info::{
+        ItemInfo,
+        ToolLevel,
+        ToolType,
+        ArmorType,
+        UsableType,
+        RangedWeapon
+    };
+}
+
 pub mod block {
     mod init;
     pub mod state;
+	pub mod entity;
 
-    pub use self::init::{
+    pub mod entities {
+        pub mod furnace_entity;
+        pub use furnace_entity::FurnaceBlockEntity;
+    }
+
+    pub use init::{
         default_state,
         get_block,
         get_state,
         init_blocks,
         new_state
     };
-    pub use self::state::{
+    pub use state::{
         StateID,
         Block,
         BlockState,
@@ -54,8 +89,8 @@ pub mod command {
     mod init;
     mod sender;
 
-    pub use self::sender::CommandSender;
-    pub use self::init::init_commands;
+    pub use sender::CommandSender;
+    pub use init::init_commands;
 }
 
 pub mod data {
@@ -63,9 +98,10 @@ pub mod data {
     mod uln;
     mod uuid;
 
-    pub use self::chunk::Chunk;
-    pub use self::uln::UnlocalizedName;
-    pub use self::uuid::Uuid;
+    pub use chunk::Chunk;
+    pub use chunk::BlockPosition;
+    pub use uln::UnlocalizedName;
+    pub use uuid::Uuid;
 }
 
 pub mod nbt {
@@ -74,9 +110,9 @@ pub mod nbt {
     pub mod write;
     pub mod snbt;
 
-    pub use self::tag::NbtTag;
-    pub use self::tag::NbtCompound;
-    pub use self::tag::NbtList;
+    pub use tag::NbtTag;
+    pub use tag::NbtCompound;
+    pub use tag::NbtList;
 }
 
 pub mod network {
@@ -101,7 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     logging::init_logger(console_interface.clone())?;
 
     let config: Config;
-    match load_config(String::from("./config.json")) {
+    match load_config("./config.json".to_owned()) {
         Ok(cfg) => config = cfg,
         Err(e) => {
             error!("Failed to load config: {}", e);
