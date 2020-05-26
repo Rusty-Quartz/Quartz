@@ -23,6 +23,7 @@ pub struct ItemStack {
 
 impl ItemStack {
 
+    // Is used for filling inventories
     pub fn empty() -> Self {
         ItemStack {
             item: get_item(&UnlocalizedName::minecraft("air")).expect("Item list not initialized"),
@@ -43,6 +44,7 @@ impl ItemStack {
         }
     }
 
+    // Write stack to nbt tag
     pub fn write_nbt(&self, tag: &mut NbtCompound) {
         tag.set_byte("Count".to_owned(), self.count as i8);
         tag.set_byte("Damage".to_owned(), self.damage as i8);
@@ -69,6 +71,7 @@ impl ItemStack {
         }
     }
 
+    // Any empty stack is any stack that has a count of 0 or is air
     pub fn is_empty(&self) -> bool {
         self.count <= 0 || self.item.id == UnlocalizedName::minecraft("air")
     }

@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 #[derive(Debug)]
+// represents all possible extra data we could need to store about items
 pub enum ItemInfo {
     FoodInfo {
         hunger: u32,

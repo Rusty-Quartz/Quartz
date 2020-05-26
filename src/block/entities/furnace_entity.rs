@@ -5,6 +5,9 @@ use crate::data::BlockPosition;
 use crate::item::{get_item, ItemStack, Item};
 use crate::item::inventory::Inventory;
 
+// While this is somewhat accurate to how the Furnace BE will be implemented the tick method is no where near finished and some key fields are missing
+// Currently this is mostly for testing BEs
+
 pub struct FurnaceBlockEntity {
     pos: BlockPosition,
     custom_name: String,
@@ -60,6 +63,7 @@ impl BlockEntity for FurnaceBlockEntity {
     }
 
     fn tick(&mut self) {
+        // Currently just testing of inventories
         if self.active {
             self.cook_time += 1;
             if self.cook_time > self.cook_time_total {

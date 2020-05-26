@@ -21,6 +21,7 @@ pub fn get_item(item_name: &UnlocalizedName) -> Option<&'static Item> {
 pub fn init_items() {
     info!("loading item data");
 
+    // Load in assets/items.json generated from data-generator
     let raw_list = from_str::<HashMap<String, RawItemData>>(include_str!("../assets/items.json")).expect("items.json is corrupt");
 
     let mut item_list: HashMap<UnlocalizedName, Item> = HashMap::with_capacity(raw_list.len());
@@ -31,6 +32,7 @@ pub fn init_items() {
         // This should never happen if the data integrity is not compromised 
         assert_ne!(0, raw_data.stack_size, "Item has max stack size of 0, {}", name);
 
+        //   Determine if the item has extra info and what that info is
         let item_info = if raw_data.info.is_some() {
             match raw_data.info.as_ref().unwrap() {
                 RawItemInfo::RawToolInfo { tool_type, level, attack_damage} => {
@@ -97,6 +99,7 @@ pub fn init_items() {
     }
 }
 
+// How the item info is stored in the json
 #[derive(Deserialize)]
 struct RawItemData {
     pub stack_size: u8,
