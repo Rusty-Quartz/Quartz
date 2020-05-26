@@ -27,7 +27,7 @@ impl Uuid {
     }
 
     pub fn from_string(string: &str) -> Result<Self, &'static str> {
-        let raw = String::from(string).replace("-", "");
+        let raw = string.to_owned().replace("-", "");
         if raw.len() != 32 {
             return Err("Expected condensed string to have length 32.");
         }

@@ -100,7 +100,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
             return Err(format!($format, &cfmt[idx..right]));
         }};
         ($msg:expr) => {{
-            return Err(String::from($msg));
+            return Err($msg.to_owned());
         }};
     }
 
@@ -658,7 +658,7 @@ fn add_child(parent: &mut TextComponent, mut child: TextComponent) {
                             !(prev_child.underline.is_some() && prev_child.underline.unwrap()) &&
                             !(prev_child.strikethrough.is_some() && prev_child.strikethrough.unwrap()) {
                         // Combine the text of the two components
-                        let mut text = String::from(&prev_child.text);
+                        let mut text = prev_child.text.to_owned();
                         text.push_str(&child.text);
                         child.text = text;
 

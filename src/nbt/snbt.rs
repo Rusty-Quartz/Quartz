@@ -15,7 +15,7 @@ impl SnbtParser {
 
     pub fn new(data: &str) -> SnbtParser {
         SnbtParser {
-            data: String::from(data), 
+            data: data.to_owned(), 
             cursor: 0
         }
     }

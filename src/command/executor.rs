@@ -128,7 +128,7 @@ impl<'sv> CommandExecutor<'sv> {
 
     // We were expecting more arguments, so notify the sender what was expected
     fn expect_args(node: &CommandNode, context: &CommandContext) {
-        let mut message = String::from("Expected one of the following arguments: ");
+        let mut message = "Expected one of the following arguments: ".to_owned();
         message.push_str(node.children[0].name);
         for child in node.children.iter().skip(1) {
             message.push_str(", ");
@@ -181,7 +181,7 @@ impl<'ctx> CommandContext<'ctx> {
     pub fn get_string(&self, key: &str) -> String {
         match self.arguments.get(key) {
             Some(arg) => match arg {
-                Argument::String(value) => String::from(value),
+                Argument::String(value) => value.to_owned(),
                 _ => "".to_owned()
             },
             None => "".to_owned()

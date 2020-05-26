@@ -264,7 +264,7 @@ impl ByteBuffer {
         let mut bytes: Vec<u8> = vec![0; self.read_varint() as usize];
         self.read_bytes(&mut bytes);
         match str::from_utf8(&bytes) {
-            Ok(string) => String::from(string),
+            Ok(string) => string.to_owned(),
             Err(_reason) => String::new()
         }
     }

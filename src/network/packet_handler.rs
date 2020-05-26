@@ -66,7 +66,7 @@ impl AsyncPacketHandler {
 
     fn login_start(&mut self, conn: &mut AsyncClientConnection, name: &str) {
         // Store username for later
-        self.username = String::from(name);
+        self.username = name.to_owned();
 
         // Generate and store verify token
         let mut verify_token = [0_u8; 4];
@@ -84,7 +84,7 @@ impl AsyncPacketHandler {
         }
 
         conn.send_packet(&ClientBoundPacket::EncryptionRequest {
-            server_id: String::from(""),
+            server_id: "".to_owned(),
             pub_key_len: pub_key_der.len() as i32,
             pub_key: pub_key_der,
             verify_token_len: verify_token.len() as i32,
@@ -102,7 +102,7 @@ impl AsyncPacketHandler {
         if self.verify_token != decrypted_verify {
             error!("verify for client {} didn't match, {:x?}, {:x?}", conn.id, self.verify_token, decrypted_verify);
             return conn.send_packet(&ClientBoundPacket::Disconnect {
-                reason: String::from("Error verifying encryption")
+                reason: "Error verifying encryption".to_owned()
             });
         }
 
