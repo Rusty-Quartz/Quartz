@@ -5,6 +5,7 @@ use std::fmt;
 use std::fmt::Write;
 
 // Contains all tag types
+#[derive(Clone)]
 pub enum NbtTag {
     Byte(i8),
     Short(i16),
@@ -108,6 +109,7 @@ impl<'a> From<&'a str> for NbtTag {
 
 // Nbt list type, just a wrapper for a vec of nbt tags
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct NbtList(Vec<NbtTag>);
 
 // Gets an element from the list, returning a default value if the types do not match
@@ -282,6 +284,7 @@ impl IndexMut<usize> for NbtList {
 
 // Nbt compound type, just a wrapper of a hash map
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct NbtCompound(HashMap<String, NbtTag>);
 
 // Generates a get function for a compound returning a default value if
@@ -444,6 +447,10 @@ impl NbtCompound {
         } else {
             self.set_byte(name, 0);
         }
+    }
+
+    pub fn has(&self, key: &str) -> bool {
+        self.0.contains_key(key)
     }
 }
 

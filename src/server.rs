@@ -12,6 +12,7 @@ use linefeed::ReadResult;
 use log::*;
 
 use crate::block::init_blocks;
+use crate::item::init_items;
 use crate::config::Config;
 use crate::network::packet_handler::{
     WrappedServerPacket,
@@ -68,6 +69,7 @@ impl<'sv> QuartzServer<'sv> {
     pub fn init(&mut self, command_pipe: UnboundedSender<WrappedServerPacket>) {      
         // Register all of the things
         init_blocks();
+        init_items();
         init_commands(&mut self.command_executor);
 
         // Setup the command handler thread
