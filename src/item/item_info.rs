@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+#[serde(untagged)]
 // represents all possible extra data we could need to store about items
 pub enum ItemInfo {
     FoodInfo {
@@ -38,7 +39,7 @@ pub enum ItemInfo {
 
     RangedWeaponInfo {
         weapon_type: RangedWeapon,
-        max_chage_time: u32,
+        max_charge_time: u32,
         max_durability: u32
     },
 }
