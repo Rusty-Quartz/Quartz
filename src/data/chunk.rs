@@ -1,5 +1,6 @@
 use crate::block::StateID;
 use crate::block::entity::{BlockEntity, BlockEntityType};
+use crate::data::BlockPosition;
 use std::collections::HashMap;
 
 pub struct Chunk {
@@ -28,14 +29,5 @@ impl Chunk {
         unsafe {
             Some(std::mem::transmute::<&Box<dyn BlockEntity>, &Box<T>>(blockentity))
         }
-    }
-}
-
-#[derive(Hash, PartialEq, Eq)]
-pub struct BlockPosition {x: i32, y: i32, z: i32}
-
-impl BlockPosition {
-    pub fn new(x: i32, y: i32, z:i32) -> Self {
-        BlockPosition {x,y,z}
     }
 }

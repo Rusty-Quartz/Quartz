@@ -11,8 +11,6 @@ pub struct Item {
     pub item_info: Option<ItemInfo>
 }
 
-
-
 #[derive(Clone)]
 pub struct ItemStack {
     pub item: &'static Item,

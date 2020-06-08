@@ -3,8 +3,8 @@ use std::fmt;
 // A two-part identifier that has a namespace and name
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct UnlocalizedName {
-    namespace: String,
-    name: String
+    pub namespace: String,
+    pub name: String
 }
 
 impl UnlocalizedName {

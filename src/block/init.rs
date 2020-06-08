@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::ptr;
 use log::info;
 use serde::{Serialize, Deserialize};
 use serde_json;
@@ -47,7 +48,7 @@ pub fn init_blocks() {
 
     let mut block_list: HashMap<UnlocalizedName, Block> = HashMap::with_capacity(parsed_data.len());
     let mut name_map: HashMap<String, UnlocalizedName> = HashMap::with_capacity(parsed_data.len());
-    let mut largest_state: u16 = 0;
+    let mut largest_state: usize = 0;
 
     for (name, block_info) in parsed_data.iter() {
         let uln = UnlocalizedName::parse(name).expect("Invalid block name encountered during registration.");
@@ -66,23 +67,22 @@ pub fn init_blocks() {
         });
 
         // Use this to determine the size of the global palette
-        let id = block_info.states.last().unwrap().id;
+        let id = block_info.states.last().unwrap().id as usize;
         if id > largest_state {
             largest_state = id;
         }
     }
 
     match BLOCK_LIST.set(block_list) {
-        Err(_) => panic!("Block list already initialized."),
-        _ => {}
+        Ok(()) => {},
+        Err(_) => panic!("Block list already initialized.")
     }
 
-    let mut global_palette: Vec<BlockState> = Vec::with_capacity((largest_state as usize) + 1);
-
+    let mut global_palette: Vec<BlockState> = Vec::with_capacity(largest_state + 1);
     // Since we expand to the capacity it's fine
-    unsafe {
-        global_palette.set_len(global_palette.capacity());
-    }
+    unsafe { global_palette.set_len(global_palette.capacity()); }
+    let palette_ptr = global_palette.as_mut_ptr();
+    let mut id_sum: usize = 0;
 
     for (name, block) in parsed_data {
         // All of the unwraps are guaranteed to succeed
@@ -97,16 +97,24 @@ pub fn init_blocks() {
                 properties: state_info.properties
             };
 
-            // Make sure the computed ID matches the ID we registered the state with
+            // Make sure the computed ID matches the ID in the generated data
             assert_eq!(state_info.id, state.id(), "Computed ID for {} does not match stored ID.", state);
 
-            global_palette[state_info.id as usize] = state;
+            // Setting the value with vec[index] = value started segfaulting at some point, so this is actually safer apparently
+            unsafe {
+                ptr::write(palette_ptr.add(state_info.id as usize), state);
+            }
+
+            id_sum += state_info.id as usize;
         }
     }
 
+    // Make sure the vec was actually filled
+    assert_eq!(id_sum, (largest_state * (largest_state + 1)) / 2, "Some state IDs are missing, this could cause segmentation faults.");
+
     match GLOBAL_PALETTE.set(global_palette) {
-        Err(_) => panic!("Global palette already initialized."),
-        _ => {}
+        Ok(()) => {},
+        Err(_) => panic!("Global palette already initialized.")
     }
 }
 
@@ -122,6 +130,6 @@ struct RawBlockInfo {
 #[derive(Serialize, Deserialize)]
 struct RawStateInfo {
     id: StateID,
-    #[serde(default = "HashMap::new")]
-    properties: HashMap<String, String>
+    #[serde(default = "BTreeMap::new")]
+    properties: BTreeMap<String, String>
 }

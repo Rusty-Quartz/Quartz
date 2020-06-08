@@ -65,10 +65,13 @@ pub mod block {
     pub use init::{
         default_state,
         get_block,
+        get_block_list,
+        get_global_palette,
         get_state,
         init_blocks,
         new_state
     };
+
     pub use state::{
         StateID,
         Block,
@@ -95,11 +98,12 @@ pub mod command {
 
 pub mod data {
     mod chunk;
+    mod location;
     mod uln;
     mod uuid;
 
     pub use chunk::Chunk;
-    pub use chunk::BlockPosition;
+    pub use location::BlockPosition;
     pub use uln::UnlocalizedName;
     pub use uuid::Uuid;
 }
@@ -121,8 +125,8 @@ pub mod network {
 }
 
 pub mod util {
-    pub mod idlist;
     pub mod ioutil;
+    pub mod map;
 }
 
 mod config;

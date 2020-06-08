@@ -1,6 +1,6 @@
-use std::fmt::Display;
+use serde::Deserialize;
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 // represents all possible extra data we could need to store about items
 pub enum ItemInfo {
     FoodInfo {
@@ -41,10 +41,6 @@ pub enum ItemInfo {
         max_chage_time: u32,
         max_durability: u32
     },
-
-    ElytraInfo {
-        max_durability: u32
-    }
 }
 
 impl ItemInfo {
@@ -54,14 +50,14 @@ impl ItemInfo {
             ItemInfo::ArmorInfo {max_durability, ..} => *max_durability,
             ItemInfo::UsableInfo {max_durability, ..} => *max_durability,
             ItemInfo::RangedWeaponInfo {max_durability , ..} => *max_durability,
-            ItemInfo::ElytraInfo {max_durability,} => *max_durability,
             ItemInfo::ToolInfo {level, ..} => level.max_durability()
         }
     }
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ToolType {
     Sword,
     Pickaxe,
@@ -70,20 +66,8 @@ pub enum ToolType {
     Hoe
 }
 
-impl ToolType {
-    pub fn from_str(type_str: &str) -> Self {
-        match type_str {
-            "sword" =>ToolType::Sword,
-            "pickaxe" => ToolType::Pickaxe,
-            "shovel" => ToolType::Shovel,
-            "axe" => ToolType::Axe,
-            "hoe" => ToolType::Hoe,
-            _ => panic!("Unkown tool level {}", type_str)
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ToolLevel {
     Wood,
     Stone,
@@ -94,18 +78,6 @@ pub enum ToolLevel {
 }
 
 impl ToolLevel {
-    pub fn from_str(level: &str) -> Self {
-        match level {
-            "wood" => ToolLevel::Wood,
-            "stone" => ToolLevel::Stone,
-            "iron" => ToolLevel::Iron,
-            "gold" => ToolLevel::Gold,
-            "diamond" => ToolLevel::Diamond,
-            "netherite" => ToolLevel::Netherite,
-            _ => panic!("Unknown tool level {}", level)
-        }
-    }
-
     pub fn max_durability(&self) -> u32 {
         match self {
             ToolLevel::Wood => 59,
@@ -118,7 +90,8 @@ impl ToolLevel {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ArmorType {
     Helmet,
     Chestplate,
@@ -126,19 +99,8 @@ pub enum ArmorType {
     Boots
 }
 
-impl ArmorType {
-    pub fn from_str(armor_type: &str) -> Self {
-        match armor_type {
-            "helmet" => ArmorType::Helmet,
-            "chestplate" => ArmorType::Chestplate,
-            "leggings" => ArmorType::Leggings,
-            "boots" => ArmorType::Boots,
-            _ => panic!("Unkown armor type {}", armor_type)
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UsableType {
     Shears,
     FishingRod,
@@ -148,35 +110,10 @@ pub enum UsableType {
     FungusStick
 }
 
-
-impl UsableType {
-    pub fn from_str(usable_type: &str) -> Self {
-        match usable_type {
-            "shears" => UsableType::Shears,
-            "fishing_rod" => UsableType::FishingRod,
-            "flint_and_steel" => UsableType::FlintAndSteel,
-            "shield" => UsableType::Shield,
-            "carrot_stick" => UsableType::CarrotStick,
-            "fungus_stick" => UsableType::FungusStick,
-            _ => panic!("Unkown usable type {}", usable_type)
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RangedWeapon {
     Bow,
     Crossbow,
     Trident
-}
-
-impl RangedWeapon {
-    pub fn from_str(weapon_type: &str) -> Self {
-        match weapon_type {
-            "bow" => RangedWeapon::Bow,
-            "crossbow" => RangedWeapon::Crossbow,
-            "trident" => RangedWeapon::Trident,
-            _ => panic!("Unkown ranged weapon type {}", weapon_type)
-        }
-    }
 }
