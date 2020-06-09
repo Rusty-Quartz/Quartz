@@ -177,22 +177,23 @@ impl AsyncPacketHandler {
         // Currently disabled cause no need rn, will enable via config later
         // conn.send_packet(&ClientBoundPacket::SetCompression{threshhold: /* maximum size of uncompressed packet */})
 
-        // Make a put request
-        match reqwest::blocking::get(&url) {
-            Ok(response) => match response.json::<AuthResponse>() {
+        // Make a get request
+        let mojang_req = ureq::get(&url).call();
+        if mojang_req.ok() {
+            match mojang_req.into_json_deserialize::<AuthResponse>() {
                 Ok(json) => match Uuid::from_string(&json.id) {
-                    Ok(uuid) => {
-                        conn.send_packet(&ClientBoundPacket::LoginSuccess {
-                            uuid,
-                            username: self.username.clone()
-                        });
-                    },
-                    Err(e) => error!("Malformed UUID encountered in auth response: {}", e)
+                    Ok(uuid) => conn.send_packet(&ClientBoundPacket::LoginSuccess {
+                        uuid,
+                        username: self.username.clone()
+                    }),
+                    Err(e) => error!("Malformed UUID in auth resonse: {}", e) 
                 },
-                Err(e) => error!("Failed to unpack JSON from session server response: {}", e)
-            },
-            Err(e) => error!("Failed to make session server request: {}", e)
+                Err(e) => error!("Failed to upack JSON from session server response: {}", e)
+            }
         }
+        else {
+            error!("Failed to make session server request")
+        }    
     }
 
     fn login_plugin_response(&mut self, _conn: &mut AsyncClientConnection, _message_id: i32, _successful: bool, _data: &Vec<u8>) {
