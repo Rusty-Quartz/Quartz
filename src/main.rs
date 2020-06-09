@@ -30,7 +30,8 @@ pub mod item {
 
 	pub use item::{
 		ItemStack,
-        Item
+        Item,
+        OptionalItemStack
 	};
 
     pub use inventory::Inventory;

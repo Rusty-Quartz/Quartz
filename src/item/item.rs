@@ -21,7 +21,6 @@ pub struct ItemStack {
 
 impl ItemStack {
 
-    // Is used for filling inventories
     pub fn empty() -> Self {
         ItemStack {
             item: get_item(&UnlocalizedName::minecraft("air")).expect("Item list not initialized"),
@@ -50,9 +49,9 @@ impl ItemStack {
         tag.set_compound("tag".to_owned(), self.nbt.clone());
     }
 
-    pub fn from_nbt(nbt: NbtCompound) -> Self {
-        let tag = match nbt.has("tag") {
-            true => match nbt.get_compound("tag") {
+    pub fn from_nbt(tag: NbtCompound) -> Self {
+        let tag = match tag.has("tag") {
+            true => match tag.get_compound("tag") {
                 Some(tag) => tag.clone().to_owned(),
                 _ => NbtCompound::new()
             },
@@ -62,8 +61,8 @@ impl ItemStack {
         let damage = if tag.has("Damage") { tag.get_int("Damage") } else { 0 } as u32;
 
         ItemStack {
-            item: get_item(&UnlocalizedName::parse(nbt.get_string("id")).unwrap()).unwrap(),
-            count: nbt.get_byte("Count") as u8,
+            item: get_item(&UnlocalizedName::parse(tag.get_string("id")).unwrap()).unwrap(),
+            count: tag.get_byte("Count") as u8,
             damage,
             nbt: tag
         }
@@ -72,5 +71,36 @@ impl ItemStack {
     // Any empty stack is any stack that has a count of 0 or is air
     pub fn is_empty(&self) -> bool {
         self.count <= 0 || self.item.id == UnlocalizedName::minecraft("air")
+    }
+}
+
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct OptionalItemStack(Option<Box<ItemStack>>);
+
+impl OptionalItemStack {
+    pub fn new(stack: Option<ItemStack>) -> Self {
+        if stack.is_none() {
+            return OptionalItemStack(None)
+        }
+        OptionalItemStack(Some(Box::new(stack.unwrap())))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_none() || self.0.clone().unwrap().is_empty()
+    }
+
+    pub fn write_nbt(&self, tag: &mut NbtCompound) {
+        if !self.0.is_none() {
+            self.0.clone().unwrap().write_nbt(tag)
+        }    
+    }
+
+    pub fn from_nbt(tag: NbtCompound) -> Self {
+        OptionalItemStack(Some(Box::new(ItemStack::from_nbt(tag))))
+    }
+
+    pub fn item(&self) -> Option<Box<ItemStack>> {
+        self.0.clone()
     }
 }
