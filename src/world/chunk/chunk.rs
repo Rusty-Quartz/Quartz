@@ -1,6 +1,6 @@
 use crate::block::StateID;
 use crate::block::entity::{BlockEntity, BlockEntityType};
-use crate::data::BlockPosition;
+use crate::world::BlockPosition;
 use std::collections::HashMap;
 
 pub struct Chunk {

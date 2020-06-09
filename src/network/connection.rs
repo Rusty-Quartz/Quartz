@@ -1,11 +1,11 @@
 use std::io::Result;
 use std::io::{Write, Read};
+use std::sync::mpsc::Sender;
 use crate::util::ioutil::ByteBuffer;
 use openssl::symm::{Cipher, Mode, Crypter};
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use futures::channel::mpsc::UnboundedSender;
 use crate::network::packet_handler::*;
 use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
@@ -248,11 +248,11 @@ pub struct AsyncClientConnection {
     write_buffer: ByteBuffer,
     io_handle: Arc<Mutex<IOHandle>>,
     pub connection_state: ConnectionState,
-    sync_packet_sender: UnboundedSender<WrappedServerPacket>
+    sync_packet_sender: Sender<WrappedServerPacket>
 }
 
 impl AsyncClientConnection {
-    pub fn new(id: usize, stream: TcpStream, sync_packet_sender: UnboundedSender<WrappedServerPacket>) -> Self {
+    pub fn new(id: usize, stream: TcpStream, sync_packet_sender: Sender<WrappedServerPacket>) -> Self {
         AsyncClientConnection {
             id,
             stream,
@@ -278,7 +278,7 @@ impl AsyncClientConnection {
     }
 
     pub fn forward_to_server(&mut self, packet: ServerBoundPacket) {
-        if let Err(e) = self.sync_packet_sender.unbounded_send(WrappedServerPacket::new(self.id, packet)) {
+        if let Err(e) = self.sync_packet_sender.send(WrappedServerPacket::new(self.id, packet)) {
             error!("Failed to forward synchronous packet to server: {}", e);
         }
     }
@@ -291,7 +291,7 @@ impl AsyncClientConnection {
         // More than one packet was read at once, collect the remaining packet and handle it
         if self.read_buffer.remaining() > 0 {
             // Move the remaining bytes to the beginning of the buffer
-            self.read_buffer.zero_remaining();
+            self.read_buffer.shift_remaining();
 
             // Don't decrypt the remaining bytes since that was already handled
             return self.io_handle.lock().unwrap().collect_packet(&mut self.read_buffer, &mut self.stream, false)

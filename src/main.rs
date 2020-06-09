@@ -4,8 +4,7 @@ use std::sync::Arc;
 use std::thread;
 use std::io;
 use std::time::Duration;
-
-use futures::channel::mpsc;
+use std::sync::mpsc;
 
 use linefeed::Interface;
 
@@ -96,18 +95,6 @@ pub mod command {
     pub use init::init_commands;
 }
 
-pub mod data {
-    mod chunk;
-    mod location;
-    mod uln;
-    mod uuid;
-
-    pub use chunk::Chunk;
-    pub use location::BlockPosition;
-    pub use uln::UnlocalizedName;
-    pub use uuid::Uuid;
-}
-
 pub mod nbt {
     mod tag;
     pub mod read;
@@ -127,6 +114,22 @@ pub mod network {
 pub mod util {
     pub mod ioutil;
     pub mod map;
+    mod uln;
+    mod uuid;
+    
+    pub use uln::UnlocalizedName;
+    pub use uuid::Uuid;
+}
+
+pub mod world {
+    mod chunk {
+        pub mod chunk;
+        pub mod provider;
+    }
+    mod location;
+
+    pub use chunk::chunk::Chunk;
+    pub use location::{BlockPosition, CoordinatePair};
 }
 
 mod config;
@@ -149,7 +152,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let (sync_packet_sender, sync_packet_receiver) = mpsc::unbounded::<WrappedServerPacket>();
+    let (sync_packet_sender, sync_packet_receiver) = mpsc::channel::<WrappedServerPacket>();
 
     let listener = TcpListener::bind(format!("{}:{}", config.server_ip, config.port))?;
     listener.set_nonblocking(true).expect("Failed to create non-blocking TCP listener");

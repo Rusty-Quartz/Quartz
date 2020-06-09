@@ -1,8 +1,8 @@
 use crate::block::entity::{BlockEntity, BlockEntityType};
 use crate::nbt::{NbtCompound};
-use crate::data::UnlocalizedName;
-use crate::data::BlockPosition;
-use crate::item::{get_item, ItemStack, Item};
+use crate::util::UnlocalizedName;
+use crate::world::BlockPosition;
+use crate::item::{get_item, ItemStack};
 use crate::item::inventory::Inventory;
 
 // While this is somewhat accurate to how the Furnace BE will be implemented the tick method is no where near finished and some key fields are missing

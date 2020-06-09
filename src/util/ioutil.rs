@@ -2,7 +2,7 @@ use std::mem::transmute;
 use std::str;
 use std::fmt;
 use std::ptr;
-use crate::data::Uuid;
+use crate::util::Uuid;
 
 pub struct ByteBuffer {
     inner: Vec<u8>,
@@ -58,42 +58,25 @@ impl ByteBuffer {
     }
 
     #[inline]
-    pub fn ensure_capacity(&mut self, capacity: usize) {
-        if capacity > self.inner.capacity() {
-            self.inner.reserve_exact(capacity - self.inner.capacity());
-        }
-    }
-
-    #[inline]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
     #[inline]
     pub fn inflate(&mut self) {
-        unsafe {
-            self.inner.set_len(self.inner.capacity());
-        }
+        self.inner.resize(self.inner.capacity(), 0);
     }
 
     #[inline]
     pub fn ensure_size(&mut self, size: usize) {
-        self.ensure_capacity(size);
-        if self.inner.len() < size {
-            unsafe {
-                self.inner.set_len(size);
-            }
-        }
+        self.inner.resize(size, 0);
     }
 
     #[inline]
     pub fn resize(&mut self, size: usize) {
-        self.ensure_capacity(size);
+        self.inner.resize(size, 0);
         if size < self.cursor {
             self.cursor = size;
-        }
-        unsafe {
-            self.inner.set_len(size);
         }
     }
 
@@ -116,7 +99,7 @@ impl ByteBuffer {
         }
     }
 
-    pub fn zero_remaining(&mut self) {
+    pub fn shift_remaining(&mut self) {
         if self.cursor == self.inner.len() {
             self.cursor = 0;
             return;

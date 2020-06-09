@@ -2,9 +2,8 @@ use std::thread::{self, JoinHandle};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Sender, Receiver};
 use std::time::{SystemTime, Duration};
-
-use futures::channel::mpsc::{UnboundedSender, UnboundedReceiver};
 
 use linefeed::{Interface, DefaultTerminal};
 use linefeed::ReadResult;
@@ -38,7 +37,7 @@ pub struct QuartzServer<'sv> {
     pub client_list: ClientList,
     pub console_interface: Arc<Interface<DefaultTerminal>>,
     pub read_stdin: Arc<AtomicBool>,
-    sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
+    sync_packet_receiver: Receiver<WrappedServerPacket>,
     join_handles: HashMap<String, JoinHandle<()>>,
     pub command_executor: CommandExecutor<'sv>,
     pub clock: ServerClock
@@ -47,7 +46,7 @@ pub struct QuartzServer<'sv> {
 impl<'sv> QuartzServer<'sv> {
     pub fn new(
         config: Config,
-        sync_packet_receiver: UnboundedReceiver<WrappedServerPacket>,
+        sync_packet_receiver: Receiver<WrappedServerPacket>,
         console_interface: Arc<Interface<DefaultTerminal>>
     ) -> Self {
         if RUNNING.compare_and_swap(false, true, Ordering::SeqCst) {
@@ -66,7 +65,7 @@ impl<'sv> QuartzServer<'sv> {
         }
     }
 
-    pub fn init(&mut self, command_pipe: UnboundedSender<WrappedServerPacket>) {      
+    pub fn init(&mut self, command_pipe: Sender<WrappedServerPacket>) {      
         // Register all of the things
         init_blocks();
         init_items();
@@ -90,7 +89,7 @@ impl<'sv> QuartzServer<'sv> {
                             let packet = WrappedServerPacket::new(0, ServerBoundPacket::HandleConsoleCommand {
                                 command: command.trim().to_owned()
                             });
-                            if let Err(e) = command_pipe.unbounded_send(packet) {
+                            if let Err(e) = command_pipe.send(packet) {
                                 error!("Failed to forward console command to server thread: {}", e);
                             }
                         },
@@ -124,13 +123,8 @@ impl<'sv> QuartzServer<'sv> {
     }
 
     fn handle_packets(&mut self) {
-        while let Ok(packet_wrapper) = self.sync_packet_receiver.try_next() {
-            match packet_wrapper {
-                Some(packet) => {
-                    dispatch_sync_packet(&packet, self);
-                },
-                None => break
-            }
+        while let Ok(packet) = self.sync_packet_receiver.try_recv() {
+            dispatch_sync_packet(&packet, self);
         }
     }
 }

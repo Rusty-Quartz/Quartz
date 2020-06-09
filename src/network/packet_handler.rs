@@ -22,7 +22,7 @@ use hex::ToHex;
 use crate::network::connection::{AsyncClientConnection, ConnectionState};
 use crate::util::ioutil::ByteBuffer;
 use crate::server::{self, QuartzServer};
-use crate::data::Uuid;
+use crate::util::Uuid;
 use crate::command::CommandSender;
 use crate::check_return;
 

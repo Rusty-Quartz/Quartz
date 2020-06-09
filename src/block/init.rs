@@ -5,7 +5,7 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use once_cell::sync::OnceCell;
 use crate::block::{StateID, Block, BlockState, StateBuilder};
-use crate::data::UnlocalizedName;
+use crate::util::UnlocalizedName;
 
 static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block>> = OnceCell::new();
 static GLOBAL_PALETTE: OnceCell<Vec<BlockState>> = OnceCell::new();

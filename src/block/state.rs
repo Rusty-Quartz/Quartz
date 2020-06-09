@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use lazy_static::lazy_static;
-use crate::data::UnlocalizedName;
+use crate::util::UnlocalizedName;
 
 pub type StateID = u16;
 
