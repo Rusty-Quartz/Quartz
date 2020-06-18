@@ -1,4 +1,6 @@
 [workspace]
 members = [
-    "quartz_server"
+    "quartz_server",
+    "quartz_plugins",
+    "quartz_macros"
 ]
