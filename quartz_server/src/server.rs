@@ -24,6 +24,9 @@ use crate::util::ioutil::ByteBuffer;
 use crate::command::executor::*;
 use crate::command::init_commands;
 
+use quartz_plugins::Plugin::PluginManager;
+use std::path::Path;
+
 pub const VERSION: &str = "1.15.2";
 
 pub static RUNNING: AtomicBool = AtomicBool::new(false);
@@ -40,7 +43,8 @@ pub struct QuartzServer<'sv> {
     sync_packet_receiver: Receiver<WrappedServerPacket>,
     join_handles: HashMap<String, JoinHandle<()>>,
     pub command_executor: CommandExecutor<'sv>,
-    pub clock: ServerClock
+    pub clock: ServerClock,
+    pub plugin_manager: PluginManager
 }
 
 impl<'sv> QuartzServer<'sv> {
@@ -61,7 +65,8 @@ impl<'sv> QuartzServer<'sv> {
             sync_packet_receiver,
             join_handles: HashMap::new(),
             command_executor: CommandExecutor::new(),
-            clock: ServerClock::new(50)
+            clock: ServerClock::new(50),
+            plugin_manager: PluginManager::new(Path::new("./plugins")).unwrap()
         }
     }
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::QuartzServer;
+use crate::server::QuartzServer;
 
 use crate::command::arg::*;
 use crate::command::CommandSender;

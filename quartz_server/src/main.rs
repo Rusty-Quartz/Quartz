@@ -5,6 +5,7 @@ use std::thread;
 use std::io;
 use std::time::Duration;
 use std::sync::mpsc;
+use std::path::Path;
 
 use linefeed::Interface;
 
@@ -133,6 +134,7 @@ pub mod world {
     pub use location::{BlockPosition, CoordinatePair};
 }
 
+
 mod config;
 #[macro_use]
 mod logging;
@@ -152,6 +154,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(())
         }
     }
+
+    plugin::PluginManager::new(std::path::Path::new("./plugins")).unwrap();
 
     let (sync_packet_sender, sync_packet_receiver) = mpsc::channel::<WrappedServerPacket>();
 
