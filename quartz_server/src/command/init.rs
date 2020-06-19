@@ -33,6 +33,16 @@ pub fn init_commands(command_executor: &mut CommandExecutor) {
         }
     })), "Lists all commands and can give descriptions");
 
+    command_executor.register(literal("plugins").executes(|ctx| {
+        let plugins_list = &ctx.server.plugin_manager.plugins;
+
+        ctx.sender.send_message(color!("-- There are currently {} plugins loaded --", Gold, plugins_list.len()));
+        for plugin in plugins_list {
+            ctx.sender.send_message(unchecked_component!("&(green){}: &(blue)v{}", plugin.name, plugin.version));
+        }
+
+    }), "Lists the current plugins");
+
     command_executor.register(literal("stop").executes(|_ctx| {
         RUNNING.compare_and_swap(true, false, Ordering::SeqCst);
     }), "Shuts down the server");
