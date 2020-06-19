@@ -12,13 +12,8 @@ use log::*;
 
 use crate::block::init_blocks;
 use crate::item::init_items;
-use crate::config::Config;
-use crate::network::packet_handler::{
-    WrappedServerPacket,
-    ServerBoundPacket,
-    ClientBoundPacket,
-    dispatch_sync_packet
-};
+use crate::util::config::Config;
+use crate::network::packet_handler::*;
 use crate::network::connection::WriteHandle;
 use crate::util::ioutil::ByteBuffer;
 use crate::command::executor::*;
