@@ -8,3 +8,4 @@ run/
 logs/
 plugins/
 config.json
+.vscode/
