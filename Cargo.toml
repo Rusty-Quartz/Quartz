@@ -2,5 +2,6 @@
 members = [
     "quartz_server",
     "quartz_plugins",
+    "quartz_plugins/example_plugin",
     "quartz_macros"
 ]

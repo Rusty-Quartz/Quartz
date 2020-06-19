@@ -1,5 +1,5 @@
 [package]
-name = "plugin-test"
+name = "example_plugin"
 version = "0.1.0"
 authors = ["maddymakesgames"]
 edition = "2018"
