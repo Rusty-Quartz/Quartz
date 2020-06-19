@@ -6,4 +6,5 @@ node_modules/
 parser.js
 run/
 logs/
+plugins/
 config.json
