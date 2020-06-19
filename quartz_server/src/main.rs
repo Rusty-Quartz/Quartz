@@ -6,6 +6,8 @@ use std::io;
 use std::time::Duration;
 use std::sync::mpsc;
 
+use quartz_plugins::PluginManager;
+
 use linefeed::Interface;
 
 use log::*;
@@ -133,10 +135,14 @@ pub mod world {
     pub use location::{BlockPosition, CoordinatePair};
 }
 
+
 mod config;
 #[macro_use]
 mod logging;
 mod server;
+
+
+
 
 fn main() -> Result<(), Box<dyn Error>> {
     let console_interface = Arc::new(Interface::new("quartz-server")?);
@@ -174,7 +180,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             match listener.accept() {
                 // Successful connection
                 Ok((socket, _addr)) => {
-                    // Don't bother handling the connection if the server is shutting down
+                   // Don't bother handling the connection if the server is shutting down
                     if !server::is_running() {
                         return;
                     }
@@ -196,7 +202,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     });
                 },
 
-                // Wait before checking for a new connection and exit if the server is no longer running
+               // Wait before checking for a new connection and exit if the server is no longer running
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     if server::is_running() {
                         thread::sleep(Duration::from_millis(100));
@@ -205,7 +211,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 },
 
-                // Actual error
+               // Actual error
                 Err(e) => error!("Failed to accept TCP socket: {}", e)
             };
         }
@@ -220,4 +226,3 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
