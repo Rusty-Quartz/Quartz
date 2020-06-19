@@ -1,6 +1,12 @@
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub enum Listeners {
-    StatusRequest
+    StatusResponse,
+    Pong,
+    Disconnect,
+    EncryptionRequest,
+    LoginSuccess,
+    SetCompression,
+    LoginPluginRequest
 }
 
 pub struct PluginInfo {
