@@ -22,6 +22,8 @@ lazy_static = "1.4.0"
 ureq = { version = "1.1.1", features = ["json"] }
 hex = "0.4.2"
 once_cell = "1.4.0"
+quartz_plugins = { path = "../quartz_plugins" }
+quartz_macros = { path = "../quartz_macros" }
 
 [target.'cfg(unix)'.dependencies]
 termion = "1.5.5"
@@ -32,4 +34,4 @@ path = "src/main.rs"
 
 [lib]
 name = "quartz_plugin_lib"
-path = "src/lib.rs"
+path = "src/plugin_lib.rs"

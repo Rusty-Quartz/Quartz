@@ -26,6 +26,8 @@ use crate::util::Uuid;
 use crate::command::CommandSender;
 use crate::check_return;
 
+use quartz_plugins::Listenable;
+
 pub const PROTOCOL_VERSION: i32 = 713;
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
@@ -271,7 +273,7 @@ impl QuartzServer<'_> {
 
         self.client_list.send_packet(sender, &ClientBoundPacket::StatusResponse {
             json_response: json_response.to_string()
-        });
+        }.run_listeners(&self.plugin_manager));
     }
 //#end
 }
@@ -304,7 +306,7 @@ impl WrappedServerPacket {
         }
     }
 }
-
+#[derive(quartz_macros::Listenable)]
 pub enum ClientBoundPacket {
 //#ClientBoundPacket
     StatusResponse {

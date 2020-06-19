@@ -24,7 +24,7 @@ use crate::util::ioutil::ByteBuffer;
 use crate::command::executor::*;
 use crate::command::init_commands;
 
-use quartz_plugins::Plugin::PluginManager;
+use quartz_plugins::PluginManager;
 use std::path::Path;
 
 pub const VERSION: &str = "1.15.2";
