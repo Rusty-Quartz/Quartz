@@ -1,7 +1,7 @@
 [package]
 name = "quartz_plugins"
 version = "0.1.0"
-authors = ["maddymakesgames <madelinemakesgames@gmail.com>"]
+authors = ["maddymakesgames", "Cassy343"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
