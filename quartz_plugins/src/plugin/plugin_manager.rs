@@ -13,12 +13,13 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
-    pub fn new(plugin_folder: &Path) -> std::io::Result<PluginManager> {
+    pub fn new(plugin_folder: &Path) -> PluginManager {
         let plugin_files = match read_dir(plugin_folder) {
             Ok(val) => val,
             Err(_) => {
-                create_dir(plugin_folder)?;
-                read_dir(plugin_folder)?
+                // If we can't create the directory then we can panic
+                create_dir(plugin_folder).unwrap();
+                read_dir(plugin_folder).unwrap()
             }
         };
 
@@ -26,16 +27,33 @@ impl PluginManager {
         let mut listeners: HashMap<Listeners, Vec<Arc<Library>>> = HashMap::new();
 
         for file in plugin_files {
-            let file = file?;
-            let path = file.path();
+            // I don't really see how this could fail
+            let path = file.unwrap().path();
 
             if path.is_file() {
-                let plugin = Arc::new(Library::new(path).unwrap());
+                let plugin = Arc::new(match Library::new(path) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        error!("Error loading plugin file {}, skipping it", e);
+                        continue;
+                    }
+                });
+
                 let plugin_info: PluginInfo;
+
+                let func: Symbol<unsafe extern fn() -> PluginInfo> = match plugin.get(b"get_plugin_info") {
+                    Ok(f) => f,
+                    Err(e) => {
+                        error!("plugin {} doesn't have a get_plugin_info function, skippingit", path);
+                        continue;
+                    }
+                };
+
+                // This is increadibly horribly unsafe but we're going to assume plugins are fine because idk any way to make sure they're safe
                 unsafe {
-                    let func: Symbol<unsafe extern fn() -> PluginInfo> = plugin.get(b"get_plugin_info").unwrap();
                     plugin_info = func();
                 }
+
                 info!("Loading plugin: {}", &plugin_info.name);
                 
                 for listener in &plugin_info.listeners {
