@@ -31,7 +31,7 @@ impl PluginManager {
             let path = file.unwrap().path();
 
             if path.is_file() {
-                let plugin = Arc::new(match Library::new(path) {
+                let plugin = Arc::new(match Library::new(path.clone()) {
                     Ok(l) => l,
                     Err(e) => {
                         error!("Error loading plugin file {}, skipping it", e);
@@ -41,16 +41,16 @@ impl PluginManager {
 
                 let plugin_info: PluginInfo;
 
-                let func: Symbol<unsafe extern fn() -> PluginInfo> = match plugin.get(b"get_plugin_info") {
-                    Ok(f) => f,
-                    Err(e) => {
-                        error!("plugin {} doesn't have a get_plugin_info function, skippingit", path);
-                        continue;
-                    }
-                };
-
                 // This is increadibly horribly unsafe but we're going to assume plugins are fine because idk any way to make sure they're safe
                 unsafe {
+                    let func: Symbol<unsafe extern fn() -> PluginInfo> = match plugin.get(b"get_plugin_info") {
+                        Ok(f) => f,
+                        Err(_e) => {
+                            error!("plugin {:?} doesn't have a get_plugin_info function, skipping it", path);
+                            continue;
+                        }
+                    };
+
                     plugin_info = func();
                 }
 
@@ -67,10 +67,10 @@ impl PluginManager {
             }
         }
 
-        Ok(PluginManager {
+        PluginManager {
             plugins,
             listeners
-        })
+        }
     }
 
     pub fn get_listeners(&self, key: Listeners) -> Vec<Arc<Library>> {
