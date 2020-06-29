@@ -1,9 +1,9 @@
-use quartz_plugin_lib::{Listeners, get_quartz_info, ClientBoundPacket, PROTOCOL_VERSION};
+use quartz::{Listeners, get_quartz_info, ClientBoundPacket, PROTOCOL_VERSION};
 use serde_json::json;
 
 #[no_mangle]
-pub fn get_plugin_info() -> quartz_plugin_lib::PluginInfo {
-    quartz_plugin_lib::PluginInfo {
+pub fn get_plugin_info() -> quartz::PluginInfo {
+    quartz::PluginInfo {
         name: "Test plugin".to_owned(),
         version: "1.0.0".to_owned(),
         listeners: vec![Listeners::StatusResponse],

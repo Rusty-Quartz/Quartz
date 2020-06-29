@@ -28,7 +28,7 @@ use crate::check_return;
 
 use quartz_plugins::Listenable;
 
-pub const PROTOCOL_VERSION: i32 = 713;
+pub const PROTOCOL_VERSION: i32 = 736;
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
 struct AsyncPacketHandler {

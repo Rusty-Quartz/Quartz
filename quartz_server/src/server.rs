@@ -22,7 +22,7 @@ use crate::command::init_commands;
 use quartz_plugins::PluginManager;
 use std::path::Path;
 
-pub const VERSION: &str = "1.15.2";
+pub const VERSION: &str = "1.16.1";
 
 pub static RUNNING: AtomicBool = AtomicBool::new(false);
 

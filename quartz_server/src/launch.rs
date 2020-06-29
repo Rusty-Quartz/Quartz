@@ -10,34 +10,22 @@ use linefeed::Interface;
 
 use log::*;
 
-// Submodule declerations
-mod item;
-mod block;
-mod chat;
-mod command;
-mod nbt;
-mod network;
-mod util;
-mod world;
+use crate::util::config::*;
+use crate::util::logging;
 
-mod server;
-
-use util::config::*;
-use util::logging;
-
-use network::{
+use crate::network::{
     connection::AsyncClientConnection,
     packet_handler::{
         handle_async_connection,
         WrappedServerPacket
     }
 };
-use server::QuartzServer;
+use crate::server::{self, QuartzServer};
 
 use openssl::rsa::Rsa;
 
 
-fn main() -> Result<(), Box<dyn Error>> {
+pub fn launch_server() -> Result<(), Box<dyn Error>> {
     let console_interface = Arc::new(Interface::new("quartz-server")?);
     console_interface.set_prompt("> ")?;
 

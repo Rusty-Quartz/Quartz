@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["maddymakesgames", "Cassy343"]
 edition = "2018"
 
+[lib]
+name = "quartz"
+path = "src/lib.rs"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -27,11 +31,3 @@ quartz_macros = { path = "../quartz_macros" }
 
 [target.'cfg(unix)'.dependencies]
 termion = "1.5.5"
-
-[[bin]]
-name = "quartz"
-path = "src/main.rs"
-
-[lib]
-name = "quartz_plugin_lib"
-path = "src/plugin_lib.rs"
