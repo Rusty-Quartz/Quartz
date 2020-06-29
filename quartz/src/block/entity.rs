@@ -1,4 +1,5 @@
-use crate::nbt::NbtCompound;
+use nbt::NbtCompound;
+
 // All block entities must impl this
 pub trait BlockEntity {
     fn write_nbt(&mut self, nbt: &mut NbtCompound);

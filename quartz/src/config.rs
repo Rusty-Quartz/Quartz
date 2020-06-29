@@ -1,14 +1,13 @@
 use std::fs::{File, OpenOptions};
 use std::io::{prelude::*, Read, Write, SeekFrom};
 use std::path::Path;
-use std::fmt;
 
-use serde::{Serialize, Deserialize, Serializer, Deserializer, de::{self, Visitor}};
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 use log::*;
 
-use crate::chat::component::Component;
-use crate::component;
+use chat::component::Component;
+use chat::component;
 
 // The server config
 #[derive(Serialize, Deserialize)]
@@ -33,25 +32,9 @@ impl Config {
     where
         D: Deserializer<'de>
     {
-        deserializer.deserialize_str(MotdVisitor)
-    }
-}
+        let cfmt: &'de str = Deserialize::deserialize(deserializer)?;
 
-// For the MOTD ser/de
-struct MotdVisitor;
-
-impl<'de> Visitor<'de> for MotdVisitor {
-    type Value = Component;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a CFMT string")
-    }
-
-    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error
-    {
-        match component!(value) {
+        match component!(cfmt) {
             Ok(component) => Ok(component),
             Err(e) => {
                 error!("Invalid MOTD format: {}", e);

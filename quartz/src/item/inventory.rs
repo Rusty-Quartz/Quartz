@@ -1,4 +1,4 @@
-use crate::nbt::{NbtCompound, NbtList};
+use nbt::{NbtCompound, NbtList};
 use crate::item::item::{ItemStack, OptionalItemStack};
 
 // Represents a basic inventory

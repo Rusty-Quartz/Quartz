@@ -1,7 +1,7 @@
 use std::io::Result;
 use std::io::{Write, Read};
 use std::sync::mpsc::Sender;
-use crate::util::ioutil::ByteBuffer;
+use util::netutil::PacketBuffer;
 use openssl::symm::{Cipher, Mode, Crypter};
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -10,7 +10,6 @@ use crate::network::packet_handler::*;
 use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
 use log::*;
-use crate::check;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ConnectionState {
@@ -22,7 +21,7 @@ pub enum ConnectionState {
 }
 
 pub struct IOHandle {
-    operation_buffer: ByteBuffer,
+    operation_buffer: PacketBuffer,
     compression_threshold: i32,
     encrypter: Option<Crypter>,
     decrypter: Option<Crypter>
@@ -31,7 +30,7 @@ pub struct IOHandle {
 impl IOHandle {
     pub fn new() -> Self {
         IOHandle {
-            operation_buffer: ByteBuffer::new(4096),
+            operation_buffer: PacketBuffer::new(4096),
             compression_threshold: -1,
             encrypter: None,
             decrypter: None
@@ -40,7 +39,7 @@ impl IOHandle {
 
     // Encrypts the given source bytes if encryption is enabled and writes them to the stream
     // using the temporary buffer for the encryption.
-    fn write_encrypted(encrypter: Option<&mut Crypter>, source: &mut ByteBuffer, temp: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
+    fn write_encrypted(encrypter: Option<&mut Crypter>, source: &mut PacketBuffer, temp: &mut PacketBuffer, stream: &mut TcpStream) -> Result<()> {
         if let Some(encrypter) = encrypter {
             temp.resize(source.len());
             encrypter.update(&source[..], &mut temp[..])?;
@@ -52,13 +51,16 @@ impl IOHandle {
 
     // Decrypts the given buffer after the given offser if encryption is enabled, writing the
     // decrypted bytes back to the buffer.
-    fn decrypt_buffer(&mut self, buffer: &mut ByteBuffer, offset: usize) {
+    fn decrypt_buffer(&mut self, buffer: &mut PacketBuffer, offset: usize) {
         if let Some(decrypter) = self.decrypter.as_mut() {
             let len = buffer.len() - offset;
             self.operation_buffer.reset_cursor();
             self.operation_buffer.resize(len);
             self.operation_buffer.write_bytes(&buffer[offset..]);
-            check!(decrypter.update(&self.operation_buffer[..], &mut buffer[offset..]), "Failed to decrypt packet data: {}");
+            
+            if let Err(e) = decrypter.update(&self.operation_buffer[..], &mut buffer[offset..]) {
+                error!("Failed to decrypt packet data: {}", e);
+            }
         }
     }
 
@@ -77,7 +79,7 @@ impl IOHandle {
         self.compression_threshold = compression_threshold;
     }
 
-    pub fn write_packet_data(&mut self, packet_data: &mut ByteBuffer, stream: &mut TcpStream) -> Result<()> {
+    pub fn write_packet_data(&mut self, packet_data: &mut PacketBuffer, stream: &mut TcpStream) -> Result<()> {
         // Prepare the operation buffer
         self.operation_buffer.clear();
         let result: Result<()>;
@@ -97,7 +99,7 @@ impl IOHandle {
                 packet_data.clear();
 
                 // Raw length
-                packet_data.write_varint((ByteBuffer::varint_size(data_len as i32) + self.operation_buffer.len()) as i32);
+                packet_data.write_varint((PacketBuffer::varint_size(data_len as i32) + self.operation_buffer.len()) as i32);
                 // Data length
                 packet_data.write_varint(data_len as i32);
                 packet_data.write_bytes(&self.operation_buffer[..]);
@@ -129,7 +131,7 @@ impl IOHandle {
     // Reads the packet header, collects the remaining bytes and decrypts and decompresses the packet,
     // returning the final length of the fully processed packet. The curser of the given packet buffer
     // will start at the packet ID.
-    pub fn collect_packet(&mut self, packet_buffer: &mut ByteBuffer, stream: &mut TcpStream, decrypt: bool) -> Result<usize> {
+    pub fn collect_packet(&mut self, packet_buffer: &mut PacketBuffer, stream: &mut TcpStream, decrypt: bool) -> Result<usize> {
         if decrypt {
             self.decrypt_buffer(&mut *packet_buffer, 0);
         }
@@ -211,7 +213,7 @@ impl IOHandle {
 pub struct WriteHandle {
     pub client_id: usize,
     stream: TcpStream,
-    packet_buffer: ByteBuffer,
+    packet_buffer: PacketBuffer,
     io_handle: Arc<Mutex<IOHandle>>
 }
 
@@ -220,7 +222,7 @@ impl WriteHandle {
         WriteHandle {
             client_id,
             stream,
-            packet_buffer: ByteBuffer::new(4096),
+            packet_buffer: PacketBuffer::new(4096),
             io_handle
         }
     }
@@ -234,7 +236,7 @@ impl WriteHandle {
         }
     }
 
-    pub fn send_buffer(&mut self, buffer: &ByteBuffer) {
+    pub fn send_buffer(&mut self, buffer: &PacketBuffer) {
         if let Err(e) = self.stream.write_all(&buffer[..]) {
             error!("Failed to send buffer: {}", e);
         }
@@ -244,8 +246,8 @@ impl WriteHandle {
 pub struct AsyncClientConnection {
     pub id: usize,
     pub stream: TcpStream,
-    pub read_buffer: ByteBuffer,
-    write_buffer: ByteBuffer,
+    pub read_buffer: PacketBuffer,
+    write_buffer: PacketBuffer,
     io_handle: Arc<Mutex<IOHandle>>,
     pub connection_state: ConnectionState,
     sync_packet_sender: Sender<WrappedServerPacket>
@@ -256,8 +258,8 @@ impl AsyncClientConnection {
         AsyncClientConnection {
             id,
             stream,
-            read_buffer: ByteBuffer::new(4096),
-            write_buffer: ByteBuffer::new(4096),
+            read_buffer: PacketBuffer::new(4096),
+            write_buffer: PacketBuffer::new(4096),
             io_handle: Arc::new(Mutex::new(IOHandle::new())),
             connection_state: ConnectionState::Handshake,
             sync_packet_sender

@@ -1,129 +1,14 @@
 use std::fmt;
 use std::str;
 
-use serde::{Serialize, Deserialize, Serializer, Deserializer, de::{self, Visitor}};
+use serde::{Serialize, Deserialize};
 use serde_json::{self, error::Result as SerdeResult};
 use serde_with::skip_serializing_none;
 
 #[cfg(unix)]
-use termion::{color, style};
+use termion::style;
 
-// Public color enum
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Color {
-    Predefined(PredefinedColor),
-
-    #[serde(serialize_with = "Color::serialize_custom", deserialize_with="Color::deserialize_custom")]
-    Custom(u8, u8, u8)
-}
-
-impl Color {
-    // Apply the color to the terminal
-    #[cfg(unix)]
-    pub fn apply(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Color::Predefined(color) => color.apply(f),
-            // Dividing by 43 maps the color to the correct ANSI range of [0,5]
-            Color::Custom(r, g, b) => write!(f, "{}", color::Fg(color::AnsiValue::rgb(*r / 43, *g / 43, *b / 43)))
-        }
-    }
-
-    // Serde support functions for the custom color type
-
-    fn serialize_custom<S>(r: &u8, g: &u8, b: &u8, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer
-    {
-        serializer.serialize_str(&format!("#{:06X}", (*r as u32) << 16 | (*g as u32) << 8 | (*b as u32)))
-    }
-
-    fn deserialize_custom<'de, D>(deserializer: D) -> Result<(u8, u8, u8), D::Error>
-    where
-        D: Deserializer<'de>
-    {
-        deserializer.deserialize_str(CustomColorVisitor)
-    }
-}
-
-// Used for custom color deserialization
-struct CustomColorVisitor;
-
-impl<'de> Visitor<'de> for CustomColorVisitor {
-    type Value = (u8, u8, u8);
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a valid hex color prefixed with a '#'")
-    }
-
-    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error
-    {
-        if value.is_empty() {
-            return Err(E::custom("Expected hex color, found an empty string."));
-        }
-
-        if value.len() != 7 {
-            return Err(E::custom("Expected hex color in the form of '#RRGGBB'"));
-        }
-
-        if let Ok(rgb) = u32::from_str_radix(&value[1..], 16) {
-            return Ok(((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8));
-        } else {
-            return Err(E::custom("Invalid hex color, expected 6 hexadecimal digits (0-F)."));
-        }
-    }
-}
-
-// All predefined color types
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PredefinedColor {
-    Black,
-    DarkBlue,
-    DarkGreen,
-    DarkAqua,
-    DarkRed,
-    DarkPurple,
-    Gold,
-    Gray,
-    DarkGray,
-    Blue,
-    Green,
-    Aqua,
-    Red,
-    LightPurple,
-    Yellow,
-    White,
-    Reset
-}
-
-impl PredefinedColor {
-    // Apply the color to the terminal
-    #[cfg(unix)]
-    pub fn apply(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            PredefinedColor::Black => write!(f, "{}", color::Fg(color::Black)),
-            PredefinedColor::DarkBlue => write!(f, "{}", color::Fg(color::Blue)),
-            PredefinedColor::DarkGreen => write!(f, "{}", color::Fg(color::Green)),
-            PredefinedColor::DarkAqua => write!(f, "{}", color::Fg(color::Cyan)),
-            PredefinedColor::DarkRed => write!(f, "{}", color::Fg(color::Red)),
-            PredefinedColor::DarkPurple => write!(f, "{}", color::Fg(color::Magenta)),
-            PredefinedColor::Gold => write!(f, "{}", color::Fg(color::Yellow)),
-            PredefinedColor::Gray => write!(f, "{}", color::Fg(color::White)),
-            PredefinedColor::DarkGray => write!(f, "{}", color::Fg(color::LightBlack)),
-            PredefinedColor::Blue => write!(f, "{}", color::Fg(color::LightBlue)),
-            PredefinedColor::Green => write!(f, "{}", color::Fg(color::LightGreen)),
-            PredefinedColor::Aqua => write!(f, "{}", color::Fg(color::LightCyan)),
-            PredefinedColor::Red => write!(f, "{}", color::Fg(color::LightRed)),
-            PredefinedColor::LightPurple => write!(f, "{}", color::Fg(color::LightMagenta)),
-            PredefinedColor::Yellow => write!(f, "{}", color::Fg(color::LightYellow)),
-            PredefinedColor::White => write!(f, "{}", color::Fg(color::LightWhite)),
-            PredefinedColor::Reset => write!(f, "{}{}", color::Fg(color::Reset), style::Reset)
-        }
-    }
-}
+use crate::color::{Color, PredefinedColor};
 
 // The generalized component type, including text, translate, selector, keybind, and nbt components
 #[skip_serializing_none]

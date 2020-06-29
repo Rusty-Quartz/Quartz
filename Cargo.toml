@@ -1,7 +1,10 @@
 [workspace]
 members = [
-    "quartz_server",
+    "chat",
+    "nbt",
+    "quartz",
+    "quartz_macros",
     "quartz_plugins",
     "quartz_plugins/example_plugin",
-    "quartz_macros"
+    "util"
 ]

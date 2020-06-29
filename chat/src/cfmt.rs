@@ -1,4 +1,5 @@
-use crate::chat::component::*;
+use crate::color::Color;
+use crate::component::*;
 
 #[macro_export]
 macro_rules! custom_color {
@@ -10,18 +11,18 @@ macro_rules! custom_color {
 #[macro_export]
 macro_rules! color {
     ($text:expr, $color:ident, $($arg:expr),*) => {
-        crate::chat::component::Component::Text(
-            crate::chat::component::TextComponent::new(
+        chat::component::Component::Text(
+            chat::component::TextComponent::new(
                 format!($text, $($arg,)*),
-                Some(crate::chat::component::Color::Predefined(crate::chat::component::PredefinedColor::$color))
+                Some(chat::color::Color::Predefined(chat::color::PredefinedColor::$color))
             )
         )
     };
     ($text:expr, $color:ident) => {
-        crate::chat::component::Component::Text(
-            crate::chat::component::TextComponent::new(
+        chat::component::Component::Text(
+            chat::component::TextComponent::new(
                 $text,
-                Some(crate::chat::component::Color::Predefined(crate::chat::component::PredefinedColor::$color))
+                Some(chat::color::Color::Predefined(chat::color::PredefinedColor::$color))
             )
         )
     };
@@ -30,20 +31,20 @@ macro_rules! color {
 #[macro_export]
 macro_rules! component {
     ($cfmt:expr, $($arg:expr),*) => {
-        crate::chat::cfmt::from_cfmt(&format!($cfmt, $($arg,)*))
+        chat::cfmt::from_cfmt(&format!($cfmt, $($arg,)*))
     };
     ($cfmt:expr) => {
-        crate::chat::cfmt::from_cfmt($cfmt)
+        chat::cfmt::from_cfmt($cfmt)
     };
 }
 
 #[macro_export]
 macro_rules! unchecked_component {
     ($cfmt:expr, $($arg:expr),*) => {
-        crate::chat::cfmt::from_cfmt(&format!($cfmt, $($arg,)*)).unwrap()
+        chat::cfmt::from_cfmt(&format!($cfmt, $($arg,)*)).unwrap()
     };
     ($cfmt:expr) => {
-        crate::chat::cfmt::from_cfmt($cfmt).unwrap()
+        chat::cfmt::from_cfmt($cfmt).unwrap()
     };
 }
 

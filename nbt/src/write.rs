@@ -3,7 +3,7 @@ use byteorder::WriteBytesExt;
 use byteorder::BigEndian;
 use flate2::write::{ZlibEncoder, GzEncoder};
 use flate2::Compression;
-use crate::nbt::*;
+use crate::*;
 
 impl NbtTag {
     fn id(&self) -> u8 {

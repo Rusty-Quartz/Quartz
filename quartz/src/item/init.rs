@@ -1,7 +1,7 @@
 use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use crate::item::{Item, ItemInfo};
-use crate::util::UnlocalizedName;
+use util::UnlocalizedName;
 use serde_json::from_str;
 use serde::Deserialize;
 use log::info;
@@ -22,7 +22,7 @@ pub fn init_items() {
     info!("Loading item data");
 
     // Load in assets/items.json generated from data-generator
-    let raw_list = from_str::<HashMap<String, RawItemData>>(include_str!("../assets/items.json")).expect("items.json is corrupt");
+    let raw_list = from_str::<HashMap<String, RawItemData>>(include_str!("../../../assets/items.json")).expect("items.json is corrupt");
 
     let mut item_list: HashMap<UnlocalizedName, Item> = HashMap::with_capacity(raw_list.len());
 

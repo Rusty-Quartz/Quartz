@@ -41,25 +41,6 @@ const LEVEL_FILTER: LevelFilter = LevelFilter::Debug;
 #[cfg(not(debug_assertions))]
 const LEVEL_FILTER: LevelFilter = LevelFilter::Info;
 
-#[macro_export]
-macro_rules! check {
-    ($result:expr, $format:expr) => {
-        if let Err(e) = $result {
-            log::error!($format, e);
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! check_return {
-    ($result:expr, $format:expr) => {
-        if let Err(e) = $result {
-            log::error!($format, e);
-            return;
-        }
-    };
-}
-
 // Sets up log4rs customized for the minecraft server
 pub fn init_logger(console_interface: Arc<Interface<DefaultTerminal>>) -> Result<(), Box<dyn Error>> {
     // Logs info to the console with colors and such

@@ -12,10 +12,10 @@ use log::*;
 
 use crate::block::init_blocks;
 use crate::item::init_items;
-use crate::util::config::Config;
+use crate::config::Config;
 use crate::network::packet_handler::*;
 use crate::network::connection::WriteHandle;
-use crate::util::ioutil::ByteBuffer;
+use util::netutil::PacketBuffer;
 use crate::command::executor::*;
 use crate::command::init_commands;
 
@@ -237,7 +237,7 @@ impl ClientList {
         }
     }
 
-    pub fn send_buffer(&self, client_id: usize, buffer: &ByteBuffer) {
+    pub fn send_buffer(&self, client_id: usize, buffer: &PacketBuffer) {
         match self.lock().get_mut(&client_id) {
             Some(client) => client.connection.send_buffer(buffer),
             None => warn!("Attempted to send buffer to disconnected client.")

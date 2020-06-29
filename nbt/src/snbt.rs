@@ -1,4 +1,4 @@
-use crate::nbt::*;
+use crate::*;
 
 use regex::Regex;
 

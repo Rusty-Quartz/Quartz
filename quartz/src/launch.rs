@@ -10,8 +10,8 @@ use linefeed::Interface;
 
 use log::*;
 
-use crate::util::config::*;
-use crate::util::logging;
+use crate::config::*;
+use util::logging;
 
 use crate::network::{
     connection::AsyncClientConnection,

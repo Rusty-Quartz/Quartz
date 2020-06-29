@@ -2,7 +2,7 @@ use std::io::{Read, Result, Error, ErrorKind};
 use byteorder::ReadBytesExt;
 use byteorder::BigEndian;
 use flate2::read::{ZlibDecoder, GzDecoder};
-use crate::nbt::*;
+use crate::*;
 
 pub fn read_nbt_uncompressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
 where

@@ -20,11 +20,10 @@ use lazy_static::lazy_static;
 use hex::ToHex;
 
 use crate::network::connection::{AsyncClientConnection, ConnectionState};
-use crate::util::ioutil::ByteBuffer;
+use util::netutil::PacketBuffer;
 use crate::server::{self, QuartzServer};
-use crate::util::Uuid;
+use util::Uuid;
 use crate::command::CommandSender;
-use crate::check_return;
 
 use quartz_plugins::Listenable;
 
@@ -98,7 +97,10 @@ impl AsyncPacketHandler {
 
         // Decrypt and check verify token
         let mut decrypted_verify = vec![0; self.key_pair.size() as usize];
-        check_return!(self.key_pair.private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1), "Failed to decrypt verify token: {}");
+        if let Err(e) = self.key_pair.private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1) {
+            error!("Failed to decrypt verify token: {}", e);
+            return;
+        }
         decrypted_verify = decrypted_verify[..self.verify_token.len()].to_vec();
 
         if self.verify_token != decrypted_verify {
@@ -110,7 +112,10 @@ impl AsyncPacketHandler {
 
         // Decrypt shared secret
         let mut decrypted_secret = vec![0; self.key_pair.size() as usize];
-        check_return!(self.key_pair.private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1), "Failed to decrypt secret key: {}");
+        if let Err(e) = self.key_pair.private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1) {
+            error!("Failed to decrypt secret key: {}", e);
+            return;
+        }
         decrypted_secret = decrypted_secret[..16].to_vec();
 
         // Initiate encryption
@@ -241,7 +246,7 @@ impl QuartzServer<'_> {
 
         string_vec.append(&mut max_players.encode_utf16().collect::<Vec<u16>>());
 
-        let mut buffer = ByteBuffer::new(3 + string_vec.len());
+        let mut buffer = PacketBuffer::new(3 + string_vec.len());
 
         // Write FF and length
         buffer.write_bytes(&[0xFF]);
@@ -351,7 +356,7 @@ pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut 
 //#end
 }
 
-pub fn serialize(packet: &ClientBoundPacket, buffer: &mut ByteBuffer) {
+pub fn serialize(packet: &ClientBoundPacket, buffer: &mut PacketBuffer) {
 //#serialize
     match packet {
         ClientBoundPacket::StatusResponse {json_response} => {

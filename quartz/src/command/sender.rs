@@ -5,7 +5,7 @@ use linefeed::terminal::DefaultTerminal;
 
 use log::error;
 
-use crate::chat::component::Component;
+use chat::component::Component;
 
 pub enum CommandSender {
     Console(Arc<Interface<DefaultTerminal>>)

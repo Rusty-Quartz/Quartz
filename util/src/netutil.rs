@@ -2,23 +2,23 @@ use std::mem::transmute;
 use std::str;
 use std::fmt;
 use std::ptr;
-use crate::util::Uuid;
+use crate::Uuid;
 
-pub struct ByteBuffer {
+pub struct PacketBuffer {
     inner: Vec<u8>,
     cursor: usize
 }
 
-impl From<&[u8]> for ByteBuffer {
+impl From<&[u8]> for PacketBuffer {
     fn from(bytes: &[u8]) -> Self {
-        ByteBuffer {
+        PacketBuffer {
             inner: Vec::from(bytes),
             cursor: 0
         }
     }
 }
 
-impl<Idx> std::ops::Index<Idx> for ByteBuffer
+impl<Idx> std::ops::Index<Idx> for PacketBuffer
 where
     Idx: std::slice::SliceIndex<[u8]>
 {
@@ -29,7 +29,7 @@ where
     }
 }
 
-impl<Idx> std::ops::IndexMut<Idx> for ByteBuffer
+impl<Idx> std::ops::IndexMut<Idx> for PacketBuffer
 where
     Idx: std::slice::SliceIndex<[u8]>
 {
@@ -38,15 +38,15 @@ where
     }
 }
 
-impl fmt::Display for ByteBuffer {
+impl fmt::Display for PacketBuffer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:X?}", self.inner)
     }
 }
 
-impl ByteBuffer {
+impl PacketBuffer {
     pub fn new(initial_size: usize) -> Self {
-        ByteBuffer {
+        PacketBuffer {
             inner: Vec::with_capacity(initial_size),
             cursor: 0
         }

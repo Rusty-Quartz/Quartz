@@ -5,7 +5,7 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use once_cell::sync::OnceCell;
 use crate::block::{StateID, Block, BlockState, StateBuilder};
-use crate::util::UnlocalizedName;
+use util::UnlocalizedName;
 
 static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block>> = OnceCell::new();
 static GLOBAL_PALETTE: OnceCell<Vec<BlockState>> = OnceCell::new();
@@ -43,7 +43,7 @@ pub fn new_state(block_name: &UnlocalizedName) -> Option<StateBuilder> {
 pub fn init_blocks() {
     info!("Loading block data");
 
-    let parsed_data = serde_json::from_str::<HashMap<String, RawBlockInfo>>(include_str!("../assets/blocks.json"))
+    let parsed_data = serde_json::from_str::<HashMap<String, RawBlockInfo>>(include_str!("../../../assets/blocks.json"))
         .expect("assets/blocks.json is corrupted.");
 
     let mut block_list: HashMap<UnlocalizedName, Block> = HashMap::with_capacity(parsed_data.len());

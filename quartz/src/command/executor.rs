@@ -5,7 +5,7 @@ use crate::server::QuartzServer;
 use crate::command::arg::*;
 use crate::command::CommandSender;
 
-use crate::color;
+use chat::color;
 
 // Contains a map of commands which can be executed
 pub struct CommandExecutor<'sv> {

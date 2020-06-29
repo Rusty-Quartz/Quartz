@@ -1,6 +1,6 @@
 use crate::block::entity::{BlockEntity, BlockEntityType};
-use crate::nbt::{NbtCompound};
-use crate::util::UnlocalizedName;
+use nbt::{NbtCompound};
+use util::UnlocalizedName;
 use crate::world::BlockPosition;
 use crate::item::{get_item, ItemStack};
 use crate::item::inventory::Inventory;
