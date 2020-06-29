@@ -90,7 +90,7 @@ struct ChunkDataInfo {
     pub sector_offset: u32,
     pub sector_count: u8,
     pub last_saved: u32,
-    pub cached_chunk: Option<Pin<Box<Chunk>>>
+    pub cached_chunk: Option<Box<Chunk>>
 }
 
 impl ChunkDataInfo {
