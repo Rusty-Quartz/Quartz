@@ -61,7 +61,7 @@ impl<'sv> QuartzServer<'sv> {
             join_handles: HashMap::new(),
             command_executor: CommandExecutor::new(),
             clock: ServerClock::new(50),
-            plugin_manager: PluginManager::new(Path::new("./plugins")).unwrap()
+            plugin_manager: PluginManager::new(Path::new("./plugins"))
         }
     }
 
