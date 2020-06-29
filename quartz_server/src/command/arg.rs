@@ -25,22 +25,9 @@ impl<'cmd> ArgumentTraverser<'cmd> {
         self.index < self.command.len()
     }
 
-    pub fn set_breakpoint(&mut self) {
-        self.breakpoint = true;
-    }
-
-    pub fn check_breakpoint(&mut self) -> bool {
-        if self.breakpoint {
-            self.index = self.anchor;
-            self.breakpoint = false;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn remaining(&self) -> &'cmd str {
-        &self.command[self.anchor..]
+    pub fn remaining(&mut self) -> String {
+        self.index = self.command.len();
+        self.command[self.anchor..].to_owned()
     }
 
     // Returns the remaining string portion from the current anchor position to the end of the string
@@ -106,7 +93,7 @@ impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
 // Acts both as a wrapper for argument values and argument type definition
 #[derive(Clone)]
 pub enum Argument {
-    Remaining,
+    Remaining(String),
     Literal(&'static str),
     Integer(i64),
     FloatingPoint(f64),
@@ -123,7 +110,7 @@ impl Argument {
 
 
         match self {
-            Argument::Remaining => true,
+            Argument::Remaining(_value) => true,
             Argument::Literal(literal) => literal.eq_ignore_ascii_case(argument),
             Argument::Integer(_value) => INT.is_match(argument),
             Argument::FloatingPoint(_value) => FLOAT.is_match(argument),
@@ -135,9 +122,9 @@ impl Argument {
     // of the same type is added to the context with the parsed value of the given string argument with the given name.
     pub fn apply(&self, context: &mut CommandContext, name: &'static str, argument: &str) -> Result<(), String> {
         match self {
-            Argument::Remaining => {
+            Argument::Remaining(_value) => {
                 // Notify the arg loop that it should break
-                context.raw_args.set_breakpoint();
+                context.arguments.insert(name.to_owned(), Argument::Remaining(context.raw_args.remaining()));
                 Ok(())
             },
             Argument::Literal(_value) => {

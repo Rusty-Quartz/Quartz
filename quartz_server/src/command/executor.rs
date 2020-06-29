@@ -76,11 +76,6 @@ impl<'sv> CommandExecutor<'sv> {
                                 }
                             }
 
-                            // Allows the Remaining argument type to function properly
-                            if context.raw_args.check_breakpoint() {
-                                break 'arg_loop;
-                            }
-
                             // Only use the first child that matches
                             continue 'arg_loop;
                         }
@@ -236,8 +231,8 @@ impl<'sv> CommandNode<'sv> {
 
 // Breaks the argument iterator loop causing this node to be executed
 #[inline]
-pub fn remaining<'a>() -> CommandNode<'a> {
-    CommandNode::new("remaining", Argument::Remaining, false)
+pub fn remaining<'a>(name: &'static str) -> CommandNode<'a> {
+    CommandNode::new(name, Argument::Remaining("".to_owned()), false)
 }
 
 // A command literal, or an exact string such as "foo"
