@@ -1,54 +1,37 @@
+use std::error::Error;
+use std::fmt::{self, Debug, Display, Formatter};
 use crate::color::Color;
 use crate::component::*;
 
-#[macro_export]
-macro_rules! custom_color {
-    ($red:expr, $green:expr, $blue:expr) => {
-        format!("#{:06X}", ($red as u32) << 16 | ($green as u32) << 8 | ($blue as u32))
-    };
+/// Wrapper for an error message related to CFMT parsing.
+pub struct CfmtError(String);
+
+impl Display for CfmtError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
-#[macro_export]
-macro_rules! color {
-    ($text:expr, $color:ident, $($arg:expr),*) => {
-        chat::component::Component::Text(
-            chat::component::TextComponent::new(
-                format!($text, $($arg,)*),
-                Some(chat::color::Color::Predefined(chat::color::PredefinedColor::$color))
-            )
-        )
-    };
-    ($text:expr, $color:ident) => {
-        chat::component::Component::Text(
-            chat::component::TextComponent::new(
-                $text,
-                Some(chat::color::Color::Predefined(chat::color::PredefinedColor::$color))
-            )
-        )
-    };
+impl Debug for CfmtError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(self, f)
+    }
 }
 
-#[macro_export]
-macro_rules! component {
-    ($cfmt:expr, $($arg:expr),*) => {
-        chat::cfmt::from_cfmt(&format!($cfmt, $($arg,)*))
-    };
-    ($cfmt:expr) => {
-        chat::cfmt::from_cfmt($cfmt)
-    };
+impl Error for CfmtError { }
+
+#[inline]
+fn try_unwrap<T>(x: Option<T>, message: &str) -> Result<T, CfmtError> {
+    x.ok_or(CfmtError(format!("Internal parser error: {}", message)))
 }
 
-#[macro_export]
-macro_rules! unchecked_component {
-    ($cfmt:expr, $($arg:expr),*) => {
-        chat::cfmt::from_cfmt(&format!($cfmt, $($arg,)*)).unwrap()
-    };
-    ($cfmt:expr) => {
-        chat::cfmt::from_cfmt($cfmt).unwrap()
-    };
-}
+const INDEX_STACK_ERROR: &str = "index stack empty";
+const TOKEN_STACK_ERROR: &str = "token stack empty";
+const COMPONENT_STACK_ERROR: &str = "component stack empty";
+const CHILD_STACK_ERROR: &str = "children stack empty";
 
-pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
+/// Parses the given string slice into a text component.
+pub fn from_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
     let mut stack: Vec<TextComponent> = Vec::with_capacity(4);
     stack.push(TextComponent::new(String::new(), None));
 
@@ -91,31 +74,17 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
     // Return an error formatted to the given format
     macro_rules! error {
         ($format:expr, $len:expr) => {{
-            let idx = *index_stack.last().unwrap();
+            let idx = *try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?;
 
             let mut right = idx + $len.min(35);
             if right > cfmt.len() {
                 right = cfmt.len();
             }
 
-            return Err(format!($format, &cfmt[idx..right]));
+            return Err(CfmtError(format!($format, &cfmt[idx..right])));
         }};
         ($msg:expr) => {{
-            return Err($msg.to_owned());
-        }};
-    }
-
-    // Use the default format for the error
-    macro_rules! error_default {
-        ($msg:expr, $len:expr) => {{
-            let idx = *index_stack.last().unwrap();
-
-            let mut right = idx + $len.min(35);
-            if right > cfmt.len() {
-                right = cfmt.len();
-            }
-
-            return Err(format!("{}: \"{}\"", $msg, &cfmt[idx..right]));
+            return Err(CfmtError($msg.to_owned()));
         }};
     }
 
@@ -131,23 +100,23 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
 
     // Pop the last index of the index stack
     macro_rules! unmark {
-        () => {
-            index_stack.pop();
-        };
+        () => {{
+            let _ = index_stack.pop();
+        }};
     }
 
     macro_rules! current_token {
         () => {
-            token_stack.last_mut().unwrap()
+            (try_unwrap(token_stack.last_mut(), TOKEN_STACK_ERROR)?)
         };
     }
 
     // Take the top component off the stack and add it to the next component on the stack
     macro_rules! collapse {
         () => {{
-            let child = stack.pop().unwrap();
+            let child = try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?;
             if !child.is_empty() {
-                add_child(stack.last_mut().unwrap(), child);
+                add_child(try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?, child)?;
             }
         }};
     }
@@ -159,7 +128,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                     '\\' => state = FORCE_ADD,
 
                     '&' => {
-                        finish_component(&mut stack, &mut has_children);
+                        finish_component(&mut stack, &mut has_children)?;
 
                         state = COLOR_START;
                         token_stack.push(String::with_capacity(8));
@@ -175,8 +144,8 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                         // Keep the current component on the stack for reference when determining the format of the
                         // component after this block
                         let next;
-                        if *has_children.last().unwrap() {
-                            next = TextComponent::copy_formatting(String::new(), stack.last().unwrap());
+                        if *try_unwrap(has_children.last(), CHILD_STACK_ERROR)? {
+                            next = TextComponent::copy_formatting(String::new(), try_unwrap(stack.last(), COMPONENT_STACK_ERROR)?);
                         } else {
                             next = TextComponent::new(String::new(), None);
                         }
@@ -199,42 +168,42 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                         curly_bracket_depth -= 1;
 
                         // If children were appended in the block, append the current one before the block is closed
-                        if has_children.pop().unwrap() {
+                        if try_unwrap(has_children.pop(), CHILD_STACK_ERROR)? {
                             collapse!();
                         }
 
                         // The component representing the current block
-                        let block = stack.pop().unwrap();
+                        let block = try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?;
                         // The component to attach the block to
                         let last: &mut TextComponent;
                         // The next component to push on the stack
                         let next: TextComponent;
 
                         // The outer component to attach this block to has children
-                        if *has_children.last().unwrap() {
+                        if *try_unwrap(has_children.last(), CHILD_STACK_ERROR)? {
                             // Grab the component we left behind earlier to get the format for the next component
-                            let reference = stack.pop().unwrap();
+                            let reference = try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?;
 
                             // Copy formatting from the reference
                             next = TextComponent::copy_formatting(String::new(), &reference);
 
                             // Append the component we left behind
-                            last = stack.last_mut().unwrap();
-                            add_child(last, reference);
+                            last = try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?;
+                            add_child(last, reference)?;
                         }
                         // The outer component does not have any children, we are the first child
                         else {
                             // Formatting inherited from the outer block
                             next = TextComponent::new(String::new(), None);
 
-                            last = stack.last_mut().unwrap();
+                            last = try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?;
 
                             // Now the outer component will have children
-                            *has_children.last_mut().unwrap() = true;
+                            *try_unwrap(has_children.last_mut(), CHILD_STACK_ERROR)? = true;
                         }
 
                         // Append this block
-                        add_child(last, block);
+                        add_child(last, block)?;
                         stack.push(next);
                     },
 
@@ -244,7 +213,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                             error!("Events cannot be nested within components attached to events.");
                         }
 
-                        finish_component(&mut stack, &mut has_children);
+                        finish_component(&mut stack, &mut has_children)?;
 
                         state = EVENT_START;
 
@@ -255,25 +224,23 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                     ')' => {
                         // This only happens for event components
                         if component_type == EVENT {
-                            if let Err(error) = finish_event(&mut stack, &mut has_children, &mut token_stack, true) {
-                                error_default!(error, index - index_stack.last().unwrap())
-                            }
+                            finish_event(&mut stack, &mut has_children, &mut token_stack, true)?;
 
                             state = ADD_TEXT;
                             component_type = NORMAL;
 
                             unmark!();
                         } else {
-                            stack.last_mut().unwrap().text.push(ch);
+                            try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?.text.push(ch);
                         }
                     },
 
-                    _ => stack.last_mut().unwrap().text.push(ch)
+                    _ => try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?.text.push(ch)
                 }
             },
 
             FORCE_ADD => {
-                stack.last_mut().unwrap().text.push(ch);
+                try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?.text.push(ch);
                 state = ADD_TEXT;
             },
 
@@ -292,18 +259,21 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
             COLOR_BUILD_FIRST | COLOR_BUILD_EXTRA => {
                 match ch {
                     ',' | ')' => {
-                        let mut token = token_stack.pop().unwrap();
+                        let mut token = try_unwrap(token_stack.pop(), TOKEN_STACK_ERROR)?;
 
                         // Check for dangling comma
                         if ch == ')' && token.len() == 1 {
                             // Remove mark for the current color/format
                             unmark!();
 
-                            error!("Dangling comma at the end of formatting sequence: \"{}\"", index - index_stack.last().unwrap() + 1);
+                            error!(
+                                "Dangling comma at the end of formatting sequence: \"{}\"",
+                                index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)? + 1
+                            );
                         }
 
                         token.push('\"');
-                        let mut component = stack.last_mut().unwrap();
+                        let mut component = try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?;
 
                         // Match the current item to a color
                         if state == COLOR_BUILD_FIRST {
@@ -311,7 +281,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                                 if !apply_format {
                                     error!(
                                         "Negation character not allowed in front of a color code: \"{}\"",
-                                        index - index_stack.last().unwrap()
+                                        index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
                                     );
                                 }
 
@@ -338,14 +308,14 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
 
                                         error!(
                                             "Excpected color or \"reset\" as first argument of color sequence: \"{}...\"",
-                                            index - index_stack.last().unwrap()
+                                            index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
                                         );
                                     }
                                     // The format or color name was incorrect
                                     else {
                                         error!(
                                             "Invalid color or formatting code: \"{}\"",
-                                            index - index_stack.last().unwrap()
+                                            index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
                                         );
                                     }
                                 }
@@ -380,7 +350,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                         else if apply_format {
                             error!(
                                 "Expected negation character ('!') to be at the beginning of a formatting code: \"{}...\"",
-                                index - index_stack.last().unwrap() + 3
+                                index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)? + 3
                             );
                         }
                         // Just pass this mess down to the format parser for the error
@@ -425,7 +395,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                     else {
                         error!(
                             "Invalid event type, expected \"hover\" or \"click\" but found \"{}\"",
-                            index - index_stack.last().unwrap()
+                            index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
                         );
                     }
                 }
@@ -439,7 +409,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                 // Separate the event data from its argument witha comma
                 if ch == ',' {
                     let event_type: &str = token_stack[token_stack.len() - 2].as_ref();
-                    let event_name: &str = token_stack.last().unwrap();
+                    let event_name: &str = try_unwrap(token_stack.last(), TOKEN_STACK_ERROR)?;
                     
                     match event_type {
                         "hover" => {
@@ -462,7 +432,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                                 _ => {
                                     error!(
                                         "Invalid event name for hover type: \"{}\"",
-                                        index - index_stack.last().unwrap()
+                                        index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
                                     );
                                 }
                             }
@@ -478,7 +448,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                             else {
                                 error!(
                                     "Invalid event name for click type: \"{}\"",
-                                    index - index_stack.last().unwrap()
+                                    index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
                                 );
                             }
                         },
@@ -501,9 +471,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
             EVENT_BUILD_ARG => {
                 // Event sequence ends with a close parentehsis
                 if ch == ')' {
-                    if let Err(error) = finish_event(&mut stack, &mut has_children, &mut token_stack, false) {
-                        error_default!(error, index - index_stack.last().unwrap())
-                    }
+                    finish_event(&mut stack, &mut has_children, &mut token_stack, false)?;
 
                     state = ADD_TEXT;
 
@@ -536,7 +504,7 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
                 collapse!();
             }
 
-            return Ok(Component::Text(stack.pop().unwrap()))
+            return Ok(Component::Text(try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?))
         },
 
         FORCE_ADD => {
@@ -551,28 +519,30 @@ pub fn from_cfmt(cfmt: &str) -> Result<Component, String> {
             error!("Incomplete event sequence at the end of the input string.");
         }
         
-        _ => return Ok(Component::Text(stack.pop().unwrap()))
+        _ => return Ok(Component::Text(try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?))
     }
 }
 
-fn finish_component(stack: &mut Vec<TextComponent>, has_children: &mut Vec<bool>) {
-    if !stack.last().unwrap().is_empty() {
+fn finish_component(stack: &mut Vec<TextComponent>, has_children: &mut Vec<bool>) -> Result<(), CfmtError> {
+    if !try_unwrap(stack.last(), COMPONENT_STACK_ERROR)?.is_empty() {
         // Some children are already present
-        if *has_children.last().unwrap() {
-            let child = stack.pop().unwrap();
+        if *try_unwrap(has_children.last(), CHILD_STACK_ERROR)? {
+            let child = try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?;
 
             // Manage inheritance here to prevent the JSON depth from getting insane
             let next = TextComponent::copy_formatting(String::new(), &child);
 
-            add_child(stack.last_mut().unwrap(), child);
+            add_child(try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?, child)?;
             stack.push(next);
         }
         // Add the first child
         else {
             stack.push(TextComponent::new(String::new(), None));
-            *has_children.last_mut().unwrap() = true;
+            *try_unwrap(has_children.last_mut(), CHILD_STACK_ERROR)? = true;
         }
     }
+
+    Ok(())
 }
 
 fn finish_event(
@@ -580,42 +550,36 @@ fn finish_event(
     has_children: &mut Vec<bool>,
     token_stack: &mut Vec<String>,
     has_component: bool
-) -> Result<(), &'static str> {
+) -> Result<(), CfmtError> {
     // Handle stack operations and retrieve the component argument
     if has_component {
         // Add any remaining child
-        if has_children.pop().unwrap() {
-            let child = stack.pop().unwrap();
-            add_child(stack.last_mut().unwrap(), child);
+        if try_unwrap(has_children.pop(), CHILD_STACK_ERROR)? {
+            let child = try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?;
+            add_child(try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?, child)?;
         }
 
         // Apply the event (currently only the show_text event)
-        let text = stack.pop().unwrap();
-        stack.last_mut().unwrap().hover_event = Some(Box::new(HoverEvent::show_text(text)));
+        let text = try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?;
+        try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?.hover_event = Some(Box::new(HoverEvent::show_text(text.into())));
     }
     // Every other event type
     else {
-        let event_arg = token_stack.pop().unwrap();
-        let event_name = token_stack.pop().unwrap();
-        let event_type = token_stack.pop().unwrap();
-        let component = stack.last_mut().unwrap();
+        let event_arg = try_unwrap(token_stack.pop(), TOKEN_STACK_ERROR)?;
+        let event_name = try_unwrap(token_stack.pop(), TOKEN_STACK_ERROR)?;
+        let event_type = try_unwrap(token_stack.pop(), TOKEN_STACK_ERROR)?;
+        let component = try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?;
 
         // Hover events
         if event_type == "hover" {
             match event_name.as_ref() {
-                "show_item" => {
-                    // Make sure it parses the JSON correctly
-                    match HoverEvent::show_item(&event_arg) {
-                        Some(event) => component.hover_event = Some(Box::new(event)),
-                        None => return Err("Invalid argument for hover event \"show_item\"")
-                    }
-                },
+                "show_item" => component.hover_event = Some(Box::new(HoverEvent::show_item_json(&event_arg))),
 
                 "show_entity" => {
                     // Make sure it parses the JSON correctly
-                    match HoverEvent::show_entity(&event_arg) {
+                    match HoverEvent::show_entity_json(&event_arg) {
                         Some(event) => component.hover_event = Some(Box::new(event)),
-                        None => return Err("Invalid argument for hover event \"show_entity\"")
+                        None => return Err(CfmtError("Invalid argument for hover event \"show_entity\"".to_owned()))
                     }
                 },
 
@@ -633,7 +597,7 @@ fn finish_event(
                     // Parse the page index
                     match event_arg.parse::<u32>() {
                         Ok(index) => component.click_event = Some(Box::new(ClickEvent::change_page(index))),
-                        Err(_) => return Err("Invalid page index for click event \"change_page\"")
+                        Err(_) => return Err(CfmtError("Invalid page index for click event \"change_page\"".to_owned()))
                     }
                 },
                 _ => {}
@@ -646,18 +610,18 @@ fn finish_event(
 
 // Add the child component but check to see if the previous child is just white space and can be
 // combined with the given child
-fn add_child(parent: &mut TextComponent, mut child: TextComponent) {
+fn add_child(parent: &mut TextComponent, mut child: TextComponent) -> Result<(), CfmtError> {
     match parent.extra.as_mut() {
         // Children present, time to check
         Some(children) => {
             // The last child should always be a text component, but we have to match it
-            match children.last_mut().unwrap() {
+            match children.last_mut() {
                 // Unpack text component
-                Component::Text(prev_child) => {
+                Some(Component::Text(prev_child)) => {
                     // Is the previous child just whitespace without any formatting that could be displayed
                     if prev_child.text.trim().is_empty() &&
-                            !(prev_child.underline.is_some() && prev_child.underline.unwrap()) &&
-                            !(prev_child.strikethrough.is_some() && prev_child.strikethrough.unwrap()) {
+                            !prev_child.underline.unwrap_or(false) &&
+                            !prev_child.strikethrough.unwrap_or(false) {
                         // Combine the text of the two components
                         let mut text = prev_child.text.to_owned();
                         text.push_str(&child.text);
@@ -669,7 +633,7 @@ fn add_child(parent: &mut TextComponent, mut child: TextComponent) {
                 },
 
                 // Unreachable
-                _ => {}
+                _ => return Err(CfmtError("Internal parser error: invalid state reached while appending a child component.".to_owned()))
             }
         },
 
@@ -678,4 +642,5 @@ fn add_child(parent: &mut TextComponent, mut child: TextComponent) {
     }
 
     parent.add_child(Component::Text(child));
+    Ok(())
 }

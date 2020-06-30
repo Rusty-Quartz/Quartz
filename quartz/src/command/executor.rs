@@ -5,7 +5,10 @@ use crate::server::QuartzServer;
 use crate::command::arg::*;
 use crate::command::CommandSender;
 
-use chat::color;
+use chat::{
+    Component,
+    color::PredefinedColor
+};
 
 // Contains a map of commands which can be executed
 pub struct CommandExecutor<'sv> {
@@ -21,8 +24,8 @@ impl<'sv> CommandExecutor<'sv> {
         }
     }
 
-    // Register the given command node with its defined syntax. If the node is not a literal
-    // this function currently just ignores it and does nothing.
+    /// Registers the given command node with its defined syntax. If the node is not a literal,
+    /// then this function currently just ignores it and does nothing.
     pub fn register(&mut self, node: CommandNode<'sv>, description: &str) {
         match node.argument {
             Argument::Literal(name) => {
@@ -34,9 +37,9 @@ impl<'sv> CommandExecutor<'sv> {
         }
     }
 
-    // Attempts to dispatch the given command, first attempting to parse it according to the register command
-    // syntax trees and then creating a context in which it can be executed. If an error occurs at some point,
-    // the sender is notified.
+    /// Attempts to dispatch the given command, first attempting to parse it according to the registered command
+    /// syntax trees, and then creating a context in which it can be executed. If an error occurs at some point,
+    /// then the sender is notified.
     pub fn dispatch(&self, command: &str, server: &QuartzServer, sender: CommandSender) {
         let mut context = CommandContext {
             server,
@@ -47,77 +50,103 @@ impl<'sv> CommandExecutor<'sv> {
         };
 
         // Find the name of the command
-        let root_name: &str;
-        match context.raw_args.next() {
-            Some(arg) => root_name = arg,
+        let root_name = match context.raw_args.next() {
+            Some(arg) => arg,
             // Empty command, just exit silently
             None => return
-        }
+        };
 
-        match self.commands.get(root_name) {
-            Some(root) => {
-                let mut node = root;
+        // The root node of the command
+        let root = match self.commands.get(root_name) {
+            Some(root) => root,
+            None => {
+                context.sender.send_message(
+                    Component::colored(format!("No command found named \"{}\"", root_name), PredefinedColor::Red)
+                );
+                return;
+            }
+        };
 
-                'arg_loop: while let Some(arg) = context.raw_args.next() {
-                    if node.children.is_empty() {
-                        // Extra arguments
-                        context.sender.send_message(color!("Ignoring the following arguments: \"{}\"", Red, context.raw_args.remaining_truncated(35)));
+        // The current node we're at in the command tree
+        let mut node = root;
 
-                        node.execute(context);
-                        return;
-                    } else {
-                        // Find a child that matches the given argument and attempt to apply it
-                        for child in node.children.iter().filter(|child| child.argument.matches(arg)) {
-                            match child.argument.apply(&mut context, child.name, arg) {
-                                Ok(()) => node = child,
-                                Err(e) => {
-                                    context.sender.send_message(color!("Invalid value for argument \"{}\": {}", Red, child.name, e));
-                                    return;
-                                }
-                            }
+        // Iterate over the avilable argument and trace a path on the command tree
+        'arg_loop: while let Some(arg) = context.raw_args.next() {
+            // The current node has no children but there are still arguments remaining, so notify
+            // the sender that some arguments are getting ignored
+            if node.children.is_empty() {
+                // Extra arguments
+                context.sender.send_message(
+                    Component::colored(
+                        format!("Ignoring the following arguments: \"{}\"", context.raw_args.remaining_truncated(35)),
+                        PredefinedColor::Red
+                    )
+                );
 
+                node.execute(context);
+                return;
+            }
+            // Find the next node in the tree
+            else {
+                // Find a child that matches the given argument and attempt to apply it
+                for child in node.children.iter().filter(|child| child.argument.matches(arg)) {
+                    match child.argument.apply(&mut context, child.name, arg) {
+                        Ok(()) => {
+                            node = child;
                             // Only use the first child that matches
                             continue 'arg_loop;
+                        },
+                        Err(e) => {
+                            context.sender.send_message(
+                                Component::colored(format!("Invalid value for argument \"{}\": {}", child.name, e), PredefinedColor::Red)
+                            );
+                            return;
                         }
-
-                        // We couldn't match the given argument to a node
-                        if node.children.len() == 1 {
-                            context.sender.send_message(color!("Invalid value for argument \"{}\": \"{}\"", Red, node.children[0].name, arg));
-                        } else {
-                            Self::expect_args(node, &context);
-                        }
-
-                        return;
                     }
                 }
 
-                // Look for and load in default argument values
-                'default_loop: while !node.children.is_empty() {
-                    for child in node.children.iter() {
-                        if child.default {
-                            node = child;
-                            context.arguments.insert(child.name.to_owned(), child.argument.clone());
-                            continue 'default_loop;
-                        }
-                    }
-
-                    // No defaults were found
-                    break;
+                // We couldn't match the given argument to a node
+                if node.children.len() == 1 {
+                    context.sender.send_message(
+                        Component::colored(
+                            format!("Invalid value for argument \"{}\": \"{}\"", node.children[0].name, arg),
+                            PredefinedColor::Red
+                        )
+                    );
+                } else {
+                    Self::expect_args(node, &context);
                 }
 
-                // Handle the expectation for more arguments if needed
-                match &node.executor {
-                    Some(executor) => executor(context),
-                    None => match node.children.len() {
-                        0 => {},
-                        1 => context.sender.send_message(color!("Expected value for argument \"{}\"", Red, node.children[0].name)),
-                        _ => Self::expect_args(node, &context)
-                    }
-                }
-            },
+                return;
+            }
+        }
 
-            // Invalid command
-            None => context.sender.send_message(color!("No command found named \"{}\"", Red, root_name))
+        // Look for and load in default argument values
+        'default_loop: while !node.children.is_empty() {
+            for child in node.children.iter() {
+                if child.default {
+                    node = child;
+                    context.arguments.insert(child.name.to_owned(), child.argument.clone());
+                    continue 'default_loop;
+                }
+            }
+
+            // No defaults were found
+            break 'default_loop;
+        }
+
+        // Handle the expectation for more arguments if needed
+        match &node.executor {
+            Some(executor) => executor(context),
+            None => match node.children.len() {
+                0 => {},
+                1 => {
+                    context.sender.send_message(
+                        Component::colored(format!("Expected value for argument \"{}\"", node.children[0].name), PredefinedColor::Red)
+                    );
+                },
+                _ => Self::expect_args(node, &context)
+            }
         }
     }
 
@@ -129,20 +158,20 @@ impl<'sv> CommandExecutor<'sv> {
             message.push_str(", ");
             message.push_str(child.name);
         }
-        context.sender.send_message(color!(message, Red));
+        context.sender.send_message(Component::colored(message, PredefinedColor::Red));
     }
     
-    pub fn get_command_names(&self) -> Vec<&String>{
+    pub fn command_names(&self) -> Vec<&String> {
         self.commands.keys().collect()
     }
 
-    pub fn get_command_description(&self, command: &str) -> Option<&String> {
+    pub fn command_description(&self, command: &str) -> Option<&String> {
         self.descriptions.get(command)
     }
 }
 
-// The context in which a command is executed. This has no use outside the lifecycle
-// of a command.
+/// The context in which a command is executed. This has no use outside the lifecycle
+/// of a command.
 pub struct CommandContext<'ctx> {
     pub server: &'ctx QuartzServer<'ctx>,
     pub executor: &'ctx CommandExecutor<'ctx>,
@@ -153,33 +182,24 @@ pub struct CommandContext<'ctx> {
 
 // Shortcut functions for getting argument values
 impl<'ctx> CommandContext<'ctx> {
-    pub fn get_integer(&self, key: &str) -> i64 {
+    pub fn get_integer(&self, key: &str) -> Option<i64> {
         match self.arguments.get(key) {
-            Some(arg) => match arg {
-                Argument::Integer(value) => *value,
-                _ => 0
-            },
-            None => 0
+            Some(Argument::Integer(value)) => Some(*value),
+            _ => None
         }
     }
 
-    pub fn get_float(&self, key: &str) -> f64 {
+    pub fn get_float(&self, key: &str) -> Option<f64> {
         match self.arguments.get(key) {
-            Some(arg) => match arg {
-                Argument::FloatingPoint(value) => *value,
-                _ => 0_f64
-            },
-            None => 0_f64
+            Some(Argument::FloatingPoint(value)) => Some(*value),
+            _ => None
         }
     }
 
-    pub fn get_string(&self, key: &str) -> String {
+    pub fn get_string(&self, key: &str) -> Option<String> {
         match self.arguments.get(key) {
-            Some(arg) => match arg {
-                Argument::String(value) => value.to_owned(),
-                _ => "".to_owned()
-            },
-            None => "".to_owned()
+            Some(Argument::String(value)) => Some(value.to_owned()),
+            _ => None
         }
     }
 }

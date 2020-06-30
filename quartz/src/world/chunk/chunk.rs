@@ -18,16 +18,4 @@ impl Chunk {
     pub fn block_id(&self, x: i32, y: i32, z: i32) -> StateID {
         self.block_data[Self::index(x, y, z)]
     }
-
-    pub fn typed_block_entity_at<T: BlockEntity>(&self, pos: &BlockPosition, id: BlockEntityType) -> Option<&Box<T>> {
-        let blockentity = self.block_entities.get(pos)?;
-
-        if blockentity.id() != id {
-            return None;
-        }
-
-        unsafe {
-            Some(std::mem::transmute::<&Box<dyn BlockEntity>, &Box<T>>(blockentity))
-        }
-    }
 }

@@ -2,7 +2,6 @@ use std::fmt;
 use std::str;
 
 use serde::{Serialize, Deserialize};
-use serde_json::{self, error::Result as SerdeResult};
 use serde_with::skip_serializing_none;
 
 #[cfg(unix)]
@@ -10,54 +9,58 @@ use termion::style;
 
 use crate::color::{Color, PredefinedColor};
 
-// The generalized component type, including text, translate, selector, keybind, and nbt components
+/// The generalized component type, including: text, translate, selector, keybind, and nbt components.
 #[skip_serializing_none]
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Component {
+    /// A text component.
     Text(TextComponent),
+    /// A translate component which requires values to be inserted into a predefined format.
     Translate {
+        /// The unlocalized translation ID to use for this component.
         translate: String,
+        /// The components to insert into the translation.
         with: Option<Vec<Component>>
     },
+    /// A component consisting of an entity selector, such as `@a` or `@e[distance=..3]`.
     Selector {
+        /// The selector in string-form.
         selector: String
     },
+    /// Used to display the client's current keybind for the specified key.
     Keybind {
+        /// They key whose binding should be specified.
         keybind: String
-    },
-    Nbt {
-        nbt: String,
-        interpret: Option<bool>,
-        block: Option<String>,
-        entity: Option<String>,
-        storage: Option<String>
     }
+
+    // TODO: Add score components
 }
 
 impl Component {
+    /// Creates a text component with the given text and no color.
     pub fn text(text: String) -> Self {
         Component::Text(TextComponent::new(text, None))
     }
 
+    /// Creates a component with the given text and predefined color.
     pub fn colored(text: String, color: PredefinedColor) -> Self {
         Component::Text(TextComponent::new(text, Some(Color::Predefined(color))))
     }
 
-    pub fn from_json(json: &str) -> SerdeResult<Self> {
-        serde_json::from_str(json)
-    }
-
-    pub fn as_json(&self) -> String {
-        serde_json::to_string(self).unwrap()
-    }
-
+    /// Converts this component into plain, uncolored text.
     pub fn as_plain_text(&self) -> String {
         match self {
             Component::Text(text_component) => text_component.as_plain_text(),
             // TODO: Implement this for other component types
-            _ => self.as_json()
+            _ => serde_json::to_string(self).unwrap_or("{}".to_owned())
         }
+    }
+}
+
+impl From<TextComponent> for Component {
+    fn from(text_component: TextComponent) -> Self {
+        Component::Text(text_component)
     }
 }
 
@@ -84,26 +87,37 @@ impl fmt::Display for Component {
     }
 }
 
-// For ease of use, this was moved outside of the component enum as it is significantly
-// more complicated to handle
+/// A component with text, color, formatting, click/hover events, etc.
 #[skip_serializing_none]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextComponent {
+    /// The raw text in the component.
     pub text: String,
+    /// The color of the component.
     pub color: Option<Color>,
+    /// Whether or not the component should be obfuscated.
     pub obfuscated: Option<bool>,
+    /// Whether or not the component should be bolded.
     pub bold: Option<bool>,
+    /// Whether or not the component should be struck-through.
     pub strikethrough: Option<bool>,
+    /// Whether or not the component should be underlined.
     pub underline: Option<bool>,
+    /// Whether or not the component should be italicized.
     pub italic: Option<bool>,
+    /// The text to insert into a player's chat upon shift-clicking this component.
     pub insertion: Option<String>,
+    /// The event to run when this component is clicked.
     pub click_event: Option<Box<ClickEvent>>,
+    /// The event to run when the player hovers over this component.
     pub hover_event: Option<Box<HoverEvent>>,
+    /// The children of this component.
     pub extra: Option<Vec<Component>>
 }
 
 impl TextComponent {
+    /// Creates a new text component with the given text and color.
     pub fn new(text: String, color: Option<Color>) -> Self {
         TextComponent {
             text,
@@ -120,7 +134,7 @@ impl TextComponent {
         }
     }
 
-    // Only copies color and formats
+    /// Creates a text component with the given text, copying the color and formatting of the given component.
     pub fn copy_formatting(text: String, component: &TextComponent) -> Self {
         TextComponent {
             text,
@@ -137,11 +151,13 @@ impl TextComponent {
         }
     }
 
-    // Returns if the text is empty
+    /// Returns whether or not the text is empty.
     pub fn is_empty(&self) -> bool {
         self.text.is_empty()
     }
 
+    /// Converts this component into plain text by concatenating this component's text field with its children's text
+    /// fields.
     pub fn as_plain_text(&self) -> String {
         let mut text = self.text.clone();
 
@@ -155,7 +171,7 @@ impl TextComponent {
         text
     }
 
-    // Adds the given child, creating the children array if needed
+    /// Adds the given child, creating the children vec if needed.
     pub fn add_child(&mut self, component: Component) {
         match &mut self.extra {
             Some(children) => children.push(component),
@@ -163,6 +179,7 @@ impl TextComponent {
         }
     }
 
+    /// Returns whether or not this component has children.
     pub fn has_children(&self) -> bool {
         self.extra.is_some() && !self.extra.as_ref().unwrap().is_empty()
     }
@@ -204,7 +221,7 @@ impl fmt::Display for TextComponent {
         // Gnome supports hyperlinks, so if we have a link as the click event, apply it
         let mut link_applied = false;
         if let Some(event) = &self.click_event {
-            if event.action == "open_url" {
+            if event.action == ClickEventType::OpenUrl {
                 if let EventArgument::Text(url) = &event.value {
                     write!(f, "\x1B]8;;{}\x1B\\", url)?;
                     link_applied = true;
@@ -250,104 +267,137 @@ impl fmt::Display for TextComponent {
     }
 }
 
-// Click event type for text components
+/// Defines click events for text components.
 #[derive(Serialize, Deserialize)]
 pub struct ClickEvent {
-    action: String,
+    action: ClickEventType,
     value: EventArgument
 }
 
 impl ClickEvent {
+    /// Creates a click event which prompts the client to go to the given URL.
     pub fn open_url(url: String) -> Self {
         ClickEvent {
-            action: "open_url".to_owned(),
+            action: ClickEventType::OpenUrl,
             value: EventArgument::Text(url)
         }
     }
 
+    /// Creates a click event which runs the given command with the clicker as the sender.
     pub fn run_command(command: String) -> Self {
         ClickEvent {
-            action: "run_command".to_owned(),
+            action: ClickEventType::RunCommand,
             value: EventArgument::Text(command)
         }
     }
 
+    /// Creates a click event which suggests the given command to the clicker.
     pub fn suggest_command(command: String) -> Self {
         ClickEvent {
-            action: "suggest_command".to_owned(),
+            action: ClickEventType::SuggestCommand,
             value: EventArgument::Text(command)
         }
     }
 
+    /// Creates a click event which changes a client's page while reading a book.
     pub fn change_page(index: u32) -> Self {
         ClickEvent {
-            action: "change_page".to_owned(),
+            action: ClickEventType::ChangePage,
             value: EventArgument::Index(index)
         }
     }
 }
 
-// Hover event type for text components
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ClickEventType {
+    OpenUrl,
+    RunCommand,
+    SuggestCommand,
+    ChangePage
+}
+
+/// Defines hover events for text components.
 #[skip_serializing_none]
 #[derive(Serialize, Deserialize)]
 pub struct HoverEvent {
-    action: String,
+    action: HoverEventType,
     contents: Option<HoverContents>,
     // This is for legacy support
     value: Option<EventArgument>
 }
 
 impl HoverEvent {
-    pub fn show_text(text: TextComponent) -> Self {
+    /// Creates a hover event which will display the given component.
+    pub fn show_text(component: Component) -> Self {
         HoverEvent {
-            action: "show_text".to_owned(),
-            contents: Some(HoverContents::Component(Component::Text(text))),
+            action: HoverEventType::ShowText,
+            contents: Some(HoverContents::Component(component)),
             value: None
         }
     }
 
-    pub fn show_item(json: &str) -> Option<Self> {
+    /// Creates a hover event which will display the given item.
+    pub fn show_item(item: HoverItem) -> Self {
+        HoverEvent {
+            action: HoverEventType::ShowItem,
+            contents: Some(HoverContents::Item(item)),
+            value: None
+        }
+    }
+
+    /// Attempts to parse the given JSON into an item profile and create a hover event to display
+    /// the item as defined by the JSON. If the parsing fails, then the JSON string will be treated as
+    /// a raw item ID instead.
+    pub fn show_item_json(json: &str) -> Self {
         let contents: HoverContents;
 
         // Try to parse the json
-        match serde_json::from_str::<HoverContents>(json) {
-            Ok(parsed) => {
-                // Ensure that it matches the item type
-                match parsed {
-                    HoverContents::Item {id, count, tag} => contents = HoverContents::Item {id, count, tag},
-                    _ => return None
-                }
-            },
+        match serde_json::from_str::<HoverItem>(json) {
+            Ok(parsed) => contents = HoverContents::Item(parsed),
             // Assume just the item ID was passed in
             Err(_) => contents = HoverContents::ItemId(json.to_owned())
         }
 
-        Some(HoverEvent {
-            action: "show_item".to_owned(),
+        HoverEvent {
+            action: HoverEventType::ShowItem,
             contents: Some(contents),
             value: None
-        })
-    }
-
-    pub fn show_entity(json: &str) -> Option<Self> {
-        // Try to parse the json
-        match serde_json::from_str::<HoverContents>(json) {
-            Ok(parsed) => {
-                // Ensure it matches the entity type
-                match parsed {
-                    HoverContents::Entity {id, name, entity_type} => {
-                        Some(HoverEvent {
-                            action: "show_entity".to_owned(),
-                            contents: Some(HoverContents::Entity {id, name, entity_type}),
-                            value: None
-                        })
-                    },
-                    _ => return None
-                }
-            },
-            Err(_) => return None
         }
     }
+
+    /// Creates a hover event which will display the given entity.
+    pub fn show_entity(entity: HoverEntity) -> Self {
+        HoverEvent {
+            action: HoverEventType::ShowEntity,
+            contents: Some(HoverContents::Entity(entity)),
+            value: None
+        }
+    }
+
+    /// Attempts to parse the given JSON into an entity profile and create a hover event to display
+    /// the entity as defined by the JSON.
+    pub fn show_entity_json(json: &str) -> Option<Self> {
+        // Try to parse the json
+        match serde_json::from_str::<HoverEntity>(json) {
+            Ok(parsed) => {
+                Some(HoverEvent {
+                    action: HoverEventType::ShowEntity,
+                    contents: Some(HoverContents::Entity(parsed)),
+                    value: None
+                })
+            },
+            Err(_) => None
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum HoverEventType {
+    ShowText,
+    ShowItem,
+    ShowEntity
 }
 
 // The contents variable in the hover event
@@ -357,17 +407,27 @@ impl HoverEvent {
 enum HoverContents {
     Component(Component),
     ItemId(String),
-    Item {
-        id: String,
-        count: u8,
-        tag: Option<String>
-    },
-    Entity {
-        id: String,
-        name: Option<Component>,
-        #[serde(rename = "type")]
-        entity_type: Option<String>
-    }
+    Item(HoverItem),
+    Entity(HoverEntity)
+}
+
+/// Defines an item profile which can be displayed through hover events.
+#[skip_serializing_none]
+#[derive(Serialize, Deserialize)]
+pub struct HoverItem {
+    id: String,
+    count: u8,
+    tag: Option<String>
+}
+
+/// Defines an entity profile which can be displayed through hover events.
+#[skip_serializing_none]
+#[derive(Serialize, Deserialize)]
+pub struct HoverEntity {
+    id: String,
+    name: Option<Component>,
+    #[serde(rename = "type")]
+    entity_type: Option<String>
 }
 
 // The generalized event argument
