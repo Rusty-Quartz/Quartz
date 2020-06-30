@@ -181,7 +181,10 @@ impl TextComponent {
 
     /// Returns whether or not this component has children.
     pub fn has_children(&self) -> bool {
-        self.extra.is_some() && !self.extra.as_ref().unwrap().is_empty()
+        match &self.extra {
+            Some(extra) => !extra.is_empty(),
+            None => false
+        }
     }
 
     // Apply just the formatting of this component

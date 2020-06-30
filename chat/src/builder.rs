@@ -51,10 +51,10 @@ impl TextComponentBuilder {
         self.current_empty = false;
 
         if self.component.has_children() {
+            // This unwrap is checked above
             match self.component.extra.as_mut().unwrap().last_mut() {
-                Some(Component::Text(component)) => component,
-                // Since the inner text component is completely internally maintained,
-                // this branch should never be taken.
+                Some(Component::Text(component)) => return component,
+                // TODO: replace with &mut self.component when the borrow checker allows it in the future
                 _ => unreachable!()
             }
         } else {
