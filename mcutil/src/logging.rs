@@ -41,8 +41,16 @@ const LEVEL_FILTER: LevelFilter = LevelFilter::Debug;
 #[cfg(not(debug_assertions))]
 const LEVEL_FILTER: LevelFilter = LevelFilter::Info;
 
-// Sets up log4rs customized for the minecraft server
-pub fn init_logger(console_interface: Arc<Interface<DefaultTerminal>>) -> Result<(), Box<dyn Error>> {
+/// Configures the log4rs crate to replicate the logging system for official minecraft servers.
+/// 
+/// Console output is filtered so that only logs from the specified crate are accepted. Messages are
+/// in the form `[HH:MM:SS Level]: message`. Messages are automatically colored based on the log level
+/// and can be customly colored with the `termion` crate. If debug assertions are off, then logging events
+/// on the debug level are blocked.
+/// 
+/// Logs will be recorded in a directory named `logs` in the form `yyyy-mm-dd-log#`. Logs are
+/// compressed using GZ encoding.
+pub fn init_logger(crate_filter: &str, console_interface: Arc<Interface<DefaultTerminal>>) -> Result<(), Box<dyn Error>> {
     // Logs info to the console with colors and such
     let console = CustomConsoleAppender {console_interface};
 
@@ -56,8 +64,8 @@ pub fn init_logger(console_interface: Arc<Interface<DefaultTerminal>>) -> Result
     
     // Build the log4rs config
     let config = Config::builder()
-            .appender(Appender::builder().filter(Box::new(CrateFilter)).build("console", Box::new(console)))
-            .appender(Appender::builder().filter(Box::new(CrateFilter)).build("logfile", Box::new(logfile)))
+            .appender(Appender::builder().filter(Box::new(CrateFilter::new(crate_filter))).build("console", Box::new(console)))
+            .appender(Appender::builder().filter(Box::new(CrateFilter::new(crate_filter))).build("logfile", Box::new(logfile)))
             .build(
                 Root::builder()
                     .appender("console")
@@ -70,22 +78,32 @@ pub fn init_logger(console_interface: Arc<Interface<DefaultTerminal>>) -> Result
     Ok(())
 }
 
-// Called at the end of main, compresses the last log file
+/// This should be called directly before the main process exits. This function simply compresses the
+/// current log file.
 pub fn cleanup() {
-    // There's no reason to handle an error here, and thanks to the jackass who decided to avoid calling
-    // drop on the log4rs objects
+    // There's no reason to handle an error here
     let _ = CustomLogRoller::new().roll_threaded(Path::new("./logs/latest.log"), false);
 }
 
 // Only allow logging from out crate
-struct CrateFilter;
+struct CrateFilter {
+    filter: String
+}
+
+impl CrateFilter {
+    pub fn new(filter: &str) -> Self {
+        CrateFilter {
+            filter: filter.to_owned()
+        }
+    }
+}
 
 impl Filter for CrateFilter {
     #[cfg(debug_assertions)]
     fn filter(&self, record: &Record) -> Response {
         match record.module_path() {
             Some(path) => {
-                if path.starts_with("quartz") {
+                if path.starts_with(&self.filter) {
                     Response::Accept
                 } else {
                     Response::Reject

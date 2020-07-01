@@ -1,4 +1,4 @@
-use util::UnlocalizedName;
+use mcutil::UnlocalizedName;
 use nbt::NbtCompound;
 use crate::item::get_item;
 use crate::item::ItemInfo;

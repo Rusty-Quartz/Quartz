@@ -3,22 +3,24 @@ use std::slice::Iter;
 use std::slice::IterMut;
 use std::ops::{Index, IndexMut};
 
-// Represents an object which has a usize as a modifiable ID
+/// Represents an object which has a usize as a modifiable ID.
 pub trait Identify {
+    /// Updates the ID of this object to the given new ID.
     fn set_id(&mut self, id: usize);
 
+    /// Returns the ID of this object.
     fn id(&self) -> usize;
 }
 
-// A map from IDs (i32) to an object of a given type. Internally, this operates on vectors
-// and indexing so it is more efficient than a hash map.
+/// A map from IDs (usizes) to an object of a given type. Internally, this operates on vectors
+/// and indexing so it is more efficient than a hash map.
 pub struct IdList<T: Identify> {
     inner: Vec<Option<T>>,
     free_ids: Vec<usize>
 }
 
 impl<T: Identify> IdList<T> {
-    // New empty list
+    /// Returns a new, empty ID list with an empty internal vector.
     pub fn new() -> Self {
         IdList {
             inner: Vec::new(),
@@ -26,7 +28,7 @@ impl<T: Identify> IdList<T> {
         }
     }
 
-    // New list with the given initial capacity
+    /// Returns a new ID list with an internal vector with the given initial capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         IdList {
             inner: Vec::with_capacity(capacity),
@@ -34,21 +36,21 @@ impl<T: Identify> IdList<T> {
         }
     }
 
-    // Get an iterator over this list that provides shared references
+    /// Returns an iterator over shared references to the values in this ID list.
     pub fn iter(&self) -> IdListIterator<T, Iter<'_, Option<T>>> {
         IdListIterator {
             inner: self.inner.iter()
         }
     }
 
-    // Get an iterator over this list that provides mutable references
+    /// Returns an iterator over mutable references to the values in this ID list.
     pub fn iter_mut(&mut self) -> IdListIteratorMut<T, IterMut<'_, Option<T>>> {
         IdListIteratorMut {
             inner: self.inner.iter_mut()
         }
     }
 
-    // Adds the given item to this list, setting its ID to the next open ID in this list and returning that ID
+    /// Adds the given item to this list, setting its ID to the next open ID in this list and returning that ID.
     pub fn add(&mut self, mut item: T) -> usize {
         if self.free_ids.is_empty() {
             let id = self.inner.len();
@@ -63,7 +65,7 @@ impl<T: Identify> IdList<T> {
         }
     }
 
-    // Removes the item with the given ID returning that item if it exists
+    /// Removes the item with the given ID returning that item if it exists, or None if it does not.
     pub fn remove(&mut self, id: usize) -> Option<T> {
         if id >= self.inner.len() {
             return None;
@@ -92,6 +94,7 @@ impl<T: Identify> IndexMut<usize> for IdList<T> {
 // Creates an iterator that essentially performs the flatten operation on another iterator
 macro_rules! id_list_iter {
     ($name:ident, $itype:ty, $wrapped_itype:ty) => {
+        #[doc = "A custom iterator over an ID list which skips over empty elements in the ID list's internal vec."]
         pub struct $name<'a, T: 'a, I: Iterator<Item = $wrapped_itype>> {
             inner: I
         }

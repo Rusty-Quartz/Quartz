@@ -7,7 +7,7 @@ use std::time::Duration;
 use std::sync::mpsc;
 use linefeed::Interface;
 use log::*;
-use util::logging;
+use mcutil::logging;
 use openssl::rsa::Rsa;
 
 // Folders
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let console_interface = Arc::new(Interface::new("quartz-server")?);
     console_interface.set_prompt("> ")?;
 
-    logging::init_logger(console_interface.clone())?;
+    logging::init_logger("quartz", console_interface.clone())?;
 
     let config: Config;
     match load_config("./config.json".to_owned()) {

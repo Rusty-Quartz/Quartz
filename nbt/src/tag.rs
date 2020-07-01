@@ -299,8 +299,8 @@ tag_from!(
 );
 
 // String slices are a special case
-impl<'a> From<&'a str> for NbtTag {
-    fn from(value: &'a str) -> NbtTag {
+impl From<&str> for NbtTag {
+    fn from(value: &str) -> NbtTag {
         NbtTag::StringModUtf8(value.to_owned())
     }
 }
@@ -343,7 +343,7 @@ macro_rules! list_get_ref {
                 "
             ),
             pub fn $method(&self, index: usize) -> Option<&$type> {
-                if let NbtTag::$tag(value) = &self.0[index] {
+                if let Some(NbtTag::$tag(value)) = self.0.get(index) {
                     Some(value)
                 } else {
                     None
@@ -359,7 +359,7 @@ macro_rules! list_get_ref {
                 "
             ),
             pub fn $method_mut(&mut self, index: usize) -> Option<&mut $type> {
-                if let NbtTag::$tag(value) = &mut self.0[index] {
+                if let Some(NbtTag::$tag(value)) = self.0.get_mut(index) {
                     Some(value)
                 } else {
                     None
@@ -471,20 +471,11 @@ impl NbtList {
     list_get!(f32, get_float, Float);
     list_get!(f64, get_double, Double);
     list_get_ref!(Vec<i8>, get_byte_array, get_byte_array_mut, ByteArray);
+    list_get_ref!(str, get_string, get_string_mut, StringModUtf8);
     list_get_ref!(NbtList, get_list, get_list_mut, List);
     list_get_ref!(NbtCompound, get_compound, get_compound_mut, Compound);
     list_get_ref!(Vec<i32>, get_int_array, get_int_array_mut, IntArray);
     list_get_ref!(Vec<i64>, get_long_array, get_long_array_mut, LongArray);
-
-    /// Returns a reference to the value of a `StringModUtf8` tag at the given index. If the index is
-    /// out of bounds or the tag is not a string tag, then `None` is returned.
-    pub fn get_string(&self, index: usize) -> Option<&str> {
-        if let Some(NbtTag::StringModUtf8(value)) = &self.0.get(index) {
-            Some(value)
-        } else {
-            None
-        }
-    }
 
     /// Returns whether or not an integer-type tag at the given index has a value other than zero. If the
     /// index is out of bounds or the tag at the given index is not an integer type, then `None` is returned.
@@ -775,21 +766,11 @@ impl NbtCompound {
     compound_get!(f32, get_float, Float);
     compound_get!(f64, get_double, Double);
     compound_get_ref!(Vec<i8>, get_byte_array, get_byte_array_mut, ByteArray);
+    compound_get_ref!(str, get_string, get_string_mut, StringModUtf8);
     compound_get_ref!(NbtList, get_list, get_list_mut, List);
     compound_get_ref!(NbtCompound, get_compound, get_compound_mut, Compound);
     compound_get_ref!(Vec<i32>, get_int_array, get_int_array_mut, IntArray);
     compound_get_ref!(Vec<i64>, get_long_array, get_long_array_mut, LongArray);
-
-    /// Returns a shared reference to the value of the `StringModUtf8` tag with the given name.
-    /// If a tag with the given name cannot be found, or the tag is not a `StringModUtf8` tag,
-    /// then `None` is returned.
-    pub fn get_string(&self, name: &str) -> Option<&str> {
-        if let Some(NbtTag::StringModUtf8(value)) = self.0.get(name) {
-            Some(value)
-        } else {
-            None
-        }
-    }
 
     /// Returns whether or not an integer-type tag with the given name has a value other than zero. If there is no
     /// tag with the given name, or the tag is not an integer type, then `None` is returned.

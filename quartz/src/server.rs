@@ -14,7 +14,7 @@ use crate::block::init_blocks;
 use crate::item::init_items;
 use crate::config::Config;
 use crate::network::*;
-use util::netutil::PacketBuffer;
+use crate::network::PacketBuffer;
 use crate::command::*;
 
 use quartz_plugins::PluginManager;

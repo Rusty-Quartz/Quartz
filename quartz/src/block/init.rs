@@ -1,12 +1,11 @@
 use std::collections::{BTreeMap, HashMap};
-use std::ptr;
 use lazy_static::lazy_static;
 use log::info;
 use serde::{Serialize, Deserialize};
 use serde_json;
 use once_cell::sync::OnceCell;
 use crate::block::{StateID, Block, BlockState, StateBuilder};
-use util::UnlocalizedName;
+use mcutil::UnlocalizedName;
 
 static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block>> = OnceCell::new();
 static GLOBAL_PALETTE: OnceCell<Vec<BlockState>> = OnceCell::new();
