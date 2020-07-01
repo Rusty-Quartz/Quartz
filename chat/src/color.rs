@@ -5,18 +5,28 @@ use serde::{Serialize, Deserialize, Serializer, Deserializer, de};
 #[cfg(unix)]
 use termion::{color, style};
 
-// Public color enum
+/// Highest level definition of a chat color which can either be predefined or custom as of minecraft
+/// 1.16.
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Color {
+    /// A predefined color.
     Predefined(PredefinedColor),
 
+    /// A custom RBG color.
     #[serde(serialize_with = "Color::serialize_custom", deserialize_with="Color::deserialize_custom")]
-    Custom(u8, u8, u8)
+    Custom(
+        /// The red value.
+        u8,
+        /// The green value.
+        u8,
+        /// The blue value.
+        u8
+    )
 }
 
 impl Color {
-    // Apply the color to the terminal
+    /// Applies the color to the terminal (unix only).
     #[cfg(unix)]
     pub fn apply(&self, f: &mut Formatter) -> fmt::Result {
         match self {
@@ -57,15 +67,10 @@ impl Color {
     }
 }
 
-impl From<PredefinedColor> for Color {
-    fn from(color: PredefinedColor) -> Self {
-        Color::Predefined(color)
-    }
-}
-
-// All predefined color types
+/// All predefined color types.
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
 pub enum PredefinedColor {
     Black,
     DarkBlue,
@@ -87,7 +92,13 @@ pub enum PredefinedColor {
 }
 
 impl PredefinedColor {
-    // Apply the color to the terminal
+    /// Wraps this predefined color in the generic Color enum.
+    #[inline]
+    pub fn into_color(self) -> Color {
+        Color::Predefined(self)
+    }
+
+    /// Applies the color to the terminal (unix only).
     #[cfg(unix)]
     pub fn apply(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

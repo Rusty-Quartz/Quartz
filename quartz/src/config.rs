@@ -7,7 +7,7 @@ use serde::{Serialize, Deserialize, Serializer, Deserializer};
 use log::*;
 
 use chat::component::Component;
-use chat::component;
+use chat::cfmt::from_cfmt;
 
 // The server config
 #[derive(Serialize, Deserialize)]
@@ -34,7 +34,7 @@ impl Config {
     {
         let cfmt: &'de str = Deserialize::deserialize(deserializer)?;
 
-        match component!(cfmt) {
+        match from_cfmt(cfmt) {
             Ok(component) => Ok(component),
             Err(e) => {
                 error!("Invalid MOTD format: {}", e);

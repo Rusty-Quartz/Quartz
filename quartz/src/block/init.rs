@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ptr;
+use lazy_static::lazy_static;
 use log::info;
 use serde::{Serialize, Deserialize};
 use serde_json;
@@ -9,6 +10,15 @@ use util::UnlocalizedName;
 
 static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block>> = OnceCell::new();
 static GLOBAL_PALETTE: OnceCell<Vec<BlockState>> = OnceCell::new();
+
+lazy_static! {
+    static ref DUMMY_BLOCK: Block = Block {
+        name: UnlocalizedName::minecraft("dummy"),
+        properties: BTreeMap::new(),
+        base_state: 0,
+        default_state: 0
+    };
+}
 
 #[inline(always)]
 pub fn get_block_list() -> &'static HashMap<UnlocalizedName, Block> {
@@ -79,10 +89,10 @@ pub fn init_blocks() {
     }
 
     let mut global_palette: Vec<BlockState> = Vec::with_capacity(largest_state + 1);
-    // Since we expand to the capacity it's fine
-    unsafe { global_palette.set_len(global_palette.capacity()); }
-    let palette_ptr = global_palette.as_mut_ptr();
-    let mut id_sum: usize = 0;
+    global_palette.resize_with(largest_state + 1, || BlockState {
+        handle: &DUMMY_BLOCK,
+        properties: BTreeMap::new()
+    });
 
     for (name, block) in parsed_data {
         // All of the unwraps are guaranteed to succeed
@@ -100,17 +110,9 @@ pub fn init_blocks() {
             // Make sure the computed ID matches the ID in the generated data
             assert_eq!(state_info.id, state.id(), "Computed ID for {} does not match stored ID.", state);
 
-            // Setting the value with vec[index] = value started segfaulting at some point, so this is actually safer apparently
-            unsafe {
-                ptr::write(palette_ptr.add(state_info.id as usize), state);
-            }
-
-            id_sum += state_info.id as usize;
+            global_palette.insert(state_info.id as usize, state);
         }
     }
-
-    // Make sure the vec was actually filled
-    assert_eq!(id_sum, (largest_state * (largest_state + 1)) / 2, "Some state IDs are missing, this could cause segmentation faults.");
 
     match GLOBAL_PALETTE.set(global_palette) {
         Ok(()) => {},

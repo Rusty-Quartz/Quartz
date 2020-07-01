@@ -7,8 +7,7 @@ use regex::Regex;
 pub struct ArgumentTraverser<'cmd> {
     command: &'cmd str,
     anchor: usize,
-    index: usize,
-    breakpoint: bool
+    index: usize
 }
 
 impl<'cmd> ArgumentTraverser<'cmd> {
@@ -16,13 +15,8 @@ impl<'cmd> ArgumentTraverser<'cmd> {
         ArgumentTraverser {
             command,
             anchor: 0,
-            index: 0,
-            breakpoint: false
+            index: 0
         }
-    }
-
-    pub fn has_next(&self) -> bool {
-        self.index < self.command.len()
     }
 
     pub fn remaining(&mut self) -> String {
@@ -107,7 +101,6 @@ impl Argument {
             static ref FLOAT: Regex = Regex::new(r"^(-+)?(\d+\.\d*)|(\d*\.\d+)$").unwrap();
             static ref INT: Regex = Regex::new(r"^(-+)?\d+$").unwrap();
         }
-
 
         match self {
             Argument::Remaining(_value) => true,

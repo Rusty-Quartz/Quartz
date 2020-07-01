@@ -3,7 +3,7 @@ use nbt::{NbtCompound};
 use util::UnlocalizedName;
 use crate::world::BlockPosition;
 use crate::item::{get_item, ItemStack};
-use crate::item::inventory::Inventory;
+use crate::item::Inventory;
 
 // While this is somewhat accurate to how the Furnace BE will be implemented the tick method is no where near finished and some key fields are missing
 // Currently this is mostly for testing BEs

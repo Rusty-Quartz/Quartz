@@ -1,2 +1,5 @@
-pub mod connection;
-pub mod packet_handler;
+mod connection;
+mod packet_handler;
+
+pub use connection::*;
+pub use packet_handler::*;

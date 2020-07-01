@@ -5,27 +5,31 @@ use std::thread;
 use std::io;
 use std::time::Duration;
 use std::sync::mpsc;
-
 use linefeed::Interface;
-
 use log::*;
-
-use crate::config::*;
 use util::logging;
-
-use crate::network::{
-    connection::AsyncClientConnection,
-    packet_handler::{
-        handle_async_connection,
-        WrappedServerPacket
-    }
-};
-use crate::server::{self, QuartzServer};
-
 use openssl::rsa::Rsa;
 
+// Folders
+mod block;
+mod command;
+mod item;
+mod network;
+mod world;
 
-pub fn launch_server() -> Result<(), Box<dyn Error>> {
+// Files in src
+mod config;
+mod server;
+
+use config::*;
+use network::{
+    AsyncClientConnection,
+    handle_async_connection,
+    WrappedServerPacket
+};
+use server::QuartzServer;
+
+fn main() -> Result<(), Box<dyn Error>> {
     let console_interface = Arc::new(Interface::new("quartz-server")?);
     console_interface.set_prompt("> ")?;
 

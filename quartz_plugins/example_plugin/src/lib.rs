@@ -1,4 +1,11 @@
-use quartz::{Listeners, get_quartz_info, ClientBoundPacket, PROTOCOL_VERSION};
+use quartz::{
+    Listeners,
+    get_quartz_info,
+    network::{
+        self,
+        ClientBoundPacket
+    }
+};
 use serde_json::json;
 
 #[no_mangle]
@@ -22,7 +29,7 @@ pub fn on_status_response(packet: &mut ClientBoundPacket) -> ClientBoundPacket {
                 json_response: json!({
                     "version": {
                         "name": "1.17 lel",
-                        "protocol": PROTOCOL_VERSION
+                        "protocol": network::PROTOCOL_VERSION
                     },
                     "players": {
                         "max": 9001,
