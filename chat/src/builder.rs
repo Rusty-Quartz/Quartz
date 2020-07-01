@@ -53,7 +53,7 @@ impl TextComponentBuilder {
         if self.component.has_children() {
             // This unwrap is checked above
             match self.component.extra.as_mut().unwrap().last_mut() {
-                Some(Component::Text(component)) => return component,
+                Some(Component::Text(component)) => component,
                 // TODO: replace with &mut self.component when the borrow checker allows it in the future
                 _ => unreachable!()
             }
@@ -79,6 +79,19 @@ impl TextComponentBuilder {
         }
 
         self.component
+    }
+
+    /// Consumes this builder and returns a vec of the base component's children, excluding the base
+    /// component itself.
+    pub fn build_children(mut self) -> Vec<Component> {
+        if self.current_empty {
+            let _ = self.component.extra.as_mut().unwrap().pop();
+        }
+
+        match self.component.extra {
+            Some(children) => children,
+            None => Vec::new()
+        }
     }
 
     /// Set the text of the current component.

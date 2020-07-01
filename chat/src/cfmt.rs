@@ -31,7 +31,7 @@ const COMPONENT_STACK_ERROR: &str = "component stack empty";
 const CHILD_STACK_ERROR: &str = "children stack empty";
 
 /// Parses the given string slice into a text component.
-pub fn from_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
+pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
     let mut stack: Vec<TextComponent> = Vec::with_capacity(4);
     stack.push(TextComponent::new(String::new(), None));
 

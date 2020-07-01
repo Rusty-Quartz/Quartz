@@ -39,17 +39,17 @@ impl FurnaceBlockEntity {
 
 impl BlockEntity for FurnaceBlockEntity {
     fn from_nbt(&mut self, nbt: &NbtCompound) {
-        self.burn_time = nbt.get_int("BurnTime");
-        self.cook_time = nbt.get_int("CookTime");
-        self.cook_time_total = nbt.get_int("CookTimeTotal");
+        self.burn_time = nbt.get_int("BurnTime").unwrap_or(0);
+        self.cook_time = nbt.get_int("CookTime").unwrap_or(0);
+        self.cook_time_total = nbt.get_int("CookTimeTotal").unwrap_or(0);
         self.items.from_tag(nbt);
         
         if nbt.has("CustomName") {
-            self.custom_name = nbt.get_string("CustomName").to_owned();
+            self.custom_name = nbt.get_string("CustomName").unwrap_or("Furnace").to_owned();
         }
 
         if nbt.has("Lock") {
-            self.lock = nbt.get_bool("Lock");
+            self.lock = nbt.get_bool("Lock").unwrap_or(false);
         }
     }
 

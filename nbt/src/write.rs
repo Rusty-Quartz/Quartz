@@ -24,6 +24,8 @@ impl NbtTag {
     }
 }
 
+/// Writes the given tag compound with the given name to the provided writer, writing only the raw
+/// NBT data without any compression.
 pub fn write_nbt_uncompressed<W>(writer: &mut W, root_name: &str, root: &NbtCompound) -> Result<()>
 where
     W: Write
@@ -34,20 +36,31 @@ where
     write_compound(writer, root)
 }
 
-pub fn write_nbt_gz_compressed<W>(writer: &mut W, compression_level: Compression, root_name: &str, root: &NbtCompound) -> Result<()>
-where
-    W: Write
-{
-    write_nbt_uncompressed(&mut GzEncoder::new(writer, compression_level), root_name, root)
-}
-
-pub fn write_nbt_zlib_compressed<W>(writer: &mut W, compression_level: Compression, root_name: &str, root: &NbtCompound) -> Result<()>
+/// Wraps the given writer in a zlib encoder and then passes it to the uncompressed writer function.
+pub fn write_nbt_zlib_compressed<W>(
+    writer: &mut W,
+    compression_level: Compression,
+    root_name: &str,
+    root: &NbtCompound
+) -> Result<()>
 where
     W: Write
 {
     write_nbt_uncompressed(&mut ZlibEncoder::new(writer, compression_level), root_name, root)
 }
 
+/// Wraps the given writer in a gz encoder and then passes it to the uncompressed writer function.
+pub fn write_nbt_gz_compressed<W>(
+    writer: &mut W,
+    compression_level: Compression,
+    root_name: &str,
+    root: &NbtCompound
+) -> Result<()>
+where
+    W: Write
+{
+    write_nbt_uncompressed(&mut GzEncoder::new(writer, compression_level), root_name, root)
+}
 
 fn write_compound<W>(writer: &mut W, compound: &NbtCompound) -> Result<()>
 where

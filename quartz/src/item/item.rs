@@ -58,11 +58,11 @@ impl ItemStack {
             _ => NbtCompound::new()
         };
 
-        let damage = if tag.has("Damage") { tag.get_int("Damage") } else { 0 } as u32;
+        let damage = if tag.has("Damage") { tag.get_int("Damage").unwrap_or(0) } else { 0 } as u32;
 
         ItemStack {
-            item: get_item(&UnlocalizedName::parse(tag.get_string("id")).unwrap()).unwrap(),
-            count: tag.get_byte("Count") as u8,
+            item: get_item(&UnlocalizedName::parse(tag.get_string("id").unwrap_or("minecraft:air")).unwrap()).unwrap(),
+            count: tag.get_byte("Count").unwrap_or(0) as u8,
             damage,
             nbt: tag
         }

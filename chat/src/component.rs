@@ -77,11 +77,9 @@ impl fmt::Display for Component {
             // Handled by the text component struct
             Component::Text(inner) => inner.fmt(f),
             // TODO: implement the translate component
-            _ => {
-                match serde_json::to_string(self) {
-                    Ok(string) => write!(f, "{}", string),
-                    Err(_) => write!(f, "{{}}")
-                }
+            _ => match serde_json::to_string(self) {
+                Ok(string) => write!(f, "{}", string),
+                Err(_) => write!(f, "{{}}")
             }
         }
     }
@@ -181,10 +179,7 @@ impl TextComponent {
 
     /// Returns whether or not this component has children.
     pub fn has_children(&self) -> bool {
-        match &self.extra {
-            Some(extra) => !extra.is_empty(),
-            None => false
-        }
+        self.extra.as_ref().map(|extra| !extra.is_empty()).unwrap_or(false)
     }
 
     // Apply just the formatting of this component
@@ -353,14 +348,12 @@ impl HoverEvent {
     /// the item as defined by the JSON. If the parsing fails, then the JSON string will be treated as
     /// a raw item ID instead.
     pub fn show_item_json(json: &str) -> Self {
-        let contents: HoverContents;
-
         // Try to parse the json
-        match serde_json::from_str::<HoverItem>(json) {
-            Ok(parsed) => contents = HoverContents::Item(parsed),
+        let contents = match serde_json::from_str::<HoverItem>(json) {
+            Ok(parsed) => HoverContents::Item(parsed),
             // Assume just the item ID was passed in
-            Err(_) => contents = HoverContents::ItemId(json.to_owned())
-        }
+            Err(_) => HoverContents::ItemId(json.to_owned())
+        };
 
         HoverEvent {
             action: HoverEventType::ShowItem,
@@ -383,13 +376,11 @@ impl HoverEvent {
     pub fn show_entity_json(json: &str) -> Option<Self> {
         // Try to parse the json
         match serde_json::from_str::<HoverEntity>(json) {
-            Ok(parsed) => {
-                Some(HoverEvent {
-                    action: HoverEventType::ShowEntity,
-                    contents: Some(HoverContents::Entity(parsed)),
-                    value: None
-                })
-            },
+            Ok(parsed) => Some(HoverEvent {
+                action: HoverEventType::ShowEntity,
+                contents: Some(HoverContents::Entity(parsed)),
+                value: None
+            }),
             Err(_) => None
         }
     }

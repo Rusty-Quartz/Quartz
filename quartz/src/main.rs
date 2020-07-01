@@ -44,6 +44,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    let compound = nbt::read::read_nbt_gz_compressed(&mut std::fs::File::open("./bigtest.nbt")?)?.0;
+    info!("{}", compound.to_component());
+
     let (sync_packet_sender, sync_packet_receiver) = mpsc::channel::<WrappedServerPacket>();
 
     let listener = TcpListener::bind(format!("{}:{}", config.server_ip, config.port))?;
