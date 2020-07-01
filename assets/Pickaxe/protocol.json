@@ -1,0 +1,237 @@
+[{
+        "name": "__internal__",
+        "server_bound": [{
+                "name": "Login_Success_Server",
+                "id": "0xFF",
+                "fields": [{
+                        "name": "uuid",
+                        "type": "Uuid"
+                    },
+                    {
+                        "name": "username",
+                        "type": "string"
+                    }
+                ]
+            },
+            {
+                "name": "Handle_Console_Command",
+                "id": "0xFF",
+                "sender_independent": true,
+                "fields": [{
+                    "name": "command",
+                    "type": "string"
+                }]
+            }
+        ]
+    },
+    {
+        "name": "Handshake",
+        "server_bound": [{
+                "name": "Handshake",
+                "id": "0x00",
+                "async": true,
+                "fields": [{
+                        "name": "version",
+                        "type": "varint"
+                    },
+                    {
+                        "name": "server_address",
+                        "type": "string",
+                        "unused": true
+                    },
+                    {
+                        "name": "server_port",
+                        "type": "u16",
+                        "unused": true
+                    },
+                    {
+                        "name": "next_state",
+                        "type": "varint"
+                    }
+                ]
+            },
+            {
+                "name": "Legacy_Ping",
+                "id": "LEGACY_PING_PACKET_ID",
+                "fields": [{
+                    "name": "data",
+                    "type": "byte_array(buffer.remaining())",
+                    "unused": true
+                }]
+            }
+        ]
+    },
+
+    {
+        "name": "Status",
+        "client_bound": [{
+                "id": "0x00",
+                "name": "Status_Response",
+                "async": true,
+                "fields": [{
+                    "name": "json_response",
+                    "type": "string"
+                }]
+            },
+            {
+                "id": "0x01",
+                "name": "Pong",
+                "async": true,
+                "fields": [{
+                    "name": "payload",
+                    "type": "i64"
+                }]
+            }
+        ],
+        "server_bound": [{
+                "name": "Status_Request",
+                "id": "0x00",
+                "fields": []
+            },
+            {
+                "name": "Ping",
+                "id": "0x01",
+                "async": true,
+                "fields": [{
+                    "name": "payload",
+                    "type": "i64"
+                }]
+            }
+        ]
+    },
+    {
+        "name": "Login",
+        "client_bound": [{
+                "name": "Disconnect",
+                "id": "0x00",
+                "async": true,
+                "fields": [{
+                    "name": "reason",
+                    "type": "string"
+                }]
+            },
+            {
+                "name": "Encryption_Request",
+                "id": "0x01",
+                "async": true,
+                "fields": [{
+                        "name": "server_id",
+                        "type": "string"
+                    },
+                    {
+                        "name": "pub_key_len",
+                        "type": "varint"
+                    },
+                    {
+                        "name": "pub_key",
+                        "type": "byte_array"
+                    },
+                    {
+                        "name": "verify_token_len",
+                        "type": "varint"
+                    },
+                    {
+                        "name": "verify_token",
+                        "type": "byte_array"
+                    }
+                ]
+            },
+            {
+                "name": "Login_Success",
+                "id": "0x02",
+                "async": true,
+                "fields": [{
+                        "name": "uuid",
+                        "type": "Uuid"
+                    },
+                    {
+                        "name": "username",
+                        "type": "string"
+                    }
+                ]
+            },
+            {
+                "name": "Set_Compression",
+                "id": "0x03",
+                "async": true,
+                "fields": [{
+                    "name": "threshold",
+                    "type": "varint"
+                }]
+            },
+            {
+                "name": "Login_Plugin_Request",
+                "id": "0x04",
+                "async": true,
+                "fields": [{
+                        "name": "message_id",
+                        "type": "varint"
+                    },
+                    {
+                        "name": "channel",
+                        "type": "string"
+                    },
+                    {
+                        "name": "data",
+                        "type": "byte_array"
+                    }
+                ]
+            }
+        ],
+        "server_bound": [{
+                "name": "Login_Start",
+                "id": "0x00",
+                "async": true,
+                "fields": [{
+                    "name": "name",
+                    "type": "string"
+                }]
+            },
+            {
+                "name": "Encryption_Response",
+                "id": "0x01",
+                "async": true,
+                "fields": [{
+                        "name": "shared_secret_len",
+                        "type": "varint",
+                        "unused": true,
+                        "referenced": true
+                    },
+                    {
+                        "name": "shared_secret",
+                        "type": "byte_array(shared_secret_len as usize)"
+                    },
+                    {
+                        "name": "verify_token_len",
+                        "type": "varint",
+                        "unused": true,
+                        "referenced": true
+                    },
+                    {
+                        "name": "verify_token",
+                        "type": "byte_array(verify_token_len as usize)"
+                    }
+                ]
+            },
+            {
+                "name": "Login_Plugin_Response",
+                "id": "0x02",
+                "async": true,
+                "unimplemented": true,
+                "fields": [{
+                        "name": "message_id",
+                        "type": "varint"
+                    },
+                    {
+                        "name": "successful",
+                        "type": "bool"
+                    },
+                    {
+                        "name": "data",
+                        "type": "byte_array(packet_len - buffer.cursor())"
+                    }
+                ]
+            }
+        ]
+    }
+]
