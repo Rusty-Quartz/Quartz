@@ -73,13 +73,21 @@ impl PluginManager {
         }
     }
 
-    pub fn get_listeners(&self, key: Listeners) -> Vec<Arc<Library>> {
-        self.listeners.get(&key).unwrap().to_owned()
+    pub fn get_listeners(&self, key: Listeners) -> Option<Vec<Arc<Library>>> {
+        let listeners = self.listeners.get(&key);
+        if listeners.is_some() {
+            Some(listeners.unwrap().to_owned())
+        } else {
+            None
+        }
     }
 
     pub fn run_listeners<T: Listenable>(&self, key: Listeners, start: T, method_name: String) -> T {
+        let listeners = self.get_listeners(key);
+        if listeners.is_none() {return start}
+        
         let mut this = start;
-        for plugin in self.get_listeners(key) {
+        for plugin in listeners.unwrap() {
             unsafe {
                 let func: Symbol<unsafe extern fn(input: T) -> T> = plugin.get(method_name.as_bytes()).unwrap();
                 this = func(this);
