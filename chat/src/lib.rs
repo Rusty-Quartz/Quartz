@@ -10,7 +10,6 @@ pub mod color;
 pub mod component;
 
 /// Provides support for parsing a custom component format syntax.
-#[macro_use]
 pub mod cfmt;
 
 pub use builder::TextComponentBuilder;

@@ -2,7 +2,7 @@ use std::mem::transmute;
 use std::str;
 use std::fmt;
 use std::ptr;
-use crate::Uuid;
+use mcutil::Uuid;
 
 pub struct PacketBuffer {
     inner: Vec<u8>,
@@ -99,6 +99,7 @@ impl PacketBuffer {
         }
     }
 
+    #[allow(unsafe_code)]
     pub fn shift_remaining(&mut self) {
         if self.cursor == self.inner.len() {
             self.cursor = 0;
@@ -216,6 +217,7 @@ impl PacketBuffer {
     }
 
     #[inline]
+    #[allow(unsafe_code)]
     pub fn read_f32(&mut self) -> f32 {
         unsafe {
             transmute::<i32, f32>(self.read_i32())
@@ -223,6 +225,7 @@ impl PacketBuffer {
     }
 
     #[inline]
+    #[allow(unsafe_code)]
     pub fn read_f64(&mut self) -> f64 {
         unsafe {
             transmute::<i64, f64>(self.read_i64())
@@ -364,6 +367,7 @@ impl PacketBuffer {
     }
 
     #[inline]
+    #[allow(unsafe_code)]
     pub fn write_f32(&mut self, value: f32) {
         unsafe {
             self.write_i32(transmute::<f32, i32>(value));
@@ -371,6 +375,7 @@ impl PacketBuffer {
     }
 
     #[inline]
+    #[allow(unsafe_code)]
     pub fn write_f64(&mut self, value: f64) {
         unsafe {
             self.write_i64(transmute::<f64, i64>(value));

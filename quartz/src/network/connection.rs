@@ -1,7 +1,7 @@
 use std::io::Result;
 use std::io::{Write, Read};
 use std::sync::mpsc::Sender;
-use util::netutil::PacketBuffer;
+use crate::network::PacketBuffer;
 use openssl::symm::{Cipher, Mode, Crypter};
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;

@@ -7,7 +7,7 @@ use std::time::Duration;
 use std::sync::mpsc;
 use linefeed::Interface;
 use log::*;
-use util::logging;
+use mcutil::logging;
 use openssl::rsa::Rsa;
 
 // Folders
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let console_interface = Arc::new(Interface::new("quartz-server")?);
     console_interface.set_prompt("> ")?;
 
-    logging::init_logger(console_interface.clone())?;
+    logging::init_logger("quartz", console_interface.clone())?;
 
     let config: Config;
     match load_config("./config.json".to_owned()) {
@@ -43,6 +43,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(())
         }
     }
+
+    let compound = nbt::read::read_nbt_gz_compressed(&mut std::fs::File::open("./bigtest.nbt")?)?.0;
+    info!("{}", compound.to_component());
 
     let (sync_packet_sender, sync_packet_receiver) = mpsc::channel::<WrappedServerPacket>();
 

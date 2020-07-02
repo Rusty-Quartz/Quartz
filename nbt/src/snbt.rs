@@ -4,6 +4,7 @@ use regex::Regex;
 
 use lazy_static::lazy_static;
 
+/// Contains data pertinent to the state of the SNBT parser.
 pub struct SnbtParser {
     data: String,
     cursor: usize
@@ -12,7 +13,7 @@ pub struct SnbtParser {
 // All regexes are put in lazy_static! blocks so as to only compile the regex once
 
 impl SnbtParser {
-
+    /// Creates a new SNBT parser over the given string.
     pub fn new(data: &str) -> SnbtParser {
         SnbtParser {
             data: data.to_owned(), 
@@ -20,7 +21,7 @@ impl SnbtParser {
         }
     }
     
-    // Parses SNBT to NBT
+    /// Parses the SNBT data into a NBT compound.
     pub fn parse(&mut self) -> Result<NbtCompound, String> {        
         let root_tag = NbtCompound::new();
         
@@ -487,19 +488,20 @@ impl SnbtParser {
         Ok(list_tag)
     }
 
+    // TODO: Properly handle None values from NbtList::get
     fn is_same_types(list: &NbtList, tag: &NbtTag) -> bool {
         if list.len() == 0{
             true
         }
-        else if std::mem::discriminant(list.get(list.len()-1)) != std::mem::discriminant(&tag) {
+        else if std::mem::discriminant(list.get(list.len()-1).unwrap_or(tag)) != std::mem::discriminant(&tag) {
            false
         }
         else {
             match tag {
                 NbtTag::List(val) => {
                     match list.get(list.len()-1) {
-                        NbtTag::List(val2) => {
-                            SnbtParser::is_same_types(val2, val.get(val.len()-1))
+                        Some(NbtTag::List(val2)) => {
+                            SnbtParser::is_same_types(val2, val.get(val.len()-1).unwrap_or(tag))
                         }
                         _ => false
                     }

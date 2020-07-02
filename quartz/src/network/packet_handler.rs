@@ -19,10 +19,9 @@ use lazy_static::lazy_static;
 
 use hex::ToHex;
 
-use crate::network::connection::{AsyncClientConnection, ConnectionState};
-use util::netutil::PacketBuffer;
+use crate::network::{AsyncClientConnection, ConnectionState, PacketBuffer};
 use crate::server::{self, QuartzServer};
-use util::Uuid;
+use mcutil::Uuid;
 use crate::command::CommandSender;
 
 use quartz_plugins::Listenable;

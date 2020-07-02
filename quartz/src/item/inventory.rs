@@ -41,7 +41,7 @@ impl Inventory {
         for i in 0..list.len() {
             // List has to have a element at every index because even slots without items need to have an empty stack
             let compound = list.get_compound(i).unwrap();
-            let slot = compound.get_byte("Slot") as usize;
+            let slot = compound.get_byte("Slot").unwrap_or(0) as usize;
 
             if slot < self.size {
                 self.items[slot] = OptionalItemStack::new(Some(ItemStack::from_nbt(compound.clone())));

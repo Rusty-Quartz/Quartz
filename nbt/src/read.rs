@@ -4,6 +4,7 @@ use byteorder::BigEndian;
 use flate2::read::{ZlibDecoder, GzDecoder};
 use crate::*;
 
+/// Reads uncompressed binary NBT data from the given source.
 pub fn read_nbt_uncompressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
 where
     R: Read
@@ -21,6 +22,8 @@ where
     }
 }
 
+/// Wraps the given source in a zlib decoder, then passes the wrapped source to the uncompressed
+/// reader function.
 pub fn read_nbt_zlib_compressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
 where
     R: Read
@@ -28,6 +31,8 @@ where
     read_nbt_uncompressed(&mut ZlibDecoder::new(source))
 }
 
+/// Wraps the given source in a gz decoder, then passes the wrapped source to the uncompressed
+/// reader function.
 pub fn read_nbt_gz_compressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
 where
     R: Read
