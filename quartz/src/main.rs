@@ -47,7 +47,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (sync_packet_sender, sync_packet_receiver) = mpsc::channel::<WrappedServerPacket>();
 
     let listener = TcpListener::bind(format!("{}:{}", config.server_ip, config.port))?;
-    listener.set_nonblocking(true).expect("Failed to create non-blocking TCP listener");
+    if cfg!(target_os = "linux") {
+        info!("Running on linux, setting tcp listener to nonblocking");
+        listener.set_nonblocking(true).expect("Failed to create non-blocking TCP listener");
+    } else {
+        info!("Running on windows, setting tcp listener to blocking");
+    }
 
     let mut server = QuartzServer::new(config, sync_packet_receiver, console_interface);
     let client_list = server.client_list.clone();

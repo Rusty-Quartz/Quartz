@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Sender, Receiver};
 use std::time::{SystemTime, Duration};
+use std::net::TcpStream;
 
 use linefeed::{Interface, DefaultTerminal};
 use linefeed::ReadResult;
@@ -134,6 +135,14 @@ impl<'sv> Drop for QuartzServer<'sv> {
 
         for (thread_name, handle) in self.join_handles.drain() {
             info!("Shutting down {}", thread_name);
+
+            if thread_name == "TCP Server Thread" {
+                if cfg!(target_os = "windows") {
+                    debug!("sending stupid connection to listener to close it");
+                    TcpStream::connect(format!("{}:{}", self.config.server_ip, self.config.port)).unwrap();
+                }
+            }
+
             if let Err(_) = handle.join() {
                 error!("Failed to join {}", thread_name);
             }
