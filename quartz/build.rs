@@ -89,7 +89,7 @@ fn parse_packets() {
                 }
 
                 if packet.is_async() {
-                    packet_str.push_str(&format!("async_handler.{}(conn {});", packet.name.to_ascii_lowercase(), packet.format_params(&mappings_raw)));
+                    packet_str.push_str(&format!("async_handler.{}(conn, {});", packet.name.to_ascii_lowercase(), packet.format_params(&mappings_raw)));
                     packet_str.push_str("},");
                 } else {
                     packet_str.push_str(&format!("conn.forward_to_server(ServerBoundPacket::{}{}", snake_to_camel(&packet.name), if used_fields(&packet) == 0 {");"} else {"{"}));
@@ -153,8 +153,10 @@ fn parse_packets() {
     let mut dispatch = r#"pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut QuartzServer<'_>) { match &wrapped_packet.packet {"#.to_owned();
 
     for packet in server_bound {
-        dispatch.push_str(&format!("ServerBoundPacket::{} {{{}}} => handler.{}({}),", snake_to_camel(&packet.name), packet.struct_params(), packet.name.to_ascii_lowercase(), packet.format_params(&mappings_raw)));
+        dispatch.push_str(&format!("ServerBoundPacket::{} {{{}}} => handler.{}({}),", snake_to_camel(&packet.name), packet.struct_params(), packet.name.to_ascii_lowercase(), if packet.sender_independent.unwrap_or(false) {packet.format_params(&mappings_raw)} else {format!("wrapped_packet.sender, {}", packet.format_params(&mappings_raw))}));
     }
+
+    dispatch.push_str("};}");
 
     fs::write(&dest_path, format!("{}{}{}{}{}{}", invalid_macro, server_packet_enum, client_packet_enum, deserializers, serlializers, dispatch)).unwrap();
 }
@@ -229,17 +231,22 @@ impl Packet {
 
     pub fn format_params(&self, mappings: &Mappings) -> String {
         let mut output = String::new();
+        if self.fields.iter().filter(|f| f.is_used()).count() == 0 {
+            return "".to_owned()
+        }
         for field in &self.fields {
             if !field.is_used() {continue;}
 
             output.push_str(&format!(",{}{}", if !mappings.primitives.contains(&field.var_type) && !field.pass_raw() {"&"} else {""}, field.name))
         }
-        output
+
+        output.chars().next().map(|c| &output[c.len_utf8()..]).unwrap().to_owned()
     }
     
     pub fn struct_params(&self) -> String {
         let mut output = String::new();
         for field in &self.fields {
+            if !field.is_used() {continue;}
             output.push_str(&format!("{},", field.name))
         }
         output
