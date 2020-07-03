@@ -17,6 +17,7 @@ fn parse_packets() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("packet_output.rs");
 
+    // Load in json files
     let states_raw: Vec<State> = serde_json::from_str::<Vec<State>>(include_str!("../assets/Pickaxe/protocol.json")).expect("Error reading file");
     let mappings_raw: Mappings = serde_json::from_str::<Mappings>(include_str!("../assets/Pickaxe/mappings.json")).expect("Error reading mappings.json");
 
@@ -26,10 +27,12 @@ fn parse_packets() {
 
     let mut mappings = HashMap::new();
 
+    // parse mappings
     for type_map in &mappings_raw.types {
         mappings.insert(type_map.name.clone(), type_map.destination.clone());
     }
 
+    // gen packet lists
     for state in states_raw.clone() {
         states.push(state.name);
 
@@ -46,14 +49,17 @@ fn parse_packets() {
         }
     }
 
+    // gen client packet enum
     let mut client_packet_enum = "#[derive(quartz_macros::Listenable)]pub enum ClientBoundPacket {".to_owned();
     client_packet_enum.push_str(&packet_enum_parser(client_bound.clone(), &mappings));
     client_packet_enum.push_str("}");
 
+    // gen server packet enum
     let mut server_packet_enum = "pub enum ServerBoundPacket {".to_owned();
-    server_packet_enum.push_str(&packet_enum_parser(server_bound, &mappings));
+    server_packet_enum.push_str(&packet_enum_parser(server_bound.clone(), &mappings));
     server_packet_enum.push_str("}");
 
+    // gen deserializers
     let mut deserializers = r#"fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, packet_len: usize) {
                                         let buffer = &mut conn.read_buffer;
                                         let id;
@@ -115,6 +121,7 @@ fn parse_packets() {
 
     deserializers.push_str("_ => {}}}");
 
+    // gen serializers
     let mut serlializers = "pub fn serialize(packet: &ClientBoundPacket, buffer: &mut PacketBuffer) { match packet {".to_owned();
 
     for packet in client_bound {
@@ -140,9 +147,16 @@ fn parse_packets() {
     ($id:expr, $len:expr) => {
         warn!("Invalid packet received. ID: {}, Len: {}", $id, $len);
     };
-}"#; 
+}"#;
 
-    fs::write(&dest_path, format!("{}{}{}{}{}", invalid_macro, server_packet_enum, client_packet_enum, deserializers, serlializers)).unwrap();
+    // gen dispatch_sync_packet function
+    let mut dispatch = r#"pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut QuartzServer<'_>) { match &wrapped_packet.packet {"#.to_owned();
+
+    for packet in server_bound {
+        dispatch.push_str(&format!("ServerBoundPacket::{} {{{}}} => handler.{}({}),", snake_to_camel(&packet.name), packet.struct_params(), packet.name.to_ascii_lowercase(), packet.format_params(&mappings_raw)));
+    }
+
+    fs::write(&dest_path, format!("{}{}{}{}{}{}", invalid_macro, server_packet_enum, client_packet_enum, deserializers, serlializers, dispatch)).unwrap();
 }
 
 fn packet_enum_parser(packet_arr: Vec<Packet>, mappings: &HashMap<String, String>) -> String {

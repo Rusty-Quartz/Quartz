@@ -295,15 +295,6 @@ impl WrappedServerPacket {
     }
 }
 
-pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut QuartzServer<'_>) {
-    match &wrapped_packet.packet {
-        ServerBoundPacket::LoginSuccessServer {uuid, username} => handler.login_success_server(wrapped_packet.sender, uuid, username),
-        ServerBoundPacket::HandleConsoleCommand {command} => handler.handle_console_command(command),
-        ServerBoundPacket::LegacyPing => handler.legacy_ping(wrapped_packet.sender),
-        ServerBoundPacket::StatusRequest => handler.status_request(wrapped_packet.sender)
-    }
-}
-
 pub fn handle_async_connection(mut conn: AsyncClientConnection, private_key: Arc<Rsa<Private>>) {
     let mut async_handler = AsyncPacketHandler::new(private_key);
 
