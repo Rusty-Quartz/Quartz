@@ -73,12 +73,12 @@ impl TextComponentBuilder {
     }
 
     /// Comsumes this builder and returns a finished text component.
-    pub fn build(mut self) -> TextComponent {
+    pub fn build<C: From<TextComponent>>(mut self) -> C {
         if self.current_empty {
             let _ = self.component.extra.as_mut().unwrap().pop();
         }
 
-        self.component
+        self.component.into()
     }
 
     /// Consumes this builder and returns a vec of the base component's children, excluding the base
@@ -102,7 +102,7 @@ impl TextComponentBuilder {
 
     /// Set the color of the current component to a predefined color.
     pub fn predef_color(mut self, color: PredefinedColor) -> Self {
-        self.current().color = Some(color.into_color());
+        self.current().color = Some(color.into());
         self
     }
 

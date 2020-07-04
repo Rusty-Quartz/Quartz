@@ -1,4 +1,4 @@
-use crate::command::executor::CommandContext;
+use crate::command::executor::{CommandContext, ExecutableCommand};
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -13,15 +13,19 @@ pub struct ArgumentTraverser<'cmd> {
 impl<'cmd> ArgumentTraverser<'cmd> {
     pub fn new(command: &'cmd str) -> Self {
         ArgumentTraverser {
-            command,
+            command: if command.starts_with('/') { &command[1..] } else { command },
             anchor: 0,
             index: 0
         }
     }
 
-    pub fn remaining(&mut self) -> String {
+    pub fn has_next(&self) -> bool {
+        self.index < self.command.len()
+    }
+
+    pub fn remaining(&mut self) -> &'cmd str {
         self.index = self.command.len();
-        self.command[self.anchor..].to_owned()
+        &self.command[self.anchor..]
     }
 
     // Returns the remaining string portion from the current anchor position to the end of the string
@@ -42,6 +46,13 @@ impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
             return None;
         }
 
+        let bytes = self.command.as_bytes();
+
+        // Skip leading spaces
+        while self.index < self.command.len() && bytes[self.index] == ' ' as u8 {
+            self.index += 1;
+        }
+
         self.anchor = self.index;
 
         // Single or double quotes
@@ -51,7 +62,6 @@ impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
         // Used for escaping quotes with the '\' character
         let mut ignore_quote = false;
 
-        let bytes = self.command.as_bytes();
         while self.index < self.command.len() && (in_quotes || bytes[self.index] != ' ' as u8) {
             // Manage strings
             if (bytes[self.index] == '\'' as u8 || bytes[self.index] == '\"' as u8) && !ignore_quote {
@@ -78,23 +88,20 @@ impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
             self.index += 1;
         }
 
-        let result = &self.command[self.anchor..self.index];
-        self.index += 1; // Skip the space between the arguments
-        Some(result)
+        Some(&self.command[self.anchor..self.index])
     }
 }
 
 // Acts both as a wrapper for argument values and argument type definition
 #[derive(Clone)]
-pub enum Argument {
-    Remaining(String),
-    Literal(&'static str),
+pub enum Argument<'cmd> {
     Integer(i64),
     FloatingPoint(f64),
-    String(String)
+    String(&'cmd str),
+    Command(ExecutableCommand<'cmd>)
 }
 
-impl Argument {
+impl<'cmd> Argument<'cmd> {
     // Whether or not this argument type matches the given string (does not guarantee a successful parse)
     pub fn matches(&self, argument: &str) -> bool {
         lazy_static! {
@@ -103,32 +110,27 @@ impl Argument {
         }
 
         match self {
-            Argument::Remaining(_value) => true,
-            Argument::Literal(literal) => literal.eq_ignore_ascii_case(argument),
             Argument::Integer(_value) => INT.is_match(argument),
             Argument::FloatingPoint(_value) => FLOAT.is_match(argument),
-            Argument::String(_value) => true
+            Argument::String(_value) => true,
+            Argument::Command(_) => false
         }
+    }
+
+    pub fn partial_match(&self, argument: &str) -> bool {
+        // TODO: Ensure this works correctly for more complex arguments
+        self.matches(argument)
     }
 
     // Attempts to parse the given argument according to this arguments type. If the parse is successful, an argument
     // of the same type is added to the context with the parsed value of the given string argument with the given name.
-    pub fn apply(&self, context: &mut CommandContext, name: &'static str, argument: &str) -> Result<(), String> {
+    pub fn apply<'ctx>(&self, context: &mut CommandContext<'ctx>, name: &'static str, argument: &'ctx str) -> Result<(), String> {
         match self {
-            Argument::Remaining(_value) => {
-                // Notify the arg loop that it should break
-                context.arguments.insert(name.to_owned(), Argument::Remaining(context.raw_args.remaining()));
-                Ok(())
-            },
-            Argument::Literal(_value) => {
-                context.arguments.insert(name.to_owned(), self.clone());
-                Ok(())
-            },
             Argument::Integer(_value) => {
                 let parsed = argument.parse::<i64>();
                 if parsed.is_err() {Err("Invalid Integer".to_owned())}
                 else {
-                    context.arguments.insert(name.to_owned(), Argument::Integer(parsed.unwrap()));
+                    context.arguments.insert(name, Argument::Integer(parsed.unwrap()));
                     Ok(())
                 }
             },
@@ -136,14 +138,15 @@ impl Argument {
                 let parsed = argument.parse::<f64>();
                 if parsed.is_err() {Err("Invalid Integer".to_owned())}
                 else {
-                    context.arguments.insert(name.to_owned(), Argument::FloatingPoint(parsed.unwrap()));
+                    context.arguments.insert(name, Argument::FloatingPoint(parsed.unwrap()));
                     Ok(())
                 }
             },
             Argument::String(_value) => {
-                context.arguments.insert(name.to_owned(), Argument::String(argument.to_owned()));
+                context.arguments.insert(name, Argument::String(argument));
                 Ok(())
-            }
+            },
+            Argument::Command(_) => Ok(())
         }
     }
 }

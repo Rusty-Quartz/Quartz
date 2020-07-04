@@ -1,25 +1,37 @@
-use std::thread::{self, JoinHandle};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Sender, Receiver};
+use std::error::Error;
+use std::io;
+use std::net::{TcpListener, TcpStream};
+use std::path::Path;
+use std::sync::{
+    Arc,
+    Mutex,
+    MutexGuard,
+    atomic::{AtomicBool, Ordering},
+    mpsc::{self, Sender, Receiver}
+};
+use std::thread::{self, JoinHandle};
 use std::time::{SystemTime, Duration};
-use std::net::TcpStream;
-
-use linefeed::{Interface, DefaultTerminal};
-use linefeed::ReadResult;
-
+use linefeed::{
+    Interface,
+    DefaultTerminal,
+    ReadResult,
+    complete::{
+        Completer,
+        Completion,
+        Suffix
+    },
+    prompter::Prompter
+};
 use log::*;
-
+use openssl::rsa::Rsa;
 use crate::block::init_blocks;
 use crate::item::init_items;
 use crate::config::Config;
 use crate::network::*;
 use crate::network::PacketBuffer;
 use crate::command::*;
-
 use quartz_plugins::PluginManager;
-use std::path::Path;
 
 pub const VERSION: &str = "1.16.1";
 
@@ -29,66 +41,121 @@ pub fn is_running() -> bool {
     RUNNING.load(Ordering::SeqCst)
 }
 
-pub struct QuartzServer<'sv> {
+pub struct QuartzServer {
     pub config: Config,
     pub client_list: ClientList,
     pub console_interface: Arc<Interface<DefaultTerminal>>,
-    pub read_stdin: Arc<AtomicBool>,
+    sync_packet_sender: Sender<WrappedServerPacket>,
     sync_packet_receiver: Receiver<WrappedServerPacket>,
     join_handles: HashMap<String, JoinHandle<()>>,
-    pub command_executor: CommandExecutor<'sv>,
+    pub command_executor: CommandExecutor,
     pub clock: ServerClock,
     pub plugin_manager: PluginManager
 }
 
-impl<'sv> QuartzServer<'sv> {
+impl QuartzServer {
     pub fn new(
         config: Config,
-        sync_packet_receiver: Receiver<WrappedServerPacket>,
         console_interface: Arc<Interface<DefaultTerminal>>
     ) -> Self {
         if RUNNING.compare_and_swap(false, true, Ordering::SeqCst) {
             panic!("Attempted to create a server instance after one was already created.");
         }
 
+        let (sender, receiver) = mpsc::channel::<WrappedServerPacket>();
+
         QuartzServer {
             config,
             client_list: ClientList::new(),
             console_interface,
-            read_stdin: Arc::new(AtomicBool::new(true)),
-            sync_packet_receiver,
+            sync_packet_sender: sender,
+            sync_packet_receiver: receiver,
             join_handles: HashMap::new(),
             command_executor: CommandExecutor::new(),
             clock: ServerClock::new(50),
-            plugin_manager: PluginManager::new(Path::new("./plugins"))
+            plugin_manager: PluginManager::new(Path::new("./plguins"))
         }
     }
 
-    pub fn init(&mut self, command_pipe: Sender<WrappedServerPacket>) {      
+    pub fn init(&mut self) {      
         // Register all of the things
         init_blocks();
         init_items();
         init_commands(&mut self.command_executor);
 
         // Setup the command handler thread
+        self.init_command_handler();
+
+        // Setup TCP server
+        if let Err(e) = self.start_tcp_server() {
+            error!("Failed to start TCP server: {}", e);
+            RUNNING.store(false, Ordering::SeqCst);
+        }
+    }
+
+    fn init_command_handler(&mut self) {
         let interface = self.console_interface.clone();
-        let read_stdin = self.read_stdin.clone();
+
+        // A simple tab-completer for console
+        struct ConsoleCompleter {
+            packet_pipe: Mutex<Sender<WrappedServerPacket>>
+        };
+
+        impl Completer<DefaultTerminal> for ConsoleCompleter {
+            fn complete(
+                &self,
+                _word: &str,
+                prompter: &Prompter<DefaultTerminal>,
+                _start: usize,
+                _end: usize
+            ) -> Option<Vec<Completion>> {
+                // Retrieve the packet pipe
+                let pipe = match self.packet_pipe.lock() {
+                    Ok(pipe) => pipe,
+                    Err(_) => return None
+                };
+
+                // Build pipes to transfer the completions
+                let (sender, receiver) = mpsc::channel::<Vec<String>>();
+
+                // Send the completion request
+                pipe.send(WrappedServerPacket::new(0, ServerBoundPacket::HandleConsoleCompletion {
+                    // Take the slice of the command up to the cursor
+                    command: prompter.buffer()[..prompter.cursor()].to_owned(),
+                    response: sender
+                })).ok()?;
+
+                // Get the completion response
+                receiver.recv().ok().map(|completions| {
+                    completions.into_iter()
+                        .map(|completion| Completion {
+                            completion,
+                            display: None,
+                            suffix: Suffix::Some(' ')
+                        })
+                        .collect()
+                })
+            }
+        }
+
+        // Register the tab completer
+        interface.set_completer(Arc::new(ConsoleCompleter {packet_pipe: Mutex::new(self.sync_packet_sender.clone())}));
+
+        // Drive the command reader
+        let packet_pipe = self.sync_packet_sender.clone();
         self.add_join_handle("Console Command Reader", thread::spawn(move || {
             while RUNNING.load(Ordering::Relaxed) {
                 // Check for a new command every 50ms
                 match interface.read_line_step(Some(Duration::from_millis(50))) {
                     Ok(result) => match result {
                         Some(ReadResult::Input(command)) => {
-                            // Disable console input until the server re-enables it
-                            read_stdin.store(false, Ordering::SeqCst);
-
                             interface.add_history_unique(command.clone());
 
                             // Forward the command to the server thread
                             let packet = WrappedServerPacket::new(0, ServerBoundPacket::HandleConsoleCommand {
                                 command: command.trim().to_owned()
                             });
-                            if let Err(e) = command_pipe.send(packet) {
+                            if let Err(e) = packet_pipe.send(packet) {
                                 error!("Failed to forward console command to server thread: {}", e);
                             }
                         },
@@ -96,11 +163,73 @@ impl<'sv> QuartzServer<'sv> {
                     },
                     Err(e) => error!("Failed to read console input: {}", e)
                 }
-
-                // Wait for stdin reading to be re-enabled
-                while !read_stdin.load(Ordering::SeqCst) {}
             }
         }));
+    }
+
+    fn start_tcp_server(&mut self) -> Result<(), Box<dyn Error>> {
+        let listener = TcpListener::bind(format!("{}:{}", self.config.server_ip, self.config.port))?;
+        if cfg!(target_os = "linux") {
+            info!("Running on linux, setting tcp listener to nonblocking");
+            listener.set_nonblocking(true)?;
+        } else {
+            info!("Running on windows, setting tcp listener to blocking");
+            listener.set_nonblocking(false)?;
+        }
+
+        let sync_packet_sender = self.sync_packet_sender.clone();
+        let client_list = self.client_list.clone();
+
+        self.add_join_handle("TCP Server Thread", thread::spawn(move || {
+            let mut next_connection_id: usize = 0;
+    
+            info!("Started TCP Server Thread");
+    
+            // If this fails a panic is justified
+            let key_pair = Arc::new(Rsa::generate(1024).unwrap());
+    
+            loop {
+                match listener.accept() {
+                    // Successful connection
+                    Ok((socket, _addr)) => {
+                       // Don't bother handling the connection if the server is shutting down
+                        if !RUNNING.load(Ordering::SeqCst) {
+                            return;
+                        }
+    
+                        debug!("Client connected");
+                        let packet_sender = sync_packet_sender.clone();
+                        let conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
+                        next_connection_id += 1;
+    
+                        let key_pair_clone = key_pair.clone();
+    
+                        client_list.add_client(conn.id, conn.create_write_handle());
+    
+                        let client_list_clone = client_list.clone();
+                        thread::spawn(move || {
+                            let client_id = conn.id;
+                            handle_async_connection(conn, key_pair_clone);
+                            client_list_clone.remove_client(client_id);
+                        });
+                    },
+    
+                   // Wait before checking for a new connection and exit if the server is no longer running
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        if RUNNING.load(Ordering::SeqCst) {
+                            thread::sleep(Duration::from_millis(100));
+                        } else {
+                            return;
+                        }
+                    },
+    
+                   // Actual error
+                    Err(e) => error!("Failed to accept TCP socket: {}", e)
+                };
+            }
+        }));
+
+        Ok(())
     }
 
     pub fn add_join_handle(&mut self, thread_name: &str, handle: JoinHandle<()>) {
@@ -128,7 +257,7 @@ impl<'sv> QuartzServer<'sv> {
     }
 }
 
-impl<'sv> Drop for QuartzServer<'sv> {
+impl Drop for QuartzServer {
     fn drop(&mut self) {
         // In case this is reached due to a panic
         RUNNING.store(false, Ordering::SeqCst);

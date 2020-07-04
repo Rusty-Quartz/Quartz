@@ -1,24 +1,18 @@
-use std::sync::atomic::Ordering;
-
+use std::sync::{
+    Arc,
+    atomic::Ordering,
+    mpsc::Sender
+};
 use log::{debug, warn, error};
-
 use serde::Deserialize;
 use serde_json::json;
-
 use openssl::rsa::{Rsa, Padding};
 use openssl::pkey::Private;
 use openssl::sha;
-
-use std::sync::Arc;
-
 use rand::{thread_rng, Rng};
-
 use regex::Regex;
-
 use lazy_static::lazy_static;
-
 use hex::ToHex;
-
 use crate::network::{AsyncClientConnection, ConnectionState, PacketBuffer};
 use crate::server::{self, QuartzServer};
 use mcutil::Uuid;
@@ -208,14 +202,18 @@ impl AsyncPacketHandler {
     }
 }
 
-impl QuartzServer<'_> {
+impl QuartzServer {
     fn login_success_server(&mut self, sender: usize, uuid: &Uuid, username: &str) {
         
     }
 
     fn handle_console_command(&mut self, command: &str) {
         self.command_executor.dispatch(command, self, CommandSender::Console(self.console_interface.clone()));
-        self.read_stdin.store(true, Ordering::SeqCst);
+    }
+
+    fn handle_console_completion(&mut self, command: &str, response: &Sender<Vec<String>>) {
+        let suggestions = self.command_executor.get_suggestions(command, self, CommandSender::Console(self.console_interface.clone()));
+        let _ = response.send(suggestions);
     }
 
     fn legacy_ping(&mut self, sender: usize) {
@@ -276,7 +274,7 @@ impl QuartzServer<'_> {
 
         self.client_list.send_packet(sender, &ClientBoundPacket::StatusResponse {
             json_response: json_response.to_string()
-        }.run_listeners(&self.plugin_manager));
+        });
     }
 }
 

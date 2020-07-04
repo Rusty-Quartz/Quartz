@@ -67,6 +67,12 @@ impl Color {
     }
 }
 
+impl From<PredefinedColor> for Color {
+    fn from(predef_color: PredefinedColor) -> Self {
+        Color::Predefined(predef_color)
+    }
+}
+
 /// All predefined color types.
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -92,12 +98,6 @@ pub enum PredefinedColor {
 }
 
 impl PredefinedColor {
-    /// Wraps this predefined color in the generic Color enum.
-    #[inline]
-    pub fn into_color(self) -> Color {
-        Color::Predefined(self)
-    }
-
     /// Applies the color to the terminal (unix only).
     #[cfg(unix)]
     pub fn apply(&self, f: &mut fmt::Formatter) -> fmt::Result {

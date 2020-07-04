@@ -44,8 +44,8 @@ impl Component {
     }
 
     /// Creates a component with the given text and predefined color.
-    pub fn colored(text: String, color: PredefinedColor) -> Self {
-        Component::Text(TextComponent::new(text, Some(Color::Predefined(color))))
+    pub fn colored<C: Into<Color>>(text: String, color: C) -> Self {
+        Component::Text(TextComponent::new(text, Some(color.into())))
     }
 
     /// Converts this component into plain, uncolored text.

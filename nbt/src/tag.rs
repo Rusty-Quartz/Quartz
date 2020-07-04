@@ -45,7 +45,7 @@ macro_rules! to_component {
     () => {
         #[doc = "Converts this tag entity into a formatted text component designed for user-friendly displaying of NBT data."]
         pub fn to_component(&self) -> Component {
-            let mut text_component = TextComponent::new(String::new(), Some(PredefinedColor::White.into_color()));
+            let mut text_component = TextComponent::new(String::new(), Some(PredefinedColor::White.into()));
             text_component.extra = Some(self.to_component_parts());
             Component::Text(text_component)
         }

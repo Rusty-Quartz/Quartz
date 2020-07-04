@@ -21,6 +21,21 @@
                     "name": "command",
                     "type": "string"
                 }]
+            },
+            {
+                "name": "Handle_Console_Completion",
+                "id": "0xFF",
+                "sender_independent": true,
+                "fields": [
+                    {
+                        "name": "command",
+                        "type": "string"
+                    },
+                    {
+                        "name": "response",
+                        "type": "std::sync::mpsc::Sender<Vec<String>>"
+                    }
+                ]
             }
         ]
     },

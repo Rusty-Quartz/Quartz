@@ -9,8 +9,6 @@ use chat::{
 };
 use crate::server::RUNNING;
 
-
-
 pub fn init_commands(command_executor: &mut CommandExecutor) {
     info!("Registering commands");
     
@@ -26,7 +24,7 @@ pub fn init_commands(command_executor: &mut CommandExecutor) {
         }
         ctx.sender.send_message(Component::colored("-- Use 'help [command]' to get more information --".to_owned(), PredefinedColor::Gold));
     }).then(string("command").executes(|ctx| {
-        let command = ctx.get_string("command").unwrap_or("".to_owned());
+        let command = ctx.get_string("command").unwrap_or("");
         let help_msg = match ctx.executor.command_description(&command) {
             Some(message) => message,
             None => {
@@ -41,8 +39,10 @@ pub fn init_commands(command_executor: &mut CommandExecutor) {
                 .add()
                 .text(help_msg.to_owned())
                 .predef_color(PredefinedColor::White)
-                .build().into()
+                .build()
         );
+    }).suggests(|ctx, arg| {
+        ctx.executor.command_names().iter().filter(|cmd| cmd.starts_with(arg)).map(|cmd| (*cmd).to_owned()).collect()
     })), "Lists all commands and can give descriptions");
 
     command_executor.register(literal("plugins").executes(|ctx| {
@@ -59,7 +59,7 @@ pub fn init_commands(command_executor: &mut CommandExecutor) {
                 .predef_color(PredefinedColor::Blue);
         }
 
-        ctx.sender.send_message(message.build().into());
+        ctx.sender.send_message(message.build());
     }), "Lists the current plugins");
 
     command_executor.register(literal("stop").executes(|_ctx| {
@@ -104,7 +104,7 @@ pub fn init_commands(command_executor: &mut CommandExecutor) {
                     mspt
                 ))
                 .custom_color(red as u8, green as u8, 0)
-                .build().into()
+                .build()
         );
     }), "Gets the current tps and mspt of the server");
 }
