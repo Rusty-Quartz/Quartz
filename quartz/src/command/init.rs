@@ -1,14 +1,14 @@
 use std::sync::atomic::{Ordering};
-use log::info;
-
-use crate::command::executor::*;
 use chat::{
     Component,
     TextComponentBuilder,
     color::PredefinedColor
 };
+use log::info;
+use crate::command::executor::*;
 use crate::server::RUNNING;
 
+/// Registers all native minecraft commands to the given executor.
 pub fn init_commands(command_executor: &mut CommandExecutor) {
     info!("Registering commands");
     

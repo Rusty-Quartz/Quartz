@@ -8,10 +8,6 @@ edition = "2018"
 name = "quartz"
 path = "src/lib.rs"
 
-[[bin]]
-name = "quartz_launcher"
-path = "src/main.rs"
-
 [dependencies]
 # Internal dependencies
 chat = { path = "../chat" }

@@ -33,36 +33,49 @@ use crate::network::PacketBuffer;
 use crate::command::*;
 use quartz_plugins::PluginManager;
 
+/// The string form of the minecraft version quartz currently supports.
 pub const VERSION: &str = "1.16.1";
-
+/// The state variable that controls whether or not the server and its various sub-processes are running.
+/// If set to false then the server will gracefully stop.
 pub static RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// Returns whether or not the server is running.
+#[inline]
 pub fn is_running() -> bool {
     RUNNING.load(Ordering::SeqCst)
 }
 
+/// The main struct containing all relevant data to the quartz server instance. This struct relies
+/// heavily on interior mutability due to complications with multithreading and the borrow checker.
 pub struct QuartzServer {
+    /// The server config.
     pub config: Config,
+    /// The list of connected clients.
     pub client_list: ClientList,
+    /// A handle to interact with the console.
     pub console_interface: Arc<Interface<DefaultTerminal>>,
-    sync_packet_sender: Sender<WrappedServerPacket>,
-    sync_packet_receiver: Receiver<WrappedServerPacket>,
+    /// A cloneable channel to send packets to the main server thread.
+    sync_packet_sender: Sender<WrappedServerBoundPacket>,
+    /// The receiver for packets that need to be handled on the server thread.
+    sync_packet_receiver: Receiver<WrappedServerBoundPacket>,
+    /// A map of thread join handles to join when the server is dropped.
     join_handles: HashMap<String, JoinHandle<()>>,
+    /// The command executor instance for the server.
     pub command_executor: CommandExecutor,
+    /// The server clock, used to time and regulate ticks.
     pub clock: ServerClock,
+    /// The server plugin manager.
     pub plugin_manager: PluginManager
 }
 
 impl QuartzServer {
-    pub fn new(
-        config: Config,
-        console_interface: Arc<Interface<DefaultTerminal>>
-    ) -> Self {
+    /// Creates a new server instance with the given config and terminal handle.
+    pub fn new(config: Config, console_interface: Arc<Interface<DefaultTerminal>>) -> Self {
         if RUNNING.compare_and_swap(false, true, Ordering::SeqCst) {
             panic!("Attempted to create a server instance after one was already created.");
         }
 
-        let (sender, receiver) = mpsc::channel::<WrappedServerPacket>();
+        let (sender, receiver) = mpsc::channel::<WrappedServerBoundPacket>();
 
         QuartzServer {
             config,
@@ -77,6 +90,8 @@ impl QuartzServer {
         }
     }
 
+    /// Initializes the server. This loads all blocks, items, and other game data, initializes commands
+    /// and plugins, and starts the TCP server.
     pub fn init(&mut self) {      
         // Register all of the things
         init_blocks();
@@ -98,7 +113,7 @@ impl QuartzServer {
 
         // A simple tab-completer for console
         struct ConsoleCompleter {
-            packet_pipe: Mutex<Sender<WrappedServerPacket>>
+            packet_pipe: Mutex<Sender<WrappedServerBoundPacket>>
         };
 
         impl Completer<DefaultTerminal> for ConsoleCompleter {
@@ -119,7 +134,7 @@ impl QuartzServer {
                 let (sender, receiver) = mpsc::channel::<Vec<String>>();
 
                 // Send the completion request
-                pipe.send(WrappedServerPacket::new(0, ServerBoundPacket::HandleConsoleCompletion {
+                pipe.send(WrappedServerBoundPacket::new(0, ServerBoundPacket::HandleConsoleCompletion {
                     // Take the slice of the command up to the cursor
                     command: prompter.buffer()[..prompter.cursor()].to_owned(),
                     response: sender
@@ -131,7 +146,11 @@ impl QuartzServer {
                         .map(|completion| Completion {
                             completion,
                             display: None,
-                            suffix: Suffix::Some(' ')
+                            suffix: if prompter.cursor() == prompter.buffer().len() {
+                                Suffix::Some(' ')
+                            } else {
+                                Suffix::None
+                            }
                         })
                         .collect()
                 })
@@ -152,7 +171,7 @@ impl QuartzServer {
                             interface.add_history_unique(command.clone());
 
                             // Forward the command to the server thread
-                            let packet = WrappedServerPacket::new(0, ServerBoundPacket::HandleConsoleCommand {
+                            let packet = WrappedServerBoundPacket::new(0, ServerBoundPacket::HandleConsoleCommand {
                                 command: command.trim().to_owned()
                             });
                             if let Err(e) = packet_pipe.send(packet) {
@@ -169,6 +188,8 @@ impl QuartzServer {
 
     fn start_tcp_server(&mut self) -> Result<(), Box<dyn Error>> {
         let listener = TcpListener::bind(format!("{}:{}", self.config.server_ip, self.config.port))?;
+
+        // Decide whether or not be can set the stream to non-blocking based on the OS
         if cfg!(target_os = "linux") {
             info!("Running on linux, setting tcp listener to nonblocking");
             listener.set_nonblocking(true)?;
@@ -192,21 +213,24 @@ impl QuartzServer {
                 match listener.accept() {
                     // Successful connection
                     Ok((socket, _addr)) => {
-                       // Don't bother handling the connection if the server is shutting down
+                        // Don't bother handling the connection if the server is shutting down
                         if !RUNNING.load(Ordering::SeqCst) {
                             return;
                         }
     
                         debug!("Client connected");
+
+                        // Construct a connection wrapper around the socket
                         let packet_sender = sync_packet_sender.clone();
                         let conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
                         next_connection_id += 1;
-    
-                        let key_pair_clone = key_pair.clone();
-    
+
+                        // Register the client
                         client_list.add_client(conn.id, conn.create_write_handle());
     
+                        // Spawn a thread to handle the connection asynchronously
                         let client_list_clone = client_list.clone();
+                        let key_pair_clone = key_pair.clone();
                         thread::spawn(move || {
                             let client_id = conn.id;
                             handle_async_connection(conn, key_pair_clone);
@@ -214,7 +238,7 @@ impl QuartzServer {
                         });
                     },
     
-                   // Wait before checking for a new connection and exit if the server is no longer running
+                    // Wait before checking for a new connection and exit if the server is no longer running
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                         if RUNNING.load(Ordering::SeqCst) {
                             thread::sleep(Duration::from_millis(100));
@@ -223,7 +247,7 @@ impl QuartzServer {
                         }
                     },
     
-                   // Actual error
+                    // Actual error
                     Err(e) => error!("Failed to accept TCP socket: {}", e)
                 };
             }
@@ -232,10 +256,13 @@ impl QuartzServer {
         Ok(())
     }
 
-    pub fn add_join_handle(&mut self, thread_name: &str, handle: JoinHandle<()>) {
+    /// Registers a join handle to be joined when the server is dropped.
+    fn add_join_handle(&mut self, thread_name: &str, handle: JoinHandle<()>) {
         self.join_handles.insert(thread_name.to_owned(), handle);
     }
 
+    /// Runs the server. This function will not exit until the `RUNNING` state variable is set to false
+    /// through some mechanism.
     pub fn run(&mut self) {
         info!("Started server thread");
 
@@ -262,15 +289,15 @@ impl Drop for QuartzServer {
         // In case this is reached due to a panic
         RUNNING.store(false, Ordering::SeqCst);
 
+        // None-blocking mode doesn't work on windows, so we need to send a connection to the TCP
+        // server to unblock the thread
+        if cfg!(target_os = "windows") {
+            debug!("sending stupid connection to listener to close it");
+            TcpStream::connect(format!("{}:{}", self.config.server_ip, self.config.port)).unwrap();
+        }
+
         for (thread_name, handle) in self.join_handles.drain() {
             info!("Shutting down {}", thread_name);
-
-            if thread_name == "TCP Server Thread" {
-                if cfg!(target_os = "windows") {
-                    debug!("sending stupid connection to listener to close it");
-                    TcpStream::connect(format!("{}:{}", self.config.server_ip, self.config.port)).unwrap();
-                }
-            }
 
             if let Err(_) = handle.join() {
                 error!("Failed to join {}", thread_name);
@@ -279,7 +306,7 @@ impl Drop for QuartzServer {
     }
 }
 
-// Keeps track of the time each tick takes and regulates the server TPS
+/// Keeps track of the time each tick takes and regulates the server ticks per second (TPS).
 pub struct ServerClock {
     micros_ema: f32,
     full_tick_millis: u128,
@@ -288,6 +315,7 @@ pub struct ServerClock {
 }
 
 impl ServerClock {
+    /// Creates a new clock with the given tick length in milliseconds.
     pub fn new(tick_length: u128) -> Self {
         ServerClock {
             micros_ema: 0_f32,
@@ -297,13 +325,13 @@ impl ServerClock {
         }
     }
 
-    // Start of a new tick
-    pub fn start(&mut self) {
+    /// Called at the start of a server tick.
+    fn start(&mut self) {
         self.time = SystemTime::now();
     }
 
-    // The tick code has finished executing, so record the time and sleep if extra time remains
-    pub fn finish_tick(&mut self) {
+    /// The tick code has finished executing, so record the time and sleep if extra time remains.
+    fn finish_tick(&mut self) {
         match self.time.elapsed() {
             Ok(duration) => {
                 self.micros_ema = (99_f32 * self.micros_ema + duration.as_micros() as f32) / 100_f32;
@@ -316,13 +344,14 @@ impl ServerClock {
         }
     }
 
-    // Milliseconds per tick
+    /// Returns a buffered milliseconds per tick (MSPT) measurement. This reading is buffer for 100
+    /// tick cycles.
     #[inline]
     pub fn mspt(&self) -> f32 {
         self.micros_ema / 1000_f32
     }
 
-    // Convert mspt to tps
+    /// Converts a milliseconds pet tick value to ticks per second.
     #[inline]
     pub fn as_tps(&self, mspt: f32) -> f32 {
         if mspt < self.full_tick_millis as f32 {
@@ -332,17 +361,19 @@ impl ServerClock {
         }
     }
 
-    // The maximum tps the server will tick at
+    /// The maximum tps the server will tick at.
     #[inline]
     pub fn max_tps(&self) -> f32 {
         1000_f32 / self.full_tick_millis as f32
     }
 }
 
+/// A thread-safe wrapper around a map of clients and their connection IDs.
 #[repr(transparent)]
 pub struct ClientList(Arc<Mutex<HashMap<usize, Client>>>);
 
 impl ClientList {
+    /// Creates a new, empty client list.
     pub fn new() -> Self {
         ClientList(Arc::new(Mutex::new(HashMap::new())))
     }
@@ -354,26 +385,31 @@ impl ClientList {
         }
     }
 
-    pub fn add_client(&self, client_id: usize, connection: WriteHandle) {
+    /// Adds a new client with the given ID and write handle.
+    pub fn add_client(&self, client_id: usize, connection: AsyncWriteHandle) {
         self.lock().insert(client_id, Client::new(connection));
     }
 
+    /// Removes the client with the given ID.
     pub fn remove_client(&self, client_id: usize) {
         self.lock().remove(&client_id);
     }
 
+    /// Returns the number of players currently online.
     pub fn online_count(&self) -> usize {
         self.lock().iter().map(|(_id, client)| client.player_id).flatten().count()
     }
 
-    pub fn send_packet(&self, client_id: usize, packet: &ClientBoundPacket) {
+    /// Sends a packet to the client with the given ID.
+    pub fn send_packet(&self, client_id: usize, packet: ClientBoundPacket) {
         match self.lock().get_mut(&client_id) {
             Some(client) => client.connection.send_packet(packet),
             None => warn!("Attempted to send packet to disconnected client.")
         }
     }
 
-    pub fn send_buffer(&self, client_id: usize, buffer: &PacketBuffer) {
+    /// Sends a raw byte buffer to the client with the given ID.
+    pub fn send_buffer(&self, client_id: usize, buffer: PacketBuffer) {
         match self.lock().get_mut(&client_id) {
             Some(client) => client.connection.send_buffer(buffer),
             None => warn!("Attempted to send buffer to disconnected client.")
@@ -387,13 +423,14 @@ impl Clone for ClientList {
     }
 }
 
+/// Wrapper around an asynchronous connection write handle that also contains an optional player ID.
 struct Client {
-    pub connection: WriteHandle,
+    pub connection: AsyncWriteHandle,
     pub player_id: Option<usize>
 }
 
 impl Client {
-    pub fn new(connection: WriteHandle) -> Self {
+    pub fn new(connection: AsyncWriteHandle) -> Self {
         Client {
             connection,
             player_id: None

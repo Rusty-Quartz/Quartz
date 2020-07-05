@@ -1,17 +1,20 @@
 use std::sync::Arc;
-
+use chat::component::Component;
 use linefeed::Interface;
 use linefeed::terminal::DefaultTerminal;
-
 use log::error;
 
-use chat::component::Component;
-
+/// A command sender, can be command block, player, or the console.
 pub enum CommandSender {
-    Console(Arc<Interface<DefaultTerminal>>)
+    /// The console sender type.
+    Console(
+        /// A handle to log messages to console.
+        Arc<Interface<DefaultTerminal>>
+    )
 }
 
 impl CommandSender {
+    /// Sends a message to the sender.
     pub fn send_message(&self, message: Component) {
         match self {
             CommandSender::Console(interface) => match interface.lock_writer_erase() {

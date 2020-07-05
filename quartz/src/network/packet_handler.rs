@@ -1,6 +1,5 @@
 use std::sync::{
     Arc,
-    atomic::Ordering,
     mpsc::Sender
 };
 use log::{debug, warn, error};
@@ -18,9 +17,9 @@ use crate::server::{self, QuartzServer};
 use mcutil::Uuid;
 use crate::command::CommandSender;
 
-use quartz_plugins::Listenable;
-
+/// The numeric protocol version the server uses.
 pub const PROTOCOL_VERSION: i32 = 736;
+/// The ID for the legacy ping packet.
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
 include!(concat!(env!("OUT_DIR"), "/packet_output.rs"));
@@ -74,6 +73,7 @@ impl AsyncPacketHandler {
             Ok(der) => pub_key_der = der,
             Err(e) => {
                 error!("Failed to convert public key to der: {}", e);
+                conn.shutdown();
                 return;
             }
         }
@@ -88,11 +88,11 @@ impl AsyncPacketHandler {
     }
 
     fn encryption_response(&mut self, conn: &mut AsyncClientConnection, shared_secret: &Vec<u8>, verify_token: &Vec<u8>) {
-
         // Decrypt and check verify token
         let mut decrypted_verify = vec![0; self.key_pair.size() as usize];
         if let Err(e) = self.key_pair.private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1) {
             error!("Failed to decrypt verify token: {}", e);
+            conn.shutdown();
             return;
         }
         decrypted_verify = decrypted_verify[..self.verify_token.len()].to_vec();
@@ -108,12 +108,17 @@ impl AsyncPacketHandler {
         let mut decrypted_secret = vec![0; self.key_pair.size() as usize];
         if let Err(e) = self.key_pair.private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1) {
             error!("Failed to decrypt secret key: {}", e);
+            conn.shutdown();
             return;
         }
         decrypted_secret = decrypted_secret[..16].to_vec();
 
         // Initiate encryption
-        conn.initiate_encryption(decrypted_secret.as_slice());
+        if let Err(e) = conn.initiate_encryption(decrypted_secret.as_slice()) {
+            error!("Failed to initialize encryption for client connetion: {}", e);
+            conn.shutdown();
+            return;
+        }
         
         // Generate server id hash
         let mut hasher = sha::Sha1::new();
@@ -123,6 +128,7 @@ impl AsyncPacketHandler {
             Ok(der) => hasher.update(&*der),
             Err(e) => {
                 error!("Failed to convert public key to der: {}", e);
+                conn.shutdown();
                 return;
             }
         }
@@ -198,13 +204,13 @@ impl AsyncPacketHandler {
     }
 
     fn login_plugin_response(&mut self, _conn: &mut AsyncClientConnection, _message_id: i32, _successful: bool, _data: &Vec<u8>) {
-
+        // TODO: Implement login_plugin_response
     }
 }
 
 impl QuartzServer {
-    fn login_success_server(&mut self, sender: usize, uuid: &Uuid, username: &str) {
-        
+    fn login_success_server(&mut self, _sender: usize, _uuid: &Uuid, _username: &str) {
+        // TODO: Implement login_success_server
     }
 
     fn handle_console_command(&mut self, command: &str) {
@@ -253,7 +259,7 @@ impl QuartzServer {
             buffer.write_u16(bytes);
         }
 
-        self.client_list.send_buffer(sender, &buffer);
+        self.client_list.send_buffer(sender, buffer);
     }
 
     fn status_request(&mut self, sender: usize) {
@@ -272,27 +278,42 @@ impl QuartzServer {
 
         // TODO: implement favicon
 
-        self.client_list.send_packet(sender, &ClientBoundPacket::StatusResponse {
+        self.client_list.send_packet(sender, ClientBoundPacket::StatusResponse {
             json_response: json_response.to_string()
         });
     }
 }
 
-pub struct WrappedServerPacket {
+/// A wraper for a server-bound packet which includes the sender ID.
+pub struct WrappedServerBoundPacket {
+    /// The ID of the packet sender.
     pub sender: usize,
+    /// The packet that was sent.
     pub packet: ServerBoundPacket
 }
 
-impl WrappedServerPacket {
+impl WrappedServerBoundPacket {
+    /// Creates a new wrapper with the given parameters.
     #[inline]
     pub fn new(sender: usize, packet: ServerBoundPacket) -> Self {
-        WrappedServerPacket {
+        WrappedServerBoundPacket {
             sender,
             packet
         }
     }
 }
 
+/// A wraper for client-bound packets used internally for sending packets to the connection thread.
+pub enum WrappedClientBoundPacket {
+    /// A wrapped packet.
+    Packet(ClientBoundPacket),
+    /// A raw byte-buffer.
+    Buffer(PacketBuffer),
+    /// Specifies that the connection should be forcefully terminated.
+    Disconnect
+}
+
+/// Handles the given asynchronos connecting using blocking I/O opperations.
 pub fn handle_async_connection(mut conn: AsyncClientConnection, private_key: Arc<Rsa<Private>>) {
     let mut async_handler = AsyncPacketHandler::new(private_key);
 

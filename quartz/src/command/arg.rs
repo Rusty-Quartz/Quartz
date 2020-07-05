@@ -3,32 +3,40 @@ use crate::command::executor::{CommandContext, ExecutableCommand};
 use lazy_static::lazy_static;
 use regex::Regex;
 
-// Iterates over the individual arguments in a command accounting for ignored spaces
+/// Iterates over the individual arguments in a command accounting for quoted arguments.
 pub struct ArgumentTraverser<'cmd> {
     command: &'cmd str,
     anchor: usize,
-    index: usize
+    index: usize,
+    paused: bool
 }
 
 impl<'cmd> ArgumentTraverser<'cmd> {
+    /// Creates a traverser over the given command, stripping off the initial '/' if it exists.
     pub fn new(command: &'cmd str) -> Self {
         ArgumentTraverser {
             command: if command.starts_with('/') { &command[1..] } else { command },
             anchor: 0,
-            index: 0
+            index: 0,
+            paused: false
         }
     }
 
-    pub fn has_next(&self) -> bool {
-        self.index < self.command.len()
+    /// Pauses this traverser, meaning the next call to `next` will return the same value as the
+    /// previous call while also unpausing the traverser.
+    pub fn pause(&mut self) {
+        self.paused = true;
     }
 
+    /// Returns the remaining portion of the string being traversed, including the argument which
+    /// was last read.
     pub fn remaining(&mut self) -> &'cmd str {
         self.index = self.command.len();
         &self.command[self.anchor..]
     }
 
-    // Returns the remaining string portion from the current anchor position to the end of the string
+    /// Returns the remaining portion of the string being traversed from the current anchor
+    /// position to the end of the string.
     pub fn remaining_truncated(&self, truncate_to: usize) -> &'cmd str {
         if self.command.len() - self.anchor > truncate_to {
             &self.command[self.anchor..self.anchor + truncate_to]
@@ -36,12 +44,20 @@ impl<'cmd> ArgumentTraverser<'cmd> {
             &self.command[self.anchor..]
         }
     }
-}
 
-impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
-    type Item = &'cmd str;
+    /// Returns whether or not this traverser has more arguments. If this function returns true, then
+    /// `next` will not return `None`.
+    pub fn has_next(&self) -> bool {
+        self.index < self.command.len()
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
+    /// Returns the next argument in the string being traversed, or `None` if no arguments remain.
+    pub fn next(&mut self) -> Option<&'cmd str> {
+        if self.paused {
+            self.paused = false;
+            return Some(&self.command[self.anchor..self.index]);
+        }
+
         if self.index >= self.command.len() {
             return None;
         }
@@ -92,17 +108,33 @@ impl<'cmd> Iterator for ArgumentTraverser<'cmd> {
     }
 }
 
-// Acts both as a wrapper for argument values and argument type definition
+/// Acts both as a wrapper for argument values and argument type definitions.
 #[derive(Clone)]
 pub enum Argument<'cmd> {
-    Integer(i64),
-    FloatingPoint(f64),
-    String(&'cmd str),
-    Command(ExecutableCommand<'cmd>)
+    /// A signed integer argument, parsed as an `i64`.
+    Integer(
+        /// The argument value.
+        i64
+    ),
+    /// A floating point argument, parsed as an `f64`.
+    FloatingPoint(
+        /// The argument value.
+        f64
+    ),
+    /// A string argument in the form of a slice of the full command string.
+    String(
+        /// The argument value.
+        &'cmd str
+    ),
+    /// An executable sub-command argument, which is a wrapper around a slice of the original command.
+    Command(
+        /// The argument value.
+        ExecutableCommand<'cmd>
+    )
 }
 
 impl<'cmd> Argument<'cmd> {
-    // Whether or not this argument type matches the given string (does not guarantee a successful parse)
+    /// Whether or not this argument type matches the given string. This does not guarantee a successful parse.
     pub fn matches(&self, argument: &str) -> bool {
         lazy_static! {
             static ref FLOAT: Regex = Regex::new(r"^(-+)?(\d+\.\d*)|(\d*\.\d+)$").unwrap();
@@ -117,13 +149,14 @@ impl<'cmd> Argument<'cmd> {
         }
     }
 
-    pub fn partial_match(&self, argument: &str) -> bool {
+    /// Whether or not the partial argument matches to this argument type.
+    pub fn partial_match(&self, partial_argument: &str) -> bool {
         // TODO: Ensure this works correctly for more complex arguments
-        self.matches(argument)
+        self.matches(partial_argument)
     }
 
-    // Attempts to parse the given argument according to this arguments type. If the parse is successful, an argument
-    // of the same type is added to the context with the parsed value of the given string argument with the given name.
+    /// Attempts to parse the given argument according to this argument's type. If the parse is successful, an argument
+    /// of the same type is added to the context with the given name with the parsed value of the given string argument.
     pub fn apply<'ctx>(&self, context: &mut CommandContext<'ctx>, name: &'static str, argument: &'ctx str) -> Result<(), String> {
         match self {
             Argument::Integer(_value) => {
@@ -134,6 +167,7 @@ impl<'cmd> Argument<'cmd> {
                     Ok(())
                 }
             },
+
             Argument::FloatingPoint(_value) => {
                 let parsed = argument.parse::<f64>();
                 if parsed.is_err() {Err("Invalid Integer".to_owned())}
@@ -142,10 +176,12 @@ impl<'cmd> Argument<'cmd> {
                     Ok(())
                 }
             },
+
             Argument::String(_value) => {
                 context.arguments.insert(name, Argument::String(argument));
                 Ok(())
             },
+            
             Argument::Command(_) => Ok(())
         }
     }

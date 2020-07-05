@@ -150,7 +150,7 @@ fn parse_packets() {
 }"#;
 
     // gen dispatch_sync_packet function
-    let mut dispatch = r#"pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerPacket, handler: &mut QuartzServer) { match &wrapped_packet.packet {"#.to_owned();
+    let mut dispatch = r#"pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerBoundPacket, handler: &mut QuartzServer) { match &wrapped_packet.packet {"#.to_owned();
 
     for packet in server_bound {
         dispatch.push_str(&format!("ServerBoundPacket::{} {{{}}} => handler.{}({}),", snake_to_camel(&packet.name), packet.struct_params(), packet.name.to_ascii_lowercase(), if packet.sender_independent.unwrap_or(false) {packet.format_params(&mappings_raw)} else {format!("wrapped_packet.sender, {}", packet.format_params(&mappings_raw))}));

@@ -1,20 +1,21 @@
 use std::fs::{File, OpenOptions};
-use std::io::{prelude::*, Read, Write, SeekFrom};
+use std::io::{self, prelude::*, Read, Write, SeekFrom};
 use std::path::Path;
-
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
-
-use log::*;
-
 use chat::Component;
 use chat::cfmt::parse_cfmt;
+use log::*;
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
-// The server config
+/// The main server configuration.
 #[derive(Serialize, Deserialize)]
 pub struct Config {
+    /// The maximum number of players the server will allow, defaults to 50.
     pub max_players: u16,
+    /// The server IP, defaults to "127.0.0.1"
     pub server_ip: String,
+    /// The server port, defaults to 25565.
     pub port: u16,
+    /// The server's message of the day, written using CFMT format (see `chat::cfmt::parse_cfmt`).
     #[serde(serialize_with = "Config::serialize_motd", deserialize_with = "Config::deserialize_motd")]
     pub motd: Component
 }
@@ -57,22 +58,17 @@ impl Default for Config {
     }
 }
 
-pub fn load_config(path: String) -> Result<Config, String> {
-    let std_path = Path::new(&path);
+/// Attempts to parse the server configuration at the given path. The config should be in JSON format.
+pub fn load_config(path: &Path) -> io::Result<Config> {
+    let std_path = Path::new(path);
 
     if std_path.exists() {
         // Try to open the file
-        let mut file;
-        match OpenOptions::new().read(true).write(true).open(std_path) {
-            Ok(f) => file = f,
-            Err(e) => return Err(format!("Failed to open config file: {}", e))
-        }
+        let mut file = OpenOptions::new().read(true).write(true).open(std_path)?;
     
         // Read the file to a string
         let mut json = String::new();
-        if let Err(e) = file.read_to_string(&mut json) {
-            return Err(format!("Failed to read config file: {}", e));
-        }
+        file.read_to_string(&mut json)?;
         
         // Parse the json
         let config: Config;
@@ -87,36 +83,25 @@ pub fn load_config(path: String) -> Result<Config, String> {
         Ok(config)
     } else {
         info!("Config file not found, creating file");
-
-        match File::create(std_path) {
-            Ok(mut file) => use_default(&mut file),
-            Err(e) => Err(format!("Failed to create config file: {}", e))
-        }
+        use_default(&mut File::create(std_path)?)
     }
-    
 }
 
-fn use_default(file: &mut File) -> Result<Config, String> {
+fn use_default(file: &mut File) -> io::Result<Config> {
     info!("Using default configurations");
 
     let default = Config::default();
 
     // Go to the beginning of the file
-    if let Err(e) = file.seek(SeekFrom::Start(0)) {
-        return Err(format!("Failed to write default config: {}", e));
-    }
+    file.seek(SeekFrom::Start(0))?;
 
     // Write the default JSON
     let json = serde_json::to_string_pretty(&default).unwrap();
     let bytes = json.as_bytes();
-    if let Err(e) = file.write_all(bytes) {
-        return Err(format!("Failed to write default config: {}", e));
-    }
+    file.write_all(bytes)?;
 
     // Reset the file length
-    if let Err(e) = file.set_len(bytes.len() as u64) {
-        return Err(format!("Failed to write default config: {}", e));
-    }
+    file.set_len(bytes.len() as u64)?;
 
     Ok(default)
 }
