@@ -14,7 +14,7 @@ use lazy_static::lazy_static;
 use hex::ToHex;
 use crate::network::{AsyncClientConnection, ConnectionState, PacketBuffer};
 use crate::server::{self, QuartzServer};
-use mcutil::Uuid;
+use util::Uuid;
 use crate::command::CommandSender;
 
 /// The numeric protocol version the server uses.

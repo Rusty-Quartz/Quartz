@@ -14,7 +14,7 @@ chat = { path = "../chat" }
 nbt = { path = "../nbt" }
 quartz_plugins = { path = "../quartz_plugins" }
 quartz_macros = { path = "../quartz_macros" }
-mcutil = { path = "../mcutil" }
+util = { path = "../util" }
 
 # External dependencies
 serde = { version = "1.0", features = ["derive"] }

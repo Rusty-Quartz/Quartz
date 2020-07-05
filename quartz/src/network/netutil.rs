@@ -4,7 +4,7 @@ use std::fmt::{self, Display, Formatter};
 use std::ops::{Index, IndexMut};
 use std::ptr;
 use std::slice::SliceIndex;
-use mcutil::Uuid;
+use util::Uuid;
 
 /// A wrapper around a vec used for reading/writing packet data efficiently.
 pub struct PacketBuffer {

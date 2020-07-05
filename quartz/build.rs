@@ -5,13 +5,54 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+const INVALID_MACRO: &str =
+r#"macro_rules! invalid_packet {
+    ($id:expr, $len:expr) => {
+        warn!("Invalid packet received. ID: {}, Len: {}", $id, $len);
+    };
+}"#;
+
+const SERVER_PACKET_START: &str =
+r#"#[doc = "Packets sent from the client to the server, or packets the server sends internally to itself."]
+#[allow(missing_docs)]
+pub enum ServerBoundPacket {"#;
+
+const CLIENT_PACKET_START: &str =
+r#"#[doc = "Packets sent from the server to the client."]
+#[allow(missing_docs)]
+#[derive(quartz_macros::Listenable)]
+pub enum ClientBoundPacket {"#;
+
+const DESERIALIZER_START: &str =
+r#"#[doc = "Deserializes a packet from the connection's buffer and either handles it immediately or forwards it to the server thread."]
+fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, packet_len: usize) {
+    let buffer = &mut conn.read_buffer;
+    let id;
+
+    if conn.connection_state == ConnectionState::Handshake && buffer.peek() == LEGACY_PING_PACKET_ID as u8 {
+        id = LEGACY_PING_PACKET_ID;
+    } else {
+        id = buffer.read_varint();
+    }
+
+    match conn.connection_state {"#;
+
+const SERIALIZER_START: &str =
+r#"#[doc = "Serializes a client-bound packet to the given buffer. This function does not apply compression or encryption."]
+pub fn serialize(packet: &ClientBoundPacket, buffer: &mut PacketBuffer) {
+    match packet {"#;
+
+const DISPATCHER_START: &str =
+r#"#[doc = "Dispatches a synchronous packet on the server thread."]
+pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerBoundPacket, handler: &mut QuartzServer) {
+    match &wrapped_packet.packet {"#;
+
 fn main() {
     parse_packets();
     println!("cargo:rerun-if-changed=../../assets/Pickaxe/protocol.json");
     println!("cargo:rerun-if-changed=../../assets/Pickaxe/mappings.json");
     println!("cargo:rerun-if-changed=build.rs");
 }
-
 
 fn parse_packets() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
@@ -38,7 +79,9 @@ fn parse_packets() {
 
         if state.server_bound.is_some() {
             for packet in state.server_bound.unwrap() {
-                if packet.asyncronous.is_none() || !packet.asyncronous.unwrap() {server_bound.push(packet)};
+                if !packet.asynchronous.unwrap_or(false) {
+                    server_bound.push(packet);
+                }
             }
         }
 
@@ -49,53 +92,58 @@ fn parse_packets() {
         }
     }
 
-    // gen client packet enum
-    let mut client_packet_enum = "#[derive(quartz_macros::Listenable)]pub enum ClientBoundPacket {".to_owned();
-    client_packet_enum.push_str(&packet_enum_parser(client_bound.clone(), &mappings));
-    client_packet_enum.push_str("}");
-
     // gen server packet enum
-    let mut server_packet_enum = "pub enum ServerBoundPacket {".to_owned();
+    let mut server_packet_enum = SERVER_PACKET_START.to_owned();
     server_packet_enum.push_str(&packet_enum_parser(server_bound.clone(), &mappings));
-    server_packet_enum.push_str("}");
+    server_packet_enum.push_str("\n}");
+
+    // gen client packet enum
+    let mut client_packet_enum = CLIENT_PACKET_START.to_owned();
+    client_packet_enum.push_str(&packet_enum_parser(client_bound.clone(), &mappings));
+    client_packet_enum.push_str("\n}");
 
     // gen deserializers
-    let mut deserializers = r#"fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, packet_len: usize) {
-                                        let buffer = &mut conn.read_buffer;
-                                        let id;
-                                        if conn.connection_state == ConnectionState::Handshake && buffer.peek() == LEGACY_PING_PACKET_ID as u8 {
-                                            id = LEGACY_PING_PACKET_ID;
-                                        } else {
-                                            id = buffer.read_varint();
-                                        }
-                                        match conn.connection_state {"#.to_owned();
+    let mut deserializers = DESERIALIZER_START.to_owned();
     
     for state in states_raw {
         if state.name == "__internal__" {continue;}
 
-        let mut state_str = format!("ConnectionState::{} => {{", state.name);
+        let mut state_str = format!("\n\t\tConnectionState::{} => {{", state.name);
 
         if state.server_bound.is_some() {
-            state_str.push_str("match id {");
+            state_str.push_str("\n\t\t\tmatch id {");
 
             for packet in state.server_bound.unwrap() {
-                let mut packet_str = format!("{} => {{", packet.id);
+                let mut packet_str = format!("\n\t\t\t\t{} => {{", packet.id);
 
                 for field in &packet.fields {
+                    packet_str.push_str("\n\t\t\t\t\t");
                     if field.is_used() || field.is_ref() {
                         packet_str.push_str(&format!("let {} = ", field.name));
                     }
-                    packet_str.push_str(&format!("buffer.read_{}{};", field.var_type, if field.var_type.contains("(") {""} else {"()"}));
+                    packet_str.push_str(&format!(
+                        "buffer.read_{}{};",
+                        field.var_type,
+                        if field.var_type.contains("(") { "" } else { "()" }
+                    ));
                 }
 
                 if packet.is_async() {
-                    packet_str.push_str(&format!("async_handler.{}(conn, {});", packet.name.to_ascii_lowercase(), packet.format_params(&mappings_raw)));
-                    packet_str.push_str("},");
+                    packet_str.push_str(&format!(
+                        "\n\t\t\t\t\tasync_handler.{}(conn, {});",
+                        packet.name.to_ascii_lowercase(),
+                        packet.format_params(&mappings_raw)
+                    ));
+                    packet_str.push_str("\n\t\t\t\t},");
                 } else {
-                    packet_str.push_str(&format!("conn.forward_to_server(ServerBoundPacket::{}{}", snake_to_camel(&packet.name), if used_fields(&packet) == 0 {");"} else {"{"}));
+                    packet_str.push_str(&format!(
+                        "\n\t\t\t\t\tconn.forward_to_server(ServerBoundPacket::{}{}",
+                        snake_to_camel(&packet.name),
+                        if used_fields(&packet) == 0 { ");" } else { "{" }
+                    ));
                 
                     if used_fields(&packet) == 0 {
-                        state_str.push_str(&format!("{}}},", packet_str));
+                        state_str.push_str(&format!("{}\n\t\t\t\t}},", packet_str));
                         continue;
                     }
 
@@ -111,54 +159,67 @@ fn parse_packets() {
                 state_str.push_str(&packet_str);
             }
 
-            state_str.push_str("_ => invalid_packet!(id, buffer.len())}");
+            state_str.push_str("\n\t\t\t\t_ => invalid_packet!(id, buffer.len())\n\t\t\t}");
         }
 
-        state_str.push_str("},");
+        state_str.push_str("\n\t\t},");
 
         deserializers.push_str(&state_str);
     }
 
-    deserializers.push_str("_ => {}}}");
+    deserializers.push_str("\n\t\t_ => {}\n\t}\n}");
 
     // gen serializers
-    let mut serlializers = "pub fn serialize(packet: &ClientBoundPacket, buffer: &mut PacketBuffer) { match packet {".to_owned();
+    let mut serlializers = SERIALIZER_START.to_owned();
 
     for packet in client_bound {
-        let mut packet_str = format!("ClientBoundPacket::{} {{{}}} => {{", snake_to_camel(&packet.name), packet.struct_params());
+        let mut packet_str = format!("\n\t\tClientBoundPacket::{} {{{}}} => {{", snake_to_camel(&packet.name), packet.struct_params());
 
-        packet_str.push_str(&format!("buffer.write_varint({});", packet.id));
+        packet_str.push_str(&format!("\n\t\t\tbuffer.write_varint({});", packet.id));
 
         for field in packet.fields {
             packet_str.push_str(&format!(
-                "buffer.write_{}({}{});", 
+                "\n\t\t\tbuffer.write_{}({}{});", 
                 field.var_type.to_ascii_lowercase(), 
-                if field.var_type == "string" || field.var_type == "byte_array" {""} else {"*"}, 
-                field.name))
+                if field.var_type == "string" || field.var_type == "byte_array" { "" } else { "*" }, 
+                field.name
+            ));
         }
 
-        packet_str.push_str("},");
+        packet_str.push_str("\n\t\t},");
 
         serlializers.push_str(&packet_str);
     }
-    serlializers.push_str("}}");
-
-    let invalid_macro = r#"macro_rules! invalid_packet {
-    ($id:expr, $len:expr) => {
-        warn!("Invalid packet received. ID: {}, Len: {}", $id, $len);
-    };
-}"#;
+    serlializers.push_str("\n\t}\n}");
 
     // gen dispatch_sync_packet function
-    let mut dispatch = r#"pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerBoundPacket, handler: &mut QuartzServer) { match &wrapped_packet.packet {"#.to_owned();
+    let mut dispatch = DISPATCHER_START.to_owned();
 
     for packet in server_bound {
-        dispatch.push_str(&format!("ServerBoundPacket::{} {{{}}} => handler.{}({}),", snake_to_camel(&packet.name), packet.struct_params(), packet.name.to_ascii_lowercase(), if packet.sender_independent.unwrap_or(false) {packet.format_params(&mappings_raw)} else {format!("wrapped_packet.sender, {}", packet.format_params(&mappings_raw))}));
+        dispatch.push_str(&format!(
+            "\n\t\tServerBoundPacket::{} {{{}}} => handler.{}({}),",
+            snake_to_camel(&packet.name),
+            packet.struct_params(),
+            packet.name.to_ascii_lowercase(),
+            if packet.sender_independent.unwrap_or(false) {
+                packet.format_params(&mappings_raw)
+            } else {
+                format!("wrapped_packet.sender, {}", packet.format_params(&mappings_raw))
+            }
+        ));
     }
 
-    dispatch.push_str("};}");
+    dispatch.push_str("\n\t}\n}");
 
-    fs::write(&dest_path, format!("{}{}{}{}{}{}", invalid_macro, server_packet_enum, client_packet_enum, deserializers, serlializers, dispatch)).unwrap();
+    fs::write(&dest_path, format!(
+        "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}",
+        INVALID_MACRO,
+        server_packet_enum,
+        client_packet_enum,
+        deserializers,
+        serlializers,
+        dispatch
+    )).unwrap();
 }
 
 fn packet_enum_parser(packet_arr: Vec<Packet>, mappings: &HashMap<String, String>) -> String {
@@ -168,19 +229,19 @@ fn packet_enum_parser(packet_arr: Vec<Packet>, mappings: &HashMap<String, String
         
         // If no fields are used
         if used_fields(&packet) == 0 {
-            output.push_str(&format!("{},", snake_to_camel(&packet.name)));
+            output.push_str(&format!("\n\t{},", snake_to_camel(&packet.name)));
             continue;
         }
 
-        let mut packet_str = format!("{} {{", snake_to_camel(&packet.name));
+        let mut packet_str = format!("\n\t{} {{", snake_to_camel(&packet.name));
 
         for field in packet.fields {
             if field.unused.is_some() && field.unused.unwrap() {continue;}
 
-            packet_str.push_str(&format!("{}: {},", field.name, parse_type(&field.var_type, mappings)))
+            packet_str.push_str(&format!("\n\t\t{}: {},", field.name, parse_type(&field.var_type, mappings)))
         }
 
-        packet_str.push_str("},");
+        packet_str.push_str("\n\t},");
 
         output.push_str(&packet_str);
     }
@@ -216,7 +277,7 @@ struct State {
 #[derive(Deserialize, Clone)]
 struct Packet {
     #[serde(rename = "async")]
-    asyncronous: Option<bool>,
+    asynchronous: Option<bool>,
     unimplemented: Option<bool>,
     sender_independent: Option<bool>,
     name: String,
@@ -226,7 +287,7 @@ struct Packet {
 
 impl Packet {
     pub fn is_async(&self) -> bool {
-        self.asyncronous.is_some() && self.asyncronous.unwrap()
+        self.asynchronous.is_some() && self.asynchronous.unwrap()
     }
 
     pub fn format_params(&self, mappings: &Mappings) -> String {

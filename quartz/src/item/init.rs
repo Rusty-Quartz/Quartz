@@ -1,7 +1,7 @@
 use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use crate::item::{Item, ItemInfo};
-use mcutil::UnlocalizedName;
+use util::UnlocalizedName;
 use serde_json::from_str;
 use serde::Deserialize;
 use log::info;

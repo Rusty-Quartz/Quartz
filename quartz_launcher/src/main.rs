@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use linefeed::Interface;
 use log::error;
-use mcutil::logging;
+use quartz::util::logging;
 use quartz::config::*;
 use quartz::server::QuartzServer;
 

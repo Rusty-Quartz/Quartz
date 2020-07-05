@@ -1,11 +1,20 @@
-**/target/**
-Cargo.lock
-**/*.rs.bk
+# Decompiled, mapped Minecraft Java source
 source/
-node_modules/
-parser.js
+
+# Server generated files
 run/
 logs/
 plugins/
 config.json
+
+# Pre-build artifacts
+node_modules/
+parser.js
+
+# Cargo and rustc artifacts
+target/
+Cargo.lock
+**/*.rs.bk
+
+# IDE files
 .vscode/
