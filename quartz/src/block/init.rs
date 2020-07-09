@@ -49,6 +49,7 @@ pub fn new_state(block_name: &UnlocalizedName) -> Option<StateBuilder> {
     get_block_list().get(block_name).map(|block| StateBuilder::new(&get_global_palette()[block.default_state as usize]))
 }
 
+/// Initializes the block list and global palette
 pub fn init_blocks() {
     info!("Loading block data");
 
