@@ -11,6 +11,8 @@ use chat::{
 };
 use doc_comment::doc_comment;
 
+use crate::snbt::SnbtParser;
+
 /// The generic NBT tag type, containing all supported tag variants which wrap around a corresponding rust type.
 #[derive(Clone)]
 pub enum NbtTag {
@@ -77,6 +79,24 @@ impl NbtTag {
             NbtTag::IntArray(_) => "I",
             NbtTag::LongArray(_) => "L",
             _ => ""
+        }
+    }
+
+    /// Returns the name of each tag type
+    pub fn type_string(&self) -> &str {
+        match self {
+            NbtTag::Byte(_) => "Byte",
+            NbtTag::Short(_) => "Short",
+            NbtTag::Int(_) => "Int",
+            NbtTag::Long(_) => "Long",
+            NbtTag::Float(_) => "Float",
+            NbtTag::Double(_) => "Double",
+            NbtTag::StringModUtf8(_) => "String",
+            NbtTag::ByteArray(_) => "Byte Array",
+            NbtTag::IntArray(_) => "Int Array",
+            NbtTag::LongArray(_) => "Long Array",
+            NbtTag::Compound(_) => "Compound",
+            NbtTag::List(_) => "List"
         }
     }
 
@@ -821,6 +841,20 @@ impl NbtCompound {
         } else {
             self.set_byte(name, 0);
         }
+    }
+
+    /// Parses a nbt compound from snbt
+    /// # Example
+    /// ```
+    /// let tag = NbtCompound::from_snbt(r#"{string:Stuff, list:[I;1,2,3,4,5]}"#).unwrap();
+    /// assert_eq!(tag.get_string("string"), "Stuff");
+    /// assert_eq!(tag.get_int_array("list"), vec![1,2,3,4,5]);
+    /// ```
+    pub fn from_snbt(input: &str) -> Result<Self, String> {
+        let input = input.to_owned();
+        let mut parser = SnbtParser::new(&input, 0);
+
+        parser.parse()
     }
 }
 

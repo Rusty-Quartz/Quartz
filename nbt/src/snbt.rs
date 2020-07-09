@@ -1,513 +1,471 @@
 use crate::*;
+use std::str::Chars;
+use std::iter::Peekable;
 
-use regex::Regex;
+macro_rules! parse_nbt_array {
+    ($enum_name: ident, $vec_type: ty, $output_type: ident, $self_val: ident) => {
+        match $self_val.data.next() {
+            Some(';') => {
+                $self_val.handle_whitespace();
+                let mut output: Vec<$vec_type> = Vec::new();
+                loop {
+                    $self_val.handle_whitespace();
+                    match $self_val.parse_value() {
+                        Ok(NbtTag::$enum_name(v)) => {
+                            output.push(v);
+                        },
+                        Err(e) => return Err(e),
+                        Ok(v) => return Err(format!("Cannot insert {} into array of type {}", v.type_string(), stringify!($enum_name)))
+                    }
 
-use lazy_static::lazy_static;
+                    $self_val.handle_whitespace();
 
-/// Contains data pertinent to the state of the SNBT parser.
-pub struct SnbtParser {
-    data: String,
+                    match $self_val.data.next() {
+                        Some(']') => return Ok(NbtTag::$output_type(output)),
+                        Some(',') => {},
+                        Some(_) => return Err("Expected ,".to_owned()),
+                        None => return Err("Unclosed array".to_owned())
+                    }
+                }
+            },
+            _ => return Err("stuff".to_owned())
+        }
+    };
+}
+
+/// Parses SNBT into NBT tags
+/// 
+/// # Example
+/// ```
+/// let snbt_string = r#"{string:Struff, list:[I;1,2,3,4,5]}"#.to_owned();
+/// let parser = SnbtParser::new(&snbt_string, 0);
+/// let tag = parser.parse().unwrap();
+/// assert_eq!(tag.get_string("string"), "Stuff");
+/// assert_eq!(tag.get_int_array("list"), vec![1,2,3,4,5]);
+/// ```
+pub struct SnbtParser<'sp> {
+    data: Peekable<Chars<'sp>>,
     cursor: usize
 }
 
-// All regexes are put in lazy_static! blocks so as to only compile the regex once
-
-impl SnbtParser {
+impl<'sp> SnbtParser<'sp> {
     /// Creates a new SNBT parser over the given string.
-    pub fn new(data: &str) -> SnbtParser {
+    pub fn new(data: &'sp String, offset: usize) -> Self {
         SnbtParser {
-            data: data.to_owned(), 
-            cursor: 0
+            data: data.chars().peekable(),
+            cursor: offset
         }
     }
-    
+
     /// Parses the SNBT data into a NBT compound.
-    pub fn parse(&mut self) -> Result<NbtCompound, String> {        
+    pub fn parse(&mut self) -> Result<NbtCompound, String> {
         let root_tag = NbtCompound::new();
-        
-        // Check to see if first character is { error otherwise
-        match &self.data[self.cursor..self.cursor+1] {
-            "{" => {
-                self.cursor += 1;
-                let output = self.parse_compound_tag(root_tag);
 
-                // If we got an error immediatly return
-                if output.is_err() {return output}
+        self.parse_compound_tag(root_tag)
+    }
 
-                // Error if we still hava data we didn't parse
-                if self.cursor < self.data.len() -1 {
-                    Err(format!("Unexpected characters after closing tag {}: {}", self.cursor, &self.data[self.cursor..self.data.len()]))
+    fn parse_compound_tag(&mut self, mut tag: NbtCompound) -> Result<NbtCompound, String> {
+        match self.data.next() {
+            Some('{') => {
+                match self.data.peek() {
+                    Some('}') => return Ok(tag),
+                    None => return Err(format!("Expected '}}' at {}", self.cursor)),
+                    _ => match self.parse_property() {
+                        Ok(v) => tag.set(v.0, v.1),
+                        Err(e) => return Err(e) 
+                    }
+                };
+            },
+
+            _ => return Err(format!("Expected '{{' at {}", self.cursor))
+        }
+
+        loop {
+            match self.data.next() {
+                Some(',') => {
+                    match self.parse_property() {
+                        Ok(v) => {tag.set(v.0, v.1)},
+                        Err(e) => return Err(e) 
+                    }
+                },
+
+                Some('}') => return Ok(tag),
+                _ => return Err(format!("Expected '}}' at {}", self.cursor))
+            }
+        }
+    }
+
+    fn parse_property(&mut self) -> Result<(String, NbtTag), String> {
+        self.handle_whitespace();
+        match self.data.peek() {
+            Some('a'..='z') |
+            Some('A'..='Z') => {
+                match self.parse_string() {
+                    Ok(key) => {
+                        self.handle_whitespace();
+                        match self.data.next() {
+                            Some(':') => {
+                                self.handle_whitespace();
+                                match self.parse_value() {
+                                    Ok(tag) => Ok((key, tag)),
+                                    Err(e) => Err(e)
+                                }
+                            },
+                            _ => Err(format!("Expected : at {}", self.cursor))
+                        }
+                    },
+                    Err(e) => Err(e)
                 }
-                else {output}
             },
-            _ => Err(format!("Invalid root tag: {}", &self.data[self.cursor..self.cursor+1]))
+
+            _ => return Err(format!("Expected '}}' at {}", self.cursor))
         }
     }
-    
-    fn parse_compound_tag(&mut self, mut tag: NbtCompound) -> Result<NbtCompound, String>{
-        
-        lazy_static! {
-            static ref KEY_CHAR_REGEX: Regex = Regex::new(r"[a-zA-Z]").unwrap();
-        }
-
-        // Make sure we don't go out of bounds
-        if self.cursor >= self.data.len()  {
-            return Err(format!("NBT not closed"))
-        }
-
-        // Check to see if we have a key or just close the tag
-        match &self.data[self.cursor..self.cursor+1] {
-            char if KEY_CHAR_REGEX.is_match(char) => {
-                
-                // Parse the key
-                let key = self.parse_key();
-                if key.is_err() {return Err(key.unwrap_err())}
-
-                // Parse the value
-                let val = self.parse_value();
-                if val.is_err() {return Err(val.err().unwrap())}
-
-                // Put them in the compound tag
-                tag.set(key.unwrap(), val.unwrap());
-
-                // Check if we close the tag or keep parsing
-                self.check_compound_tag_end(tag)
-            },
-
-            // Don't allow , right before }
-            char if char == "}" && &self.data[self.cursor-1..self.cursor] != "," => {
-                self.cursor += 1;
-                Ok(tag)
-            },
-
-            _ => {
-                Err(format!("Error parsing compound tag at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
-            }
-        }
-    }
-
-    fn check_compound_tag_end(&mut self, tag: NbtCompound) -> Result<NbtCompound, String>{
-        // Make sure we don't go out of bounds
-        if self.cursor >= self.data.len()  {
-            return Err(format!("NBT not closed"))
-        }
-
-        // Check to see if we should continue parsing the tag or close it
-        match &self.data[self.cursor..self.cursor+1] {
-
-            "," => {
-                // increment the cursor and check for more elements
-                self.cursor += 1;
-                self.parse_compound_tag(tag)
-            },
-
-            "}" => {
-                // increment the cursor and close the tag
-                self.cursor += 1;
-                Ok(tag)
-            },
-
-            _ => {
-                Err(format!("Error parsing compound tag ending at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
-            }
-        }
-    }
-    
-    
-    fn parse_key(&mut self) -> Result<String, String> {
-
-        // Don't go out of bounds
-        if self.cursor >= self.data.len() {
-            return Err(format!("NBT not closed"))
-        }
-        
-        lazy_static! {
-            static ref KEY_PARSE_REGEX: Regex = Regex::new(r"[a-zA-Z-]+(?::)").unwrap();
-        }
-        
-        // Get the key
-        let capture = KEY_PARSE_REGEX.find(&self.data[self.cursor..]);
-
-        // Check to make sure key is where the current index is and that it exists
-        if capture.is_none() || capture.unwrap().start() != 0 {
-            return Err(format!("Invalid property key at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
-        }
-
-        let capture = capture.unwrap();
-
-        // Return the key and incrememnt the current index
-        let output = Ok(self.data[self.cursor..capture.end()+self.cursor-1].to_owned());
-        self.cursor += capture.end();
-        output        
-    }
-
 
     fn parse_value(&mut self) -> Result<NbtTag, String> {
-        
-        lazy_static!{
-            static ref DIGIT: Regex = Regex::new(r"\d|\.").unwrap();
-            static ref STRING: Regex = Regex::new("[\"\']").unwrap();
-            static ref STRING_NO_QUOTES: Regex = Regex::new("[a-zA-Z]").unwrap();
-        }
-        
-        // Don't go out of bounds
-        if self.cursor >= self.data.len() {
-            return Err(format!("NBT not closed"))
-        }
-
-        // Check to see what data type we're parsing
-        match &self.data[self.cursor..self.cursor+1] {
-            "{" => {
-
-                // Increment off the { and parse the compound tag
-                self.cursor += 1;
-                let compound_tag = self.parse_compound_tag(NbtCompound::new());
-                if compound_tag.is_err() {return Err(compound_tag.err().unwrap())}
-                
-                Ok(NbtTag::Compound(compound_tag.unwrap()))
+        match self.data.peek() {
+            Some('{') => {
+                match self.parse_compound_tag(NbtCompound::new()) {
+                    Ok(tag) => Ok(NbtTag::Compound(tag)),
+                    Err(e) => Err(e)
+                }
             },
-
-            char if DIGIT.is_match(char) => {
-
-                // Parse any number type
-                let num_tag = self.parse_num();
-                if num_tag.is_err() {return Err(num_tag.err().unwrap())}
-                
-                Ok(num_tag.unwrap())
-            },
-
-            char if STRING.is_match(char) => {
-
-                // increment off the " and parse the string
-                self.cursor += 1;
-                let string_tag = self.parse_string();
-                if string_tag.is_err() {return Err(string_tag.err().unwrap())}
-
-                Ok(string_tag.unwrap())
-            },
-
-            char if STRING_NO_QUOTES.is_match(char) => {
-                let string_tag = self.parse_string_no_quotes();
-                if string_tag.is_err() {return Err(string_tag.err().unwrap())}
-
-                Ok(string_tag.unwrap())
-            },
-
-            "[" => {
-                // increment off the [ and parse the list
-                self.cursor += 1;
-                let list_tag = self.parse_list();
-                if list_tag.is_err() {return Err(list_tag.err().unwrap())}
-
-                Ok(NbtTag::List(list_tag.unwrap()))
+            
+            Some('0'..='9') |
+            Some('.') => {
+                let index = self.data.clone();
+                match self.parse_num() {
+                    Ok(tag) => return Ok(tag),
+                    Err(_) => {
+                        self.data = index;
+                        match self.parse_string() {
+                            Ok(string) => Ok(NbtTag::from(string)),
+                            Err(e) => return Err(e)
+                        }
+                    }
+                }
             }
-            _ => {
-                Err(format!("Error parsing value at {}, {}", self.cursor, &self.data[self.cursor..self.data.len()]))
-            }
+
+            Some('\'') |
+            Some('"') |
+            Some('a'..='z') |
+            Some('A'..='Z') => match self.parse_string() {
+                Ok(str) => Ok(NbtTag::from(str)),
+                Err(e) => Err(e)
+            },
+
+            Some('[') => self.parse_list(),
+
+            _ => Err(format!("Expected value at {}", self.cursor)),
         }
     }
-    
-    fn parse_string(&mut self) -> Result<NbtTag, String>{
-        
-        lazy_static!{
-            static ref STRING: Regex = Regex::new(r#"(?:[^"\\]|\\.)*(?:([^\\]"|[^\\]'))"#).unwrap();
-            // I hate \s
-            static ref BACKSLASH: Regex = Regex::new("\\\\\\\\").unwrap();
-            static ref ESCAPE_DOUBLE_QUOTE: Regex = Regex::new("\\\\\"").unwrap();
-            static ref ESCAPE_SINGLE_QUOTE: Regex = Regex::new("\\\\\'").unwrap();
+
+    fn parse_string(&mut self) -> Result<String, String> {
+        // Flag used to test what type of quotes to use with the string
+        // 0 = no quotes
+        // 1 = double quotes
+        // 2 = single quotes
+        let mut quotes = 0_u8;
+
+        // Set the appropriate flag for the quotes found
+        match self.data.peek() {
+            Some('"') => {
+                self.cursor += 1;
+                self.data.next();
+                quotes = 1;
+            },
+            Some('\'') => {
+                self.cursor += 1;
+                self.data.next();
+                quotes = 2;
+            },
+            _ => {}
+        };
+
+        let mut output = String::new();
+
+        loop {
+            self.cursor += 1;
+            match self.data.peek() {
+                Some(c @'}') |
+                Some(c @':') |
+                Some(c @',') => match quotes {
+                        0 => break,
+                        _ => {
+                            output.push(*c);
+                            self.data.next();
+                        }
+                    },
+
+                Some('"') => {
+                    self.data.next();
+                    match quotes {
+                        2 => output.push('"'),
+                        _ => break
+                    }
+                }
+
+                Some('\'') => {
+                    self.data.next();
+                    match quotes {
+                        1 => output.push('\''),
+                        _ => break,
+                    }
+                }
+
+                Some('\\') => {
+                    self.data.next();
+                    self.cursor += 1;
+                    match self.data.next() {
+                        Some('\'') => output.push('\''),
+                        Some('"') => output.push('"'),
+                        Some('\\') => output.push('\\'),
+                        Some(c @ _) => return Err(format!("Invalid escape character '\\{}'at {} ", c, self.cursor)),
+                        None => return match quotes {
+                            0 => break,
+                            1 => Err(format!("Unclosed double quote string at {}", self.cursor)),
+                            2 => Err(format!("Unclosed single quote string at {}", self.cursor)),
+                            _ => unreachable!()
+                        }
+                    }
+                },
+
+                Some(c @ 'a'..='z') |
+                Some(c @ 'A'..='Z') |
+                Some(c @ '0'..='9') |
+                Some(c @ '+') |
+                Some(c @ '-') |
+                Some(c @ '_') |
+                Some(c @ '.') => {
+                    output.push(*c);
+                    self.data.next();
+                },
+
+                Some(c @ _) => match quotes {
+                    0 => break,
+                    _ => {
+                        output.push(*c);
+                        self.data.next();
+                    }
+                }
+
+                None => match quotes {
+                    0 => break,
+                    1 => return Err(format!("Unclosed double quote string at {}", self.cursor)),
+                    2 => return Err(format!("Unclosed single quote string at {}", self.cursor)),
+                    _ => unreachable!()
+                }
+            };
         }
-
-        // Don't go out of bounds
-        if self.cursor >= self.data.len()  {
-            return Err(format!("NBT not closed"))
-        }
-
-        // Find the string data
-        let capture = STRING.find(&self.data[self.cursor..]);
-
-        // Make sure its at the current index and exists
-        if capture.is_none() || capture.unwrap().start() != 0 {
-            return Err(format!("Invalid string at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
-        }
-        let capture = capture.unwrap();
-
-        let mut captured_str = self.data[self.cursor..capture.end()+self.cursor-1].to_owned();
-
-        // Parse escapped \s and "s
-        captured_str = ESCAPE_DOUBLE_QUOTE.replace_all(&captured_str, "\"").to_string();
-        captured_str = ESCAPE_SINGLE_QUOTE.replace_all(&captured_str, "\'").to_string();
-        captured_str = BACKSLASH.replace_all(&captured_str, "\\").to_string();
-
-        // Write the string to an nbt tag and return it
-        
-        let output = Ok(NbtTag::StringModUtf8(captured_str.clone()));
-        self.cursor += capture.end();
-        
-        output
-    }
-
-    fn parse_string_no_quotes(&mut self) -> Result<NbtTag, String>{
-        
-        lazy_static!{
-            static ref STRING: Regex = Regex::new(r#"([a-zA-Z][a-zA-Z\-_$0-9]+(?:[^"']))"#).unwrap();
-        }
-
-        // Don't go out of bounds
-        if self.cursor >= self.data.len()  {
-            return Err(format!("NBT not closed"))
-        }
-
-        // Find the string data
-        let capture = STRING.find(&self.data[self.cursor..]);
-
-        // Make sure its at the current index and exists
-        if capture.is_none() || capture.unwrap().start() != 0 {
-            return Err(format!("Invalid string at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
-        }
-        let capture = capture.unwrap();
-
-        // Write the string to an nbt tag and return it
-        let captured_str = self.data[self.cursor..capture.end()+self.cursor-1].to_owned();
-        let output = Ok(NbtTag::StringModUtf8(captured_str.clone()));
-        self.cursor += capture.end() - 1;
-        
-        output
+        Ok(output)
     }
 
     fn parse_num(&mut self) -> Result<NbtTag, String> {
-        lazy_static! {
-            static ref LIMITER: Regex = Regex::new(r"[\d\.]+\D").unwrap();
-            static ref LONG: Regex = Regex::new(r"\d+(?:(l|L))").unwrap();
-            static ref DOUBLE: Regex = Regex::new(r"(((\d+(\.\d+))(?:(d|D)))|((\d+\.|\.)\d+[^a-zA-Z]))").unwrap();
-            static ref BYTE: Regex = Regex::new(r"\d+(?:(b|B))").unwrap();
-            static ref SHORT: Regex = Regex::new(r"\d+(?:(s|S))").unwrap();
-            static ref FLOAT: Regex = Regex::new(r"(\d+(\.\d+)?)(?:(f|F))").unwrap();
-            static ref INT: Regex = Regex::new(r"\d+").unwrap();
-            
-            // part of int test, makes sure there isn't a letter after the num indicating that it is a different type and that there isn't a decimal
-            static ref NOT_INT: Regex = Regex::new(r"((\d+\.|\.)\d+)|([\d\.]+(d|D|l|L|b|B|s|S|f|F))").unwrap(); 
-        }
-        
-        // Don't go out of bounds
-        if self.cursor >= self.data.len()  {
-            return Err(format!("NBT not closed"))
-        }
-        
-        // Get how far ahead we should check to get the number's type
-        let limit_capture = LIMITER.find(&self.data[self.cursor..]);
+        let mut num_string = String::new();
+        let mut decimal = false;
 
-        if limit_capture.is_none() {
-            return Err(format!("Tag not closed after num, {} {}", &self.cursor, &self.data[self.cursor..self.data.len()]));
-        }
-
-        let limit = limit_capture.unwrap().end() + self.cursor;
-
-        
-        
-        // Check which number type we're parsing
-        match &self.data[self.cursor..limit] {
-            
-            num if BYTE.is_match(num) => {
-                let capture = BYTE.find(&self.data[self.cursor..limit]);
-    
-                // Make sure byte exists and is at the current index
-                if capture.is_none() || capture.unwrap().start() != 0 {
-                    return Err(format!("Invalid byte at {}, {}", &self.cursor, &self.data[self.cursor..limit]))
-                }
-                let capture = capture.unwrap();
-    
-                // Parse the byte from the string
-                let parsed_byte = self.data[self.cursor..capture.end()+self.cursor-1].to_owned().parse::<i8>();
-    
-                // If there were errors parsing, error
-                if parsed_byte.is_err() {
-                    return Err(format!("Invalid value for type byte {}: {}, {}", self.cursor, &self.data[self.cursor..limit], parsed_byte.unwrap_err()))
-                }
-    
-                // Return the byte and increase the current index
-                let output = Ok(NbtTag::Byte(parsed_byte.unwrap()));
-                self.cursor += capture.end();
-                output
-            },
-            
-            num if SHORT.is_match(num) => {
-                let capture = SHORT.find(&self.data[self.cursor..limit]);
-
-                // Make sure short exists and is at the current index
-                if capture.is_none() || capture.unwrap().start() != 0 {
-                    return Err(format!("Invalid short at {}, {}", &self.cursor, &self.data[self.cursor..limit]))
-                }
-                let capture = capture.unwrap();
-
-                // Parse the short from the string
-                let parsed_short = self.data[self.cursor..capture.end()+self.cursor-1].to_owned().parse::<i16>();
-
-                // If there were errors parsing, error
-                if parsed_short.is_err() {
-                    return Err(format!("Invalid value for type short {}: {}, {}", self.cursor, &self.data[self.cursor..limit], parsed_short.unwrap_err()));
-                }
-
-                // Return the short and increase the current index
-                let output = Ok(NbtTag::Short(parsed_short.unwrap()));
-                self.cursor += capture.end();
-                output
-            },
-
-            num if INT.is_match(num) && !NOT_INT.is_match(num) => {
-                let capture = INT.find(&self.data[self.cursor..limit]);
-    
-                // Make sure int exists and is at the current index
-                if capture.is_none() || capture.unwrap().start() != 0 {
-                    return Err(format!("Invalid int at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
-                }
-                let capture = capture.unwrap();
-    
-                // Parse the int from the string
-                let parsed_int = self.data[self.cursor..capture.end()+self.cursor].to_owned().parse::<i32>();
-    
-                // If there were errors parsing, error
-                if parsed_int.is_err() {
-                    return Err(format!("Invalid value for type int {}: {}, {}", self.cursor, &self.data[self.cursor..limit], parsed_int.unwrap_err()))
-                }
-    
-                // Return the int and increase the current index
-                let output = Ok(NbtTag::Int(parsed_int.unwrap()));
-                self.cursor += capture.end();
-                output
-            },
-
-            num if LONG.is_match(num) => {
-                let capture = LONG.find(&self.data[self.cursor..limit]);
-
-                // Make sure long exists and is at the current index
-                if capture.is_none() || capture.unwrap().start() != 0 {
-                    return Err(format!("Invalid long at {}, {}", &self.cursor, &self.data[self.cursor..limit]))
-                }
-                let capture = capture.unwrap();
-
-                // Parse the long from the string
-                let parsed_long = self.data[self.cursor..capture.end()+self.cursor-1].to_owned().parse::<i64>();
-
-                // If there were errors parsing, error
-                if parsed_long.is_err() {
-                    return Err(format!("Invalid value for type long {}: {}, {}", self.cursor, &self.data[self.cursor..limit], parsed_long.unwrap_err()))
-                }
-
-                // Return the long and increase the current index
-                let output = Ok(NbtTag::Long(parsed_long.unwrap()));
-                self.cursor += capture.end();
-                output
-            },
-            
-            num if FLOAT.is_match(num) => {
-                let capture = FLOAT.find(&self.data[self.cursor..limit]);
-
-                // Make sure float exists and is at the current index
-                if capture.is_none() || capture.unwrap().start() != 0 {
-                    return Err(format!("Invalid float at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
-                }
-                let capture = capture.unwrap();
-
-                // Parse the float from the string
-                let parsed_float = self.data[self.cursor..capture.end()+self.cursor-1].to_owned().parse::<f32>();
-
-                // If there were errors parsing, error
-                if parsed_float.is_err() {
-                    return Err(format!("Invalid value for type float {}: {}, {}", self.cursor, &self.data[self.cursor..limit], parsed_float.unwrap_err()))
-                }
-
-                // Return the float and increase the current index
-                let output = Ok(NbtTag::Float(parsed_float.unwrap()));
-                self.cursor += capture.end();
-                output
-            },
-
-            num if DOUBLE.is_match(num) => {
-                let capture = DOUBLE.find(&self.data[self.cursor..limit]);
-
-                // Make sure double exists and is at the current index
-                if capture.is_none() || capture.unwrap().start() != 0 {
-                    return Err(format!("Invalid double at {}, {}", &self.cursor, &self.data[self.cursor..limit]))
-                }
-                let capture = capture.unwrap();
-
-                // Parse the double from the string
-                let parsed_double = self.data[self.cursor..capture.end()+self.cursor-1].to_owned().parse::<f64>();
-
-                // If there were errors parsing, error
-                if parsed_double.is_err() {
-                    return Err(format!("Invalid value for type double {}: {}, {}", self.cursor, &self.data[self.cursor..limit], parsed_double.unwrap_err()))
-                }
-
-                // Return the double and increase the current index
-                let output = Ok(NbtTag::Double(parsed_double.unwrap()));
-                self.cursor += capture.end()-1;
-                output
-            },
-
-            _ => {
-                Err(format!("Invalid number at {}, {}", &self.cursor, &self.data[self.cursor..self.data.len()]))
-            }
-        }
-    }
-
-    fn parse_list(&mut self) -> Result<NbtList, String> {
-        // Create a new list tag and store the start index
-        let mut list_tag = NbtList::new();
-        let start_index = self.cursor;
-
-        // loop until the list is closed
         loop {
-            // Make sure we don't go out of bounds
-            if self.cursor >= self.data.len() - 1 {
-                return Err(format!("List not closed"))
-            }
-
-            // Parse the value
-            let new_tag = self.parse_value();
-
-            // Check for errors
-            if new_tag.is_err() {return Err(new_tag.err().unwrap())}
-            let new_tag = new_tag.unwrap();
-
-            // Check if values are of same type
-            if !SnbtParser::is_same_types(&list_tag, &new_tag) {
-                return Err(format!("Values in list are not of same type, {}: {}", self.cursor, &self.data[start_index..self.cursor]))
-            }
-
-            // Add it to the list
-            list_tag.add(new_tag);
-
-            // check to see if we should close the list or if its malformed
-            if &self.data[self.cursor..self.cursor+1] == "]" {self.cursor += 1; break}
-            if &self.data[self.cursor..self.cursor+1] != "," {return Err(format!("Invalid list at {}, {}", &self.cursor, &self.data[start_index..self.cursor+1]))}
             self.cursor += 1;
-        }
+            match self.data.peek() {
+                Some(c @ '0'..='9') |
+                Some(c @ '-') => {
+                    num_string.push(*c);
+                    self.data.next();
+                },
+                Some('.') => {
+                    self.data.next();
+                    if decimal {return Err("Number has two decimal points".to_owned())}
+                    decimal = true;
+                    num_string.push('.')
+                },
 
-        // Return the list
-        Ok(list_tag)
-    }
+                Some('b') |
+                Some('B') => {
+                    self.data.next();
+                    if decimal {return Err("Decimal in byte type".to_owned())}
+                    match self.data.peek() {
+                        Some('}') |
+                        Some(']') |
+                        Some(',') => {
+                            match num_string.parse::<i8>() {
+                                Ok(val) => return Ok(NbtTag::Byte(val)),
+                                Err(_) => return Err("Couldn't parse number string to a byte".to_owned())
+                            }
+                        },
 
-    // TODO: Properly handle None values from NbtList::get
-    fn is_same_types(list: &NbtList, tag: &NbtTag) -> bool {
-        if list.len() == 0{
-            true
-        }
-        else if std::mem::discriminant(list.get(list.len()-1).unwrap_or(tag)) != std::mem::discriminant(&tag) {
-           false
-        }
-        else {
-            match tag {
-                NbtTag::List(val) => {
-                    match list.get(list.len()-1) {
-                        Some(NbtTag::List(val2)) => {
-                            SnbtParser::is_same_types(val2, val.get(val.len()-1).unwrap_or(tag))
-                        }
-                        _ => false
+                        _ => return Err("Value is string, not number".to_owned())
                     }
                 },
-                _ => true
+                
+                Some('l') |
+                Some('L') => {
+                    self.data.next();
+                    if decimal {return Err("Decimal in long type".to_owned())}
+                    match self.data.peek() {
+                        Some('}') |
+                        Some(']') |
+                        Some(',') => {
+                            match num_string.parse::<i64>() {
+                                Ok(val) => return Ok(NbtTag::Long(val)),
+                                Err(_) => return Err("Couldn't parse number string to a long".to_owned())
+                            }
+                        },
+
+                        _ => return Err("Value is string, not number".to_owned())
+                    }
+                },
+
+                Some('s') |
+                Some('S') => {
+                    self.data.next();
+                    if decimal {return Err("Decimal in short type".to_owned())}
+                    match self.data.peek() {
+                        Some('}') |
+                        Some(']') |
+                        Some(',') => {
+                            match num_string.parse::<i16>() {
+                                Ok(val) => return Ok(NbtTag::Short(val)),
+                                Err(_) => return Err("Couldn't parse number string to a short".to_owned())
+                            }
+                        },
+
+                        _ => return Err("Value is string, not number".to_owned())
+                    }
+                },
+
+                Some('f') |
+                Some('F') => {
+                    self.data.next();
+                    if !decimal {return Err("No decimal in float type".to_owned())}
+                    match self.data.peek() {
+                        Some('}') |
+                        Some(']') |
+                        Some(',') => {
+                            match num_string.parse::<f32>() {
+                                Ok(val) => return Ok(NbtTag::Float(val)),
+                                Err(_) => return Err("Couldn't parse number string to a float".to_owned())
+                            }
+                        },
+
+                        _ => return Err("Value is string, not number".to_owned())
+                    }
+                },
+
+                Some('d') |
+                Some('D') => {
+                    self.data.next();
+                    if !decimal {return Err("No decimal in double type".to_owned())}
+                    match self.data.peek() {
+                        Some('}') |
+                        Some(']') |
+                        Some(',') => {
+                            match num_string.parse::<f64>() {
+                                Ok(val) => return Ok(NbtTag::Double(val)),
+                                Err(_) => return Err("Couldn't parse number string to a double".to_owned())
+                            }
+                        },
+
+                        _ => return Err("Value is string, not number".to_owned())
+                    }
+                }
+
+                Some('}') |
+                Some(']') |
+                Some(',') |
+                None => {
+                    if decimal {
+                        match num_string.parse::<f64>() {
+                            Ok(val) => return Ok(NbtTag::Double(val)),
+                            Err(_) => return Err("Couldn't parse number string to a double".to_owned())
+                        }
+                    } else {
+                        match num_string.parse::<i32>() {
+                            Ok(val) => return Ok(NbtTag::Int(val)),
+                            Err(_) => return Err("Couldn't parse number string to an int".to_owned())
+                        }
+                    }
+                },
+
+                Some(_) => return Err("Value is string, not number".to_owned())
             }
         }
     }
+
+    fn parse_list(&mut self) -> Result<NbtTag, String> {
+        match self.data.next() {
+            Some('[') => {},
+            _ => return Err("List doesn't start with [".to_owned())
+        };
+
+        self.handle_whitespace();
+
+        match self.data.peek() {
+            Some('I') |
+            Some('B') |
+            Some('L') => {
+                let cache = self.data.clone();
+                self.data.next();
+                match self.data.next() {
+                    Some(';') => {
+                        self.data = cache;
+                        return self.parse_array()
+                    },
+                    _ => self.data = cache
+                }
+            }
+            _ => {}
+        }
+
+        let mut output = NbtList::new();
+
+        loop {
+            self.handle_whitespace();
+            match self.parse_value() {
+                Ok(val) => {
+                    if output.len() < 1 {
+                        output.add(val)
+                    } else {
+                        if variant_eq(&val, output.get(0).unwrap()) {
+                            output.add(val);
+                        } else {
+                            return Err(format!("Can't insert value of type {} into list of type {}", val.type_string(), output.get(0).unwrap().type_string()))
+                        }
+                    }
+                },
+                Err(_) => {}
+            }
+
+            self.handle_whitespace();
+
+            match self.data.next() {
+                Some(']') => return Ok(NbtTag::List(output)),
+                Some(',') => {},
+                Some(_) => return Err("Expected ,".to_owned()),
+                None => return Err("Unclosed array".to_owned())
+            }
+        }
+    }
+
+    fn parse_array(&mut self) -> Result<NbtTag, String> {
+        self.handle_whitespace();
+        match self.data.next() {
+            Some('B') => parse_nbt_array!(Byte, i8, ByteArray, self),
+            Some('I') => parse_nbt_array!(Int, i32, IntArray, self),
+            Some('L') => parse_nbt_array!(Long, i64, LongArray, self),
+            _ => Err("Not a typed array".to_owned())
+        }
+    }
+
+    fn handle_whitespace(&mut self) {
+        loop {
+            match self.data.peek() {
+                Some(' ') => self.data.next(),
+                _ => break
+            };
+        }
+    }
+}
+
+fn variant_eq<T>(a: &T, b: &T) -> bool {
+    std::mem::discriminant(a) == std::mem::discriminant(b)
 }
