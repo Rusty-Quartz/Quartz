@@ -1,13 +1,16 @@
 use nbt::{NbtCompound, NbtList};
 use crate::item::item::{ItemStack, OptionalItemStack};
 
-// Represents a basic inventory
+/// Represents a basic inventory
 pub struct Inventory {
+    /// The size of the inventory
     pub size: usize,
+    /// The items in the inventory
     items: Box<[OptionalItemStack]>
 }
 
 impl Inventory {
+    /// Creates a new inventory with a specified size
     pub fn new(size: usize) -> Self {
         Inventory {
             size,
@@ -17,24 +20,45 @@ impl Inventory {
 
     // Assume index is always within bounds as items has a static size and all calls should be prefixed with a can_insert if slot number is not hard coded
     // Return the previous stack
+    /// Inserts an ItemStack into the given slot
+    /// # Panics
+    /// Panics if the index is out of range for the inventory, all calls should be prefixed with a can_insert call
     pub fn insert(&mut self, index: usize, item: ItemStack) -> OptionalItemStack {
         let current_item = self.items[index].clone();
         self.items[index] = OptionalItemStack::new(Some(item));
         current_item
     }
 
+    /// Increments the amount in a slot
+    /// # Panics
+    /// Panics if the index is out of range for the inventory, all calls should be prefixed with a can_insert call
     pub fn increment(&mut self, index: usize) {
         self.items[index].item().unwrap().count += 1;
     }
 
+    /// Gets a clone of the OptionalItemStack in a slot
+    /// # Panics
+    /// Panics if the index is out of range for the inventory, all calls should be prefixed with a can_insert call
     pub fn get(&self, index: usize) -> OptionalItemStack {
         self.items.get(index).unwrap().clone()
     }
 
+    /// Tests if a slot can be inserted into 
     pub fn can_insert(&self, index: usize) -> bool {
-        self.size > index
+        self.size > index && index > 0
     }
 
+    /// Creates a new Inventory from a NbtCompound
+    /// 
+    /// # NBT Format
+    /// ```
+    /// {Items: [{
+    ///     Slot: Byte,
+    ///     id: String,
+    ///     Count: Byte
+    ///     tag: Compound,
+    /// }]}
+    /// ```
     pub fn from_tag(&mut self, nbt: &NbtCompound) {
         let list = nbt.get_list("Items").unwrap();
 
@@ -49,6 +73,17 @@ impl Inventory {
         }
     }
 
+    /// Writes the Inventory to a NbtCompound
+    /// 
+    /// # NBT Format
+    /// ```
+    /// {Items: [{
+    ///     Slot: Byte,
+    ///     id: String,
+    ///     Count: Byte
+    ///     tag: Compound,
+    /// }]}
+    /// ```
     pub fn write_tag(&self,  tag: &mut NbtCompound) {
         let mut list = NbtList::new();
 

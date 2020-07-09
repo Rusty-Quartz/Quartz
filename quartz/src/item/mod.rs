@@ -1,5 +1,6 @@
 mod item;
 mod inventory;
+#[allow(missing_docs)]
 mod item_info;
 mod init;
 

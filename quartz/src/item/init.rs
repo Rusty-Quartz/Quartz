@@ -8,16 +8,19 @@ use log::info;
 
 static ITEM_LIST: OnceCell<HashMap<UnlocalizedName, Item>> = OnceCell::new();
 
+/// Gets the whole item list
 #[inline(always)]
 pub fn get_item_list() -> &'static HashMap<UnlocalizedName, Item> {
     ITEM_LIST.get().expect("Item list not initialized.")
 }
 
+/// Gets an item instance from a unlocalized name
 #[inline]
 pub fn get_item(item_name: &UnlocalizedName) -> Option<&'static Item> {
     get_item_list().get(item_name)
 }
 
+/// Initializes the item list
 pub fn init_items() {
     info!("Loading item data");
 
