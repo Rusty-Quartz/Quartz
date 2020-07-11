@@ -1,4 +1,5 @@
 #![deny(unsafe_code)]
+#![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
 
 //! This crate contains virtually all of the code, APIs, and other malarkey that makes quartz run. The server

@@ -36,7 +36,7 @@ impl CommandExecutor {
     /// Attempts to dispatch the given command, first attempting to parse it according to the registered command
     /// syntax trees, and then applying an execution context to a valid stack generated from the tree. If an error
     /// occurs at some point, then the sender is notified.
-    pub fn dispatch(&self, command: &str, server: &QuartzServer, sender: CommandSender) {
+    pub fn dispatch(&self, command: &str, server: &mut QuartzServer, sender: CommandSender) {
         let mut context = CommandContext::new(server, self, sender);
         let mut raw_args = ArgumentTraverser::new(command);
 
@@ -61,12 +61,13 @@ impl CommandExecutor {
         // Create the parser state with the arguments and root node
         let mut state = ParserState::new(raw_args, root);
 
-        // Iterate over the avilable argument and trace a path on the command tree
+        // Iterate over the avilable arguments and trace a path on the command tree
         'arg_loop: while let Some(arg) = state.raw_args.next() {
             // Find the next node in the tree
             if state.current_node.has_children() {
                 let children = match state.current_node.children() {
                     Some(children) => children,
+                    // This branch should not be taken due to the check above
                     None => return
                 };
 
@@ -77,6 +78,8 @@ impl CommandExecutor {
                             // Only use the first child that matches
                             continue 'arg_loop;
                         },
+
+                        // The argument could not be applied due to a parse error, so notify the sender and exit
                         Err(e) => {
                             context.sender.send_message(e);
                             return;
@@ -99,9 +102,8 @@ impl CommandExecutor {
                 return;
             }
             // The current node has no children but there are still arguments remaining, so notify
-            // the sender that some arguments are getting ignored
+            // the sender that some arguments are getting ignored and execute the command
             else {
-                // Extra arguments
                 context.sender.send_message(
                     Component::colored(
                         format!("Ignoring the following arguments: \"{}\"", state.raw_args.remaining_truncated(35)),
@@ -114,7 +116,7 @@ impl CommandExecutor {
             }
         }
 
-        // Look for and load in default argument values
+        // Look for, and load in default argument values
         'default_loop: while state.current_node.has_children() {
             for child in state.current_node.children().into_iter().flatten() {
                 match child {
@@ -130,7 +132,7 @@ impl CommandExecutor {
             }
 
             // No defaults were found
-            break 'default_loop;
+            break;
         }
 
         // Handle the expectation for more arguments if needed
@@ -154,22 +156,24 @@ impl CommandExecutor {
         }
     }
 
-    /// Generates a list of suggestions based off the give command string. This method will traverse the command
+    /// Generates a list of suggestions based off the given command string. This method will traverse the command
     /// syntax trees identically to the dispatch method until the final argument is reached, at which point the
-    /// last node on the stack is used to generate suggestions based off the partial argument. If no arguments
-    /// are present, then the full list of commands is returned. If one argument is present, then the suggestions
-    /// are generated based off the available commands.
-    pub fn get_suggestions(&self, command: &str, server: &QuartzServer, sender: CommandSender) -> Vec<String> {
+    /// last node on the stack is used to generate suggestions based off the partial argument.
+    /// 
+    /// If no arguments are present in the given command string, then the full list of commands is returned. If
+    /// one argument is present, then the suggestions are generated based off the available commands.
+    pub fn get_suggestions(&self, command: &str, server: &mut QuartzServer, sender: CommandSender) -> Vec<String> {
         let mut context = CommandContext::new(server, self, sender);
         let mut raw_args = ArgumentTraverser::new(command);
 
         // Find the name of the command
         let root_name = match raw_args.next() {
             Some(arg) => arg,
-            // Empty command, just exit silently
+            // Empty command, so return all available commands
             None => return self.commands.keys().map(|cmd| (*cmd).to_owned()).collect()
         };
 
+        // Partial command name, so filter based off the given command string
         if !raw_args.has_next() {
             return self.commands.keys().filter(|cmd| cmd.starts_with(root_name)).map(|cmd| (*cmd).to_owned()).collect();
         }
@@ -182,13 +186,13 @@ impl CommandExecutor {
         // Create the parser state with the arguments and root node
         let mut state = ParserState::new(raw_args, root);
 
-        // Iterate over the avilable argument and trace a path on the command tree
+        // Iterate over the avilable arguments and trace a path on the command tree
         'arg_loop: while let Some(arg) = state.raw_args.next() {
             // Find the next node in the tree
             if state.current_node.has_children() {
-                // Unwrap is safe because of the check above
                 let children = match state.current_node.children() {
                     Some(children) => children,
+                    // This branch should never be taken due to the check above
                     None => return Vec::new()
                 };
 
@@ -200,6 +204,8 @@ impl CommandExecutor {
                                 // Only use the first child that matches
                                 continue 'arg_loop;
                             },
+
+                            // Parse error
                             Err(_) => return Vec::new()
                         }
                     }
@@ -223,15 +229,15 @@ impl CommandExecutor {
         // If we got redirected to the root, then recursively give command suggestions
         match state.current_node {
             CommandNode::Redirection {base, ..} => match context.get_command(base.name) {
-                Some(command) => self.get_suggestions(command.0, server, context.sender),
+                Some(command) => self.get_suggestions(command.0, context.server, context.sender),
                 None => Vec::new()
             },
             _ => Vec::new()
         }
     }
 
-    // We were expecting more arguments, so notify the sender what was expected
-    fn expect_args(children: &[CommandNode], context: &CommandContext) {
+    /// We were expecting more arguments, so notify the sender what was expected.
+    fn expect_args(children: &[CommandNode], context: &CommandContext<'_>) {
         let mut message = "Expected one of the following arguments: ".to_owned();
         message.push_str(&children.iter().map(|child| child.name()).collect::<Vec<&'static str>>().join(", "));
         context.sender.send_message(Component::colored(message, PredefinedColor::Red));
@@ -316,7 +322,7 @@ impl<'cmd> ExecutableCommand<'cmd> {
 /// The context in which a command is executed. This has no use outside the lifecycle of a command.
 pub struct CommandContext<'cmd> {
     /// A shared reference to the server.
-    pub server: &'cmd QuartzServer,
+    pub server: &'cmd mut QuartzServer,
     /// A shared reference to the executor that created this context.
     pub executor: &'cmd CommandExecutor,
     /// The sender of the command.
@@ -328,7 +334,7 @@ pub struct CommandContext<'cmd> {
 // Shortcut functions for getting argument values
 impl<'cmd> CommandContext<'cmd> {
     /// Creates a new command context with the given parameters.
-    pub fn new(server: &'cmd QuartzServer, executor: &'cmd CommandExecutor, sender: CommandSender) -> Self {
+    pub fn new(server: &'cmd mut QuartzServer, executor: &'cmd CommandExecutor, sender: CommandSender) -> Self {
         CommandContext {
             server,
             executor,
@@ -374,7 +380,7 @@ impl<'cmd> CommandContext<'cmd> {
 #[derive(Clone)]
 pub struct NodeBase {
     name: &'static str,
-    executor: Option<fn(CommandContext)>
+    executor: Option<fn(CommandContext<'_>)>
 }
 
 impl NodeBase {
@@ -409,7 +415,7 @@ pub enum CommandNode {
         /// The argument type.
         argument: Argument<'static>,
         /// An option suggestion generator.
-        suggester: Option<fn(&CommandContext, &str) -> Vec<String>>,
+        suggester: Option<fn(&CommandContext<'_>, &str) -> Vec<String>>,
         /// Whether or not this argument has a default value.
         default: bool
     },
@@ -495,7 +501,7 @@ impl CommandNode {
         }
     }
 
-    fn executor(&self) -> Option<fn(CommandContext)> {
+    fn executor(&self) -> Option<fn(CommandContext<'_>)> {
         match self {
             CommandNode::Literal {base, ..} => base.executor,
             CommandNode::Argument {base, ..} => base.executor,
@@ -559,7 +565,7 @@ impl CommandNode {
     }
 
     /// Adds an executor to this node.
-    pub fn executes(mut self, executor: fn(CommandContext)) -> Self {
+    pub fn executes(mut self, executor: fn(CommandContext<'_>)) -> Self {
         match &mut self {
             CommandNode::Literal {base, ..} => base.executor = Some(executor),
             CommandNode::Argument {base, ..} => base.executor = Some(executor),
@@ -570,7 +576,7 @@ impl CommandNode {
     }
 
     /// Attempts to execute the node with the given context and returns whether or not an executor was called.
-    pub fn execute(&self, context: CommandContext) -> bool {
+    pub fn execute(&self, context: CommandContext<'_>) -> bool {
         match &self.executor() {
             Some(executor) => {
                 executor(context);
@@ -582,7 +588,7 @@ impl CommandNode {
 
     /// Adds a suggestion generator to this node. This method has no effect if not called on an argument
     /// node.
-    pub fn suggests(mut self, sugg: fn(&CommandContext, &str) -> Vec<String>) -> Self {
+    pub fn suggests(mut self, sugg: fn(&CommandContext<'_>, &str) -> Vec<String>) -> Self {
         match &mut self {
             CommandNode::Argument {suggester, ..} => *suggester = Some(sugg),
             _ => {}
@@ -592,7 +598,7 @@ impl CommandNode {
     }
 
     /// Adds suggestions to the given list based off of the given state variables and this node's type.
-    pub fn add_suggestions<'cmd>(&self, state: &ParserState<'cmd>, context: &CommandContext, arg: &str, suggestions: &mut Vec<String>) {
+    pub fn add_suggestions<'cmd>(&self, state: &ParserState<'cmd>, context: &CommandContext<'_>, arg: &str, suggestions: &mut Vec<String>) {
         match self {
             CommandNode::Literal {base, ..} => suggestions.push(base.name.to_owned()),
             CommandNode::Argument {suggester, ..} => match suggester {

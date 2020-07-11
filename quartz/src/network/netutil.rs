@@ -1,4 +1,3 @@
-use std::mem::transmute;
 use std::str;
 use std::fmt::{self, Display, Formatter};
 use std::ops::{Index, IndexMut};
@@ -42,7 +41,7 @@ where
 }
 
 impl Display for PacketBuffer {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:X?}", self.inner)
     }
 }
@@ -121,6 +120,8 @@ impl PacketBuffer {
             return;
         }
 
+        // This was directly copied from vec, so we can assume the standard libraries' devs know
+        // what they're doing.
         unsafe {
             let ptr = self.inner.as_mut_ptr();
             let new_len = self.inner.len() - self.cursor;
@@ -247,20 +248,14 @@ impl PacketBuffer {
 
     /// Reads a 32-bit float from this buffer, returning `0` if not enough bytes remain.
     #[inline]
-    #[allow(unsafe_code)]
     pub fn read_f32(&mut self) -> f32 {
-        unsafe {
-            transmute::<i32, f32>(self.read_i32())
-        }
+        f32::from_bits(self.read_i32() as u32)
     }
 
     /// Reads a 64-bit float from this buffer, returning `0` if not enough bytes remain.
     #[inline]
-    #[allow(unsafe_code)]
     pub fn read_f64(&mut self) -> f64 {
-        unsafe {
-            transmute::<i64, f64>(self.read_i64())
-        }
+        f64::from_bits(self.read_i64() as u64)
     }
 
     /// Reads a variable length, signed integer from this buffer. Bits will continue to be pushed onto
@@ -416,20 +411,14 @@ impl PacketBuffer {
 
     /// Writes the given 32-bit float to this buffer.
     #[inline]
-    #[allow(unsafe_code)]
     pub fn write_f32(&mut self, value: f32) {
-        unsafe {
-            self.write_i32(transmute::<f32, i32>(value));
-        }
+        self.write_i32(value.to_bits() as i32);
     }
 
     /// Writes the given 64-bit float to this buffer.
     #[inline]
-    #[allow(unsafe_code)]
     pub fn write_f64(&mut self, value: f64) {
-        unsafe {
-            self.write_i64(transmute::<f64, i64>(value));
-        }
+        self.write_i64(value.to_bits() as i64);
     }
 
     /// Returns the number of bytes the given integer would use if encoded as a variable lengthed integer.

@@ -1,8 +1,10 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io;
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::{
     Arc,
     Mutex,
@@ -45,8 +47,7 @@ pub fn is_running() -> bool {
     RUNNING.load(Ordering::SeqCst)
 }
 
-/// The main struct containing all relevant data to the quartz server instance. This struct relies
-/// heavily on interior mutability due to complications with multithreading and the borrow checker.
+/// The main struct containing all relevant data to the quartz server instance.
 pub struct QuartzServer {
     /// The server config.
     pub config: Config,
@@ -61,7 +62,7 @@ pub struct QuartzServer {
     /// A map of thread join handles to join when the server is dropped.
     join_handles: HashMap<String, JoinHandle<()>>,
     /// The command executor instance for the server.
-    pub command_executor: CommandExecutor,
+    pub command_executor: Rc<RefCell<CommandExecutor>>,
     /// The server clock, used to time and regulate ticks.
     pub clock: ServerClock,
     /// The server plugin manager.
@@ -84,7 +85,7 @@ impl QuartzServer {
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
             join_handles: HashMap::new(),
-            command_executor: CommandExecutor::new(),
+            command_executor: Rc::new(RefCell::new(CommandExecutor::new())),
             clock: ServerClock::new(50),
             plugin_manager: PluginManager::new(Path::new("./plguins"))
         }
@@ -96,7 +97,16 @@ impl QuartzServer {
         // Register all of the things
         init_blocks();
         init_items();
-        init_commands(&mut self.command_executor);
+
+        // Initialize commands
+        match self.command_executor.try_borrow_mut() {
+            Ok(mut executor) => init_commands(&mut *executor),
+            Err(_) => {
+                error!("Internal error: could not borrow command_executor as mutable during initialization.");
+                RUNNING.store(false, Ordering::SeqCst);
+                return;
+            }
+        }
 
         // Setup the command handler thread
         self.init_command_handler();
@@ -120,7 +130,7 @@ impl QuartzServer {
             fn complete(
                 &self,
                 _word: &str,
-                prompter: &Prompter<DefaultTerminal>,
+                prompter: &Prompter<'_, '_, DefaultTerminal>,
                 _start: usize,
                 _end: usize
             ) -> Option<Vec<Completion>> {
@@ -378,7 +388,7 @@ impl ClientList {
         ClientList(Arc::new(Mutex::new(HashMap::new())))
     }
 
-    fn lock(&self) -> MutexGuard<HashMap<usize, Client>> {
+    fn lock(&self) -> MutexGuard<'_, HashMap<usize, Client>> {
         match self.0.lock() {
             Ok(guard) => guard,
             Err(_) => panic!("Client list mutex poisoned.")

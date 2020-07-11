@@ -65,6 +65,16 @@ impl<T: Identify> IdList<T> {
         }
     }
 
+    /// Returns a shared reference to the element with the given ID, or `None` if no element has the given ID.
+    pub fn get(&self, id: usize) -> Option<&T> {
+        self.inner.get(id)?.as_ref()
+    }
+
+    /// Returns a mutable reference to the element with the given ID, or `None` if no element has the given ID.
+    pub fn get_mut(&mut self, id: usize) -> Option<&mut T> {
+        self.inner.get_mut(id)?.as_mut()
+    }
+
     /// Removes the item with the given ID returning that item if it exists, or None if it does not.
     pub fn remove(&mut self, id: usize) -> Option<T> {
         if id >= self.inner.len() {

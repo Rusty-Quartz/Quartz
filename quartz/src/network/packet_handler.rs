@@ -24,6 +24,35 @@ pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
 include!(concat!(env!("OUT_DIR"), "/packet_output.rs"));
 
+/// A wraper for a server-bound packet which includes the sender ID.
+pub struct WrappedServerBoundPacket {
+    /// The ID of the packet sender.
+    pub sender: usize,
+    /// The packet that was sent.
+    pub packet: ServerBoundPacket
+}
+
+impl WrappedServerBoundPacket {
+    /// Creates a new wrapper with the given parameters.
+    #[inline]
+    pub fn new(sender: usize, packet: ServerBoundPacket) -> Self {
+        WrappedServerBoundPacket {
+            sender,
+            packet
+        }
+    }
+}
+
+/// A wraper for client-bound packets used internally for sending packets to the connection thread.
+pub enum WrappedClientBoundPacket {
+    /// A wrapped packet.
+    Packet(ClientBoundPacket),
+    /// A raw byte-buffer.
+    Buffer(PacketBuffer),
+    /// Specifies that the connection should be forcefully terminated.
+    Disconnect
+}
+
 struct AsyncPacketHandler {
     key_pair: Arc<Rsa<Private>>,
     username: String,
@@ -214,12 +243,27 @@ impl QuartzServer {
     }
 
     fn handle_console_command(&mut self, command: &str) {
-        self.command_executor.dispatch(command, self, CommandSender::Console(self.console_interface.clone()));
+        let command_executor = self.command_executor.clone();
+        match command_executor.try_borrow() {
+            Ok(executor) => {
+                let sender = CommandSender::Console(self.console_interface.clone());
+                executor.dispatch(command, self, sender);
+            },
+            Err(_) => error!("Internal error: could not borrow command_executor as mutable while executing a command.")
+        };
     }
 
     fn handle_console_completion(&mut self, command: &str, response: &Sender<Vec<String>>) {
-        let suggestions = self.command_executor.get_suggestions(command, self, CommandSender::Console(self.console_interface.clone()));
-        let _ = response.send(suggestions);
+        let command_executor = self.command_executor.clone();
+        match command_executor.try_borrow() {
+            Ok(executor) => {
+                let sender = CommandSender::Console(self.console_interface.clone());
+                let suggestions = executor.get_suggestions(command, self, sender);
+                // Error handling not useful here
+                drop(response.send(suggestions));
+            },
+            Err(_) => error!("Internal error: could not borrow command_executor as mutable while generating completion suggestions.")
+        };
     }
 
     fn legacy_ping(&mut self, sender: usize) {
@@ -282,35 +326,6 @@ impl QuartzServer {
             json_response: json_response.to_string()
         });
     }
-}
-
-/// A wraper for a server-bound packet which includes the sender ID.
-pub struct WrappedServerBoundPacket {
-    /// The ID of the packet sender.
-    pub sender: usize,
-    /// The packet that was sent.
-    pub packet: ServerBoundPacket
-}
-
-impl WrappedServerBoundPacket {
-    /// Creates a new wrapper with the given parameters.
-    #[inline]
-    pub fn new(sender: usize, packet: ServerBoundPacket) -> Self {
-        WrappedServerBoundPacket {
-            sender,
-            packet
-        }
-    }
-}
-
-/// A wraper for client-bound packets used internally for sending packets to the connection thread.
-pub enum WrappedClientBoundPacket {
-    /// A wrapped packet.
-    Packet(ClientBoundPacket),
-    /// A raw byte-buffer.
-    Buffer(PacketBuffer),
-    /// Specifies that the connection should be forcefully terminated.
-    Disconnect
 }
 
 /// Handles the given asynchronos connecting using blocking I/O opperations.

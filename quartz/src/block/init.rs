@@ -110,7 +110,7 @@ pub fn init_blocks() {
             // Make sure the computed ID matches the ID in the generated data
             assert_eq!(state_info.id, state.id(), "Computed ID for {} does not match stored ID.", state);
 
-            global_palette.insert(state_info.id as usize, state);
+            global_palette[state_info.id as usize] = state;
         }
     }
 

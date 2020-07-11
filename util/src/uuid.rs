@@ -21,30 +21,87 @@ impl Uuid {
 
     /// Create a random UUID. Since the UUID must contain version and variant info, only 122
     /// out of the 128 bits are random.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use util::Uuid;
+    /// println!("{}", Uuid::random());
+    /// // Sample output: 7919a79b-b256-4782-bf36-13990ca65bb7
+    /// ```
     pub fn random() -> Self {
         Uuid(Self::correct_version(rand::thread_rng().gen()))
     }
 
-    /// Converts the given bytes into a UUID and applies the correct version and variant information.
+    /// Converts the given bytes (big-endian) into a UUID and applies the correct version and variant information.
     /// This function will return an error if the given slice is not 16 bytes long.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
-        if bytes.len() != 16 {
-            return Err("Expected 16 bytes.");
-        }
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the input slice is not 16 bytes long.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use util::Uuid;
+    /// let uuid = Uuid::from_bytes_be(&[121, 25, 167, 155, 178, 86, 71, 130, 191, 54, 19, 153, 12, 166, 91, 183]);
+    /// assert_eq!(uuid.as_u128(), 0x7919a79bb2564782bf3613990ca65bb7_u128);
+    /// ```
+    pub fn from_bytes_be(bytes: &[u8]) -> Self {
+        assert_eq!(bytes.len(), 16, "Expected 16 bytes.");
 
         let mut inner: u128 = 0;
-        for i in 0..16 {
+        for i in 0..15 {
             inner |= bytes[i] as u128;
             inner <<= 8;
         }
+        inner |= bytes[15] as u128;
 
-        Ok(Uuid(Self::correct_version(inner)))
+        Uuid(Self::correct_version(inner))
+    }
+
+    /// Converts the given bytes (little-endian) into a UUID and applies the correct version and variant information.
+    /// This function will return an error if the given slice is not 16 bytes long.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the input slice is not 16 bytes long.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use util::Uuid;
+    /// let uuid = Uuid::from_bytes_le(&[183, 91, 166, 12, 153, 19, 54, 191, 130, 71, 86, 178, 155, 167, 25, 121]);
+    /// assert_eq!(uuid.as_u128(), 0x7919a79bb2564782bf3613990ca65bb7_u128);
+    /// ```
+    pub fn from_bytes_le(bytes: &[u8]) -> Self {
+        assert_eq!(bytes.len(), 16, "Expected 16 bytes.");
+
+        let mut inner: u128 = 0;
+        for i in 1..16 {
+            inner |= bytes[16 - i] as u128;
+            inner <<= 8;
+        }
+        inner |= bytes[0] as u128;
+
+        Uuid(Self::correct_version(inner))
     }
 
     /// Converts the given string into a UUID and applies the correct version and variant information.
+    /// 
     /// This function will accept strings with or without dashes. If the string with dashes removed is not
     /// 32 hex characters long, then an error is returned. If the hex is invalid, then an error is also
     /// returned.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use util::Uuid;
+    /// let uuid = Uuid::from_string("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
+    /// assert_eq!(uuid.as_u128(), 0x7919a79bb2564782bf3613990ca65bb7_u128);
+    /// 
+    /// assert!(Uuid::from_string("invalid").is_err());
+    /// ```
     pub fn from_string(string: &str) -> Result<Self, &'static str> {
         let raw = string.to_owned().replace("-", "");
         if raw.len() != 32 {
@@ -55,6 +112,32 @@ impl Uuid {
             Ok(inner) => Ok(Uuid(Self::correct_version(inner))),
             Err(_) => Err("Invalid UUID string.")
         }
+    }
+
+    /// Returns the most significant 64 bits of this UUID's 128-bit value.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use util::Uuid;
+    /// let uuid = Uuid::from_string("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
+    /// assert_eq!(uuid.most_significant_bits(), 0x7919a79bb2564782_u64);
+    /// ```
+    pub fn most_significant_bits(&self) -> u64 {
+        (self.0 >> 64) as u64
+    }
+
+    /// Returns the least significant 64 bits of this UUID of this UUID's 128-bit value.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use util::Uuid;
+    /// let uuid = Uuid::from_string("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
+    /// assert_eq!(uuid.least_significant_bits(), 0xbf3613990ca65bb7_u64);
+    /// ```
+    pub fn least_significant_bits(&self) -> u64 {
+        self.0 as u64
     }
 
     /// Returns the inner u128 composing this UUID.

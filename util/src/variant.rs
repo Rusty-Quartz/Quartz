@@ -1,73 +1,57 @@
-use std::any::TypeId;
-use std::marker::Unsize;
-use std::ops::{CoerceUnsized, Deref, DerefMut};
+use std::any::{Any, TypeId};
 
-/// Essentially equivalent to `Box<T>` in that this struct takes ownership of the value passed to it,
-/// however this struct also records the type ID of the value it owns, and because of this allows safe
-/// downcasting. When a `Variant<T>` is dropped, the pointer it holds is moved back into a box which
-/// is immediately dropped, deallocating the memory on the heap.
-pub struct Variant<T: ?Sized> {
-    descriminant: TypeId,
-    value: *mut T
-}
-
-// Since boxes are leveraged to construct this trait, and since boxes own the values they are constructed
-// with, it is safe to implement these traits if T satisfies the traits respectively.
-unsafe impl<T: ?Sized + Send> Send for Variant<T> { }
-unsafe impl<T: ?Sized + Sync> Sync for Variant<T> { }
-
-impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Variant<U>> for Variant<T> { }
-
-impl<T: 'static> Variant<T> {
-    /// Allocate space on the heap and move the given value into that memory location. This function also
-    /// stores the type ID of the given value.
-    pub fn new(x: T) -> Self {
-        Variant {
-            descriminant: TypeId::of::<T>(),
-            value: Box::into_raw(Box::new(x))
-        }
+/// Downcasts the given shared reference to the new type. If the type cannot be safely downcasted, then
+/// `None` is returned.
+/// 
+/// # Examples
+/// 
+/// ```
+/// # use util::variant::downcast_ref;
+/// use std::any::Any;
+/// 
+/// fn test<T: Any + ToString>(shared: &T) {
+///     assert_eq!(shared.to_string(), "10");
+///     assert_eq!(*downcast_ref::<_, i32>(shared).unwrap(), 10);
+///     assert!(downcast_ref::<_, f32>(shared).is_none());
+/// }
+/// 
+/// let x: i32 = 10;
+/// test(&x);
+/// ```
+#[inline]
+pub fn downcast_ref<T: Any + ?Sized, U: 'static>(x: &T) -> Option<&U> {
+    if x.type_id() == TypeId::of::<U>() {
+        Some(unsafe { &*(x as *const T as *const U) })
+    } else {
+        None
     }
 }
 
-impl<T: ?Sized> Variant<T> {
-    /// Attempt to downcast the stored value to the given new type, returning a shared reference to that value.
-    /// If this operation can be completed safely, a reference is returned, else `None` is returned.
-    pub fn downcast<C: 'static>(&self) -> Option<&C> {
-        if TypeId::of::<C>() == self.descriminant {
-            unsafe { Some(&*(self.value as *mut C)) }
-        } else {
-            None
-        }
-    }
-
-    /// Attempt to downcast the stored value to the given new type, returning a mutable reference to that value.
-    /// If this operation can be completed safely, a mutable reference is returned, else `None` is returned.
-    pub fn downcast_mut<C: 'static>(&mut self) -> Option<&mut C> {
-        if TypeId::of::<C>() == self.descriminant {
-            unsafe { Some(&mut *(self.value as *mut C)) }
-        } else {
-            None
-        }
-    }
-}
-
-impl<T: ?Sized> Drop for Variant<T> {
-    fn drop(&mut self) {
-        // This is safe since we know that the pointer was allocated by a box via the `new` function
-        unsafe { drop(Box::from_raw(self.value)); }
-    }
-}
-
-impl<T: ?Sized> Deref for Variant<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe { &*self.value }
-    }
-}
-
-impl<T: ?Sized> DerefMut for Variant<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.value }
+/// Downcasts the given mutable reference to the new type. If the type cannot be safely downcasted, then
+/// `None` is returned.
+/// 
+/// # Examples
+/// 
+/// ```
+/// # use util::variant::downcast_mut;
+/// use std::any::Any;
+/// 
+/// fn test<T: Any + ToString>(mutable: &mut T) {
+///     assert_eq!(mutable.to_string(), "10");
+///     *downcast_mut::<_, i32>(&mut *mutable).unwrap() += 5;
+///     assert_eq!(mutable.to_string(), "15");
+/// 
+///     assert!(downcast_mut::<_, f32>(mutable).is_none());
+/// }
+/// 
+/// let mut x: i32 = 10;
+/// test(&mut x);
+/// ```
+#[inline]
+pub fn downcast_mut<T: Any + ?Sized, U: 'static>(x: &mut T) -> Option<&mut U> {
+    if (*x).type_id() == TypeId::of::<U>() {
+        Some(unsafe { &mut *(x as *mut T as *mut U) })
+    } else {
+        None
     }
 }

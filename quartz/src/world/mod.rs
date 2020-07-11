@@ -1,8 +1,8 @@
-mod chunk {
-    pub mod chunk;
-    pub mod provider;
-}
-mod location;
+pub mod chunk {
+    mod chunk;
+    mod provider;
 
-pub use chunk::chunk::Chunk;
-pub use location::{BlockPosition, CoordinatePair};
+    pub use chunk::Chunk;
+    pub use provider::ChunkProvider;
+}
+pub mod location;

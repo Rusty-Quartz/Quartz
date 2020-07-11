@@ -1,3 +1,6 @@
+use std::fmt::{self, Display, Formatter};
+use std::ops::{Shl, Shr};
+
 #[derive(PartialEq, Eq, Hash)]
 pub struct BlockPosition {
     pub x: i32,
@@ -11,11 +14,39 @@ pub struct CoordinatePair {
     pub z: i32
 }
 
+/// Type alias for `CoordinatePair` to disambiguate between chunk coordinate pairs and region coordinate pairs.
+pub type ChunkCoordinatePair = CoordinatePair;
+/// Type alias for `CoordinatePair` to disambiguate between chunk coordinate pairs and region coordinate pairs.
+pub type RegionCoordinatePair = CoordinatePair;
+
 impl CoordinatePair {
-    pub fn scaled_up(&self, factor: i32) -> Self {
-        CoordinatePair {
-            x: self.x * factor,
-            z: self.z * factor
-        }
+    pub const fn new(x: i32, z: i32) -> Self {
+        CoordinatePair { x, z }
+    }
+}
+
+impl Display for CoordinatePair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "x: {}, z: {}", self.x, self.z)
+    }
+}
+
+impl Shl<usize> for CoordinatePair {
+    type Output = CoordinatePair;
+
+    fn shl(mut self, shift: usize) -> Self::Output {
+        self.x <<= shift;
+        self.z <<= shift;
+        self
+    }
+}
+
+impl Shr<usize> for CoordinatePair {
+    type Output = CoordinatePair;
+
+    fn shr(mut self, shift: usize) -> Self::Output {
+        self.x >>= shift;
+        self.z >>= shift;
+        self
     }
 }

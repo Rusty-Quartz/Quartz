@@ -1,7 +1,7 @@
-use crate::block::entity::{BlockEntity, BlockEntityType};
+use crate::block::entity::BlockEntity;
 use nbt::{NbtCompound};
 use util::UnlocalizedName;
-use crate::world::BlockPosition;
+use crate::world::location::BlockPosition;
 use crate::item::{get_item, ItemStack};
 use crate::item::Inventory;
 
@@ -53,7 +53,7 @@ impl BlockEntity for FurnaceBlockEntity {
         }
     }
 
-    fn write_nbt(&mut self, nbt: &mut NbtCompound) {
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
         nbt.set_int("BurnTime".to_owned(), self.burn_time);
         nbt.set_int("CookTime".to_owned(), self.cook_time);
         nbt.set_int("CookTimeTotal".to_owned(), self.cook_time_total);
@@ -79,8 +79,4 @@ impl BlockEntity for FurnaceBlockEntity {
             }
 		}
     }
-
-    fn id(&self) -> BlockEntityType {
-        BlockEntityType::Furnace
-    }    
 }

@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fmt;
+use std::fmt::{self, Display, Formatter};
 use lazy_static::lazy_static;
 use util::UnlocalizedName;
 
@@ -12,8 +12,8 @@ pub struct Block {
     pub default_state: StateID
 }
 
-impl fmt::Display for Block {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Display for Block {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
 }
@@ -82,8 +82,8 @@ impl BlockState {
     }
 }
 
-impl fmt::Display for BlockState {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Display for BlockState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.handle.name)?;
 
         if !self.properties.is_empty() {
@@ -107,7 +107,7 @@ impl StateBuilder {
         }
     }
 
-    pub fn with_property(mut self, name: &str, value: &str) -> Result<Self, String> {
+    pub fn add_property(&mut self, name: &str, value: &str) -> Result<(), String> {
         match self.state.properties.get_mut(name) {
             // The property has to already exist in the state
             Some(val) => match self.state.handle.properties.get(name) {
@@ -119,7 +119,7 @@ impl StateBuilder {
                         Err(format!("Invalid property value for {} in {}: {}", name, self.state.handle.name, value))
                     } else {
                         *val = owned_value;
-                        Ok(self)
+                        Ok(())
                     }
                 },
 
@@ -129,6 +129,13 @@ impl StateBuilder {
 
             // If the property does not exist already then it does not exist for this type of block
             None => Err(format!("Invalid property for {}: {}", self.state.handle.name, name))
+        }
+    }
+
+    pub fn with_property(mut self, name: &str, value: &str) -> Result<Self, (Self, String)> {
+        match self.add_property(name, value) {
+            Ok(()) => Ok(self),
+            Err(message) => Err((self, message))
         }
     }
 

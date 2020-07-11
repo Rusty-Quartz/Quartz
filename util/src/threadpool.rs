@@ -7,13 +7,16 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 use log::error;
 
-/// A dynamically sized, load-spreading threadpool that executes a specific function. The function this
-/// pool's workers execute accepts an owned "job" and a mutable reference to an internal "state". This
-/// model was adopted as oppsed to closures to allow for workers to be spawned without the function/closure
-/// needing to be respecified. Because of this cloneability, dynamic threadpools have a `resize` method
-/// which only requires a min and max bound on the new size and a load scaling constant. The actual size
-/// this pool chooses within those bounds will be based on a measured load value which is recalculated every
-/// time the threadpool is resized.
+/// A dynamically sized, load-spreading threadpool that executes a specific function.
+/// 
+/// The function this pool's workers execute accepts an owned "job" and a mutable reference to an internal
+/// "state". This model was adopted as oppsed to closures to allow for workers to be spawned without the
+/// function/closure needing to be respecified. Because of this cloneability, dynamic threadpools have a
+/// [`resize`] method which only requires a min and max bound on the new size and a load scaling constant.
+/// The actual size this pool chooses within those bounds will be based on a measured load value which is
+/// recalculated every time the threadpool is resized.
+/// 
+/// [`resize`]: crate::DynamicThreadPool::resize
 pub struct DynamicThreadPool<J, S, E> {
     name: String,
     pool: Vec<Worker<J>>,
@@ -36,9 +39,11 @@ where
     S: Send + Clone + 'static,
     E: Into<Box<dyn Error>> + 'static
 {
-    /// Creates a new threadpool with the given name and initial size. The initial state provided is the
-    /// state in which all new worker threads will be spawned. This method spawns the given number of worker
-    /// threads which immediately block while wait for incoming jobs to complete.
+    /// Creates a new threadpool with the given name and initial size.
+    /// 
+    /// The initial state provided is the state in which all new worker threads will be spawned.
+    /// This method spawns the given number of worker threads which immediately block while waiting
+    /// for incoming jobs to complete.
     pub fn open(name: String, initial_size: usize, initial_state: S, executor: fn(J, &mut S) -> Result<(), E>) -> Self {
         let mut pool = DynamicThreadPool {
             name,
