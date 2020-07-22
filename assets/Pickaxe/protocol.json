@@ -1,6 +1,35 @@
 [{
         "name": "__internal__",
-        "server_bound": [{
+        "server_bound": [
+            {
+                "name": "Client_Connected",
+                "id": "0xFF",
+                "sender_independent": true,
+                "dispatch": false,
+                "fields": [
+                    {
+                        "name": "id",
+                        "type": "usize"
+                    },
+                    {
+                        "name": "write_handle",
+                        "type": "crate::network::AsyncWriteHandle"
+                    }
+                ]
+            },
+            {
+                "name": "Client_Disconnected",
+                "id": "0xFF",
+                "sender_independent": true,
+                "dispatch": false,
+                "fields": [
+                    {
+                        "name": "id",
+                        "type": "usize"
+                    }
+                ]
+            },
+            {
                 "name": "Login_Success_Server",
                 "id": "0xFF",
                 "fields": [{

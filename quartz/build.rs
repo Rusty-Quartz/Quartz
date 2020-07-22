@@ -5,6 +5,14 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+fn main() {
+    gen_packet_handlers();
+
+    println!("cargo:rerun-if-changed=../../assets/Pickaxe/protocol.json");
+    println!("cargo:rerun-if-changed=../../assets/Pickaxe/mappings.json");
+    println!("cargo:rerun-if-changed=build.rs");
+}
+
 const INVALID_MACRO: &str =
 r#"macro_rules! invalid_packet {
     ($id:expr, $len:expr) => {
@@ -20,7 +28,6 @@ pub enum ServerBoundPacket {"#;
 const CLIENT_PACKET_START: &str =
 r#"#[doc = "Packets sent from the server to the client."]
 #[allow(missing_docs)]
-#[derive(quartz_macros::Listenable)]
 pub enum ClientBoundPacket {"#;
 
 const DESERIALIZER_START: &str =
@@ -47,19 +54,12 @@ r#"#[doc = "Dispatches a synchronous packet on the server thread."]
 pub fn dispatch_sync_packet(wrapped_packet: &WrappedServerBoundPacket, handler: &mut QuartzServer) {
     match &wrapped_packet.packet {"#;
 
-fn main() {
-    parse_packets();
-    println!("cargo:rerun-if-changed=../../assets/Pickaxe/protocol.json");
-    println!("cargo:rerun-if-changed=../../assets/Pickaxe/mappings.json");
-    println!("cargo:rerun-if-changed=build.rs");
-}
-
-fn parse_packets() {
+fn gen_packet_handlers() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("packet_output.rs");
 
     // Load in json files
-    let states_raw: Vec<State> = serde_json::from_str::<Vec<State>>(include_str!("../assets/Pickaxe/protocol.json")).expect("Error reading file");
+    let states_raw: Vec<StatePacketInfo> = serde_json::from_str::<Vec<StatePacketInfo>>(include_str!("../assets/Pickaxe/protocol.json")).expect("Error reading file");
     let mappings_raw: Mappings = serde_json::from_str::<Mappings>(include_str!("../assets/Pickaxe/mappings.json")).expect("Error reading mappings.json");
 
     let mut states: Vec<String> = Vec::new();
@@ -92,21 +92,32 @@ fn parse_packets() {
         }
     }
 
-    // gen server packet enum
+    ////////////////////////////////////////
+    // Server Packet Enum
+    ////////////////////////////////////////
+
     let mut server_packet_enum = SERVER_PACKET_START.to_owned();
-    server_packet_enum.push_str(&packet_enum_parser(server_bound.clone(), &mappings));
+    server_packet_enum.push_str(&gen_packet_enum(server_bound.clone(), &mappings));
     server_packet_enum.push_str("\n}");
 
-    // gen client packet enum
+    ////////////////////////////////////////
+    // Client Packet Enum
+    ////////////////////////////////////////
+
     let mut client_packet_enum = CLIENT_PACKET_START.to_owned();
-    client_packet_enum.push_str(&packet_enum_parser(client_bound.clone(), &mappings));
+    client_packet_enum.push_str(&gen_packet_enum(client_bound.clone(), &mappings));
     client_packet_enum.push_str("\n}");
 
-    // gen deserializers
+    ////////////////////////////////////////
+    // Deserializers
+    ////////////////////////////////////////
+
     let mut deserializers = DESERIALIZER_START.to_owned();
     
     for state in states_raw {
-        if state.name == "__internal__" {continue;}
+        if state.name == "__internal__" {
+            continue;
+        }
 
         let mut state_str = format!("\n\t\tConnectionState::{} => {{", state.name);
 
@@ -139,10 +150,10 @@ fn parse_packets() {
                     packet_str.push_str(&format!(
                         "\n\t\t\t\t\tconn.forward_to_server(ServerBoundPacket::{}{}",
                         snake_to_camel(&packet.name),
-                        if used_fields(&packet) == 0 { ");" } else { "{" }
+                        if used_field_count(&packet) == 0 { ");" } else { "{" }
                     ));
                 
-                    if used_fields(&packet) == 0 {
+                    if used_field_count(&packet) == 0 {
                         state_str.push_str(&format!("{}\n\t\t\t\t}},", packet_str));
                         continue;
                     }
@@ -163,13 +174,15 @@ fn parse_packets() {
         }
 
         state_str.push_str("\n\t\t},");
-
         deserializers.push_str(&state_str);
     }
 
     deserializers.push_str("\n\t\t_ => {}\n\t}\n}");
 
-    // gen serializers
+    ////////////////////////////////////////
+    // Serializers
+    ////////////////////////////////////////
+
     let mut serlializers = SERIALIZER_START.to_owned();
 
     for packet in client_bound {
@@ -192,10 +205,13 @@ fn parse_packets() {
     }
     serlializers.push_str("\n\t}\n}");
 
-    // gen dispatch_sync_packet function
+    ////////////////////////////////////////
+    // Sync Packet Dispatcher
+    ////////////////////////////////////////
+
     let mut dispatch = DISPATCHER_START.to_owned();
 
-    for packet in server_bound {
+    for packet in server_bound.iter().filter(|packet| packet.dispatch) {
         dispatch.push_str(&format!(
             "\n\t\tServerBoundPacket::{} {{{}}} => handler.{}({}),",
             snake_to_camel(&packet.name),
@@ -209,7 +225,11 @@ fn parse_packets() {
         ));
     }
 
-    dispatch.push_str("\n\t}\n}");
+    dispatch.push_str("\n\t\t_ => {}\n\t}\n}");
+
+    ////////////////////////////////////////
+    // Write Output
+    ////////////////////////////////////////
 
     fs::write(&dest_path, format!(
         "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}",
@@ -222,13 +242,12 @@ fn parse_packets() {
     )).unwrap();
 }
 
-fn packet_enum_parser(packet_arr: Vec<Packet>, mappings: &HashMap<String, String>) -> String {
+fn gen_packet_enum(packet_arr: Vec<Packet>, mappings: &HashMap<String, String>) -> String {
     let mut output = String::new();
 
     for packet in packet_arr {
-        
         // If no fields are used
-        if used_fields(&packet) == 0 {
+        if used_field_count(&packet) == 0 {
             output.push_str(&format!("\n\t{},", snake_to_camel(&packet.name)));
             continue;
         }
@@ -236,30 +255,28 @@ fn packet_enum_parser(packet_arr: Vec<Packet>, mappings: &HashMap<String, String
         let mut packet_str = format!("\n\t{} {{", snake_to_camel(&packet.name));
 
         for field in packet.fields {
-            if field.unused.is_some() && field.unused.unwrap() {continue;}
+            if field.unused.unwrap_or(false) {
+                continue;
+            }
 
             packet_str.push_str(&format!("\n\t\t{}: {},", field.name, parse_type(&field.var_type, mappings)))
         }
 
         packet_str.push_str("\n\t},");
-
         output.push_str(&packet_str);
     }
 
     output
 }
 
-fn snake_to_camel(str: &str) -> String {
-    str.replace("_", "")
-}
-
-fn used_fields(packet: &Packet) -> usize {
-    packet.fields.iter().filter(|field| field.unused.is_none() || !field.unused.unwrap()).collect::<Vec<&Field>>().len()
+fn used_field_count(packet: &Packet) -> usize {
+    packet.fields.iter().filter(|field| !field.unused.unwrap_or(false)).count()
 }
 
 fn parse_type(field: &str, mappings: &HashMap<String, String>) -> String {
     let split = field.split("(").collect::<Vec<&str>>();
     let split = split.get(0).unwrap();
+
     if mappings.contains_key(split.to_owned()) {
         mappings.get(split.to_owned()).unwrap().to_owned()
     } else {
@@ -267,8 +284,12 @@ fn parse_type(field: &str, mappings: &HashMap<String, String>) -> String {
     }
 }
 
+fn snake_to_camel(str: &str) -> String {
+    str.replace("_", "")
+}
+
 #[derive(Deserialize, Clone)]
-struct State {
+struct StatePacketInfo {
     name: String,
     server_bound: Option<Vec<Packet>>,
     client_bound: Option<Vec<Packet>>
@@ -280,6 +301,8 @@ struct Packet {
     asynchronous: Option<bool>,
     unimplemented: Option<bool>,
     sender_independent: Option<bool>,
+    #[serde(default = "Packet::dispatch_default")]
+    dispatch: bool,
     name: String,
     id: String,
     fields: Vec<Field>
@@ -311,6 +334,11 @@ impl Packet {
             output.push_str(&format!("{},", field.name))
         }
         output
+    }
+
+    #[inline(always)]
+    fn dispatch_default() -> bool {
+        true
     }
 }
 

@@ -6,7 +6,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use nbt::read::{read_nbt_gz_compressed, read_nbt_zlib_compressed};
-use util::DynamicThreadPool;
+use util::threadpool::{DistributionStrategy, DynamicThreadPool};
 use crate::world::{
     chunk::Chunk,
     location::{
@@ -32,19 +32,20 @@ pub struct ChunkProvider {
 }
 
 impl ChunkProvider {
-    pub fn new(world_name: &str, root_directory: &Path) -> io::Result<Self> {
+    pub fn new<P: AsRef<Path>>(world_name: &str, root_directory: P) -> io::Result<Self> {
         // Ensure the root directory exists
-        fs::create_dir_all(root_directory)?;
+        fs::create_dir_all(root_directory.as_ref())?;
 
-        let regions = RegionMap::new(root_directory.to_owned());
+        let regions = RegionMap::new(root_directory.as_ref().to_owned());
         let (chunk_sender, chunk_receiver) = mpsc::channel::<Chunk>();
         let pool = DynamicThreadPool::open(
-            format!("{}/ChunkProvider", world_name),
+            &format!("{}/ChunkProvider", world_name),
             1, // Initial size
             WorkerHandle {
                 regions: regions.clone(),
                 chunk_channel: chunk_sender
             },
+            DistributionStrategy::Fast,
             Self::handle_request
         );
 
@@ -123,6 +124,7 @@ impl ChunkProvider {
                     log::warn!("Chunk generation not supported yet.");
                 }
             },
+            
             ProviderRequest::Unload(chunk_coords) => {
                 let region_coords = chunk_coords >> REGION_SCALE;
 

@@ -37,7 +37,7 @@ macro_rules! parse_nbt_array {
 /// 
 /// # Example
 /// ```
-/// let snbt_string = r#"{string:Struff, list:[I;1,2,3,4,5]}"#.to_owned();
+/// let snbt_string = r#"{string:Stuff, list:[I;1,2,3,4,5]}"#.to_owned();
 /// let parser = SnbtParser::new(&snbt_string, 0);
 /// let tag = parser.parse().unwrap();
 /// assert_eq!(tag.get_string("string"), "Stuff");
@@ -45,12 +45,13 @@ macro_rules! parse_nbt_array {
 /// ```
 pub struct SnbtParser<'sp> {
     data: Peekable<Chars<'sp>>,
-    cursor: usize
+    /// The current position the parser is at in the data.
+    pub cursor: usize
 }
 
 impl<'sp> SnbtParser<'sp> {
     /// Creates a new SNBT parser over the given string.
-    pub fn new(data: &'sp String, offset: usize) -> Self {
+    pub fn new(data: &'sp str, offset: usize) -> Self {
         SnbtParser {
             data: data.chars().peekable(),
             cursor: offset
@@ -428,7 +429,7 @@ impl<'sp> SnbtParser<'sp> {
                         if variant_eq(&val, output.get(0).unwrap()) {
                             output.add(val);
                         } else {
-                            return Err(format!("Can't insert value of type {} into list of type {}", val.type_string(), output.get(0).unwrap().type_string()))
+                            return Err(format!("Can't insert value of type {} into list of type {}", val.type_string(), output.get::<&NbtTag>(0).unwrap().type_string()))
                         }
                     }
                 },

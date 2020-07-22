@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Display, Formatter};
 use std::str;
 
 use serde::{Serialize, Deserialize};
@@ -70,9 +70,9 @@ impl Default for Component {
     }
 }
 
-impl fmt::Display for Component {
+impl Display for Component {
     // Display the component
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             // Handled by the text component struct
             Component::Text(inner) => inner.fmt(f),
@@ -82,6 +82,25 @@ impl fmt::Display for Component {
                 Err(_) => write!(f, "{{}}")
             }
         }
+    }
+}
+
+/// A type which can be displayed by a series of components. These components should present data in a friendly,
+/// user-facing format.
+pub trait ToComponentParts {
+    /// Creates a series of components representing the data in this object.
+    fn to_component_parts(&self) -> Vec<Component>;
+}
+
+/// A type which can be converted into a single component to be displayed. This trait requires `ToComponentParts`,
+/// and by default will create an empty text component color white whose children are the components produced by
+/// `to_component_parts`.
+pub trait ToComponent: ToComponentParts {
+    /// Creates a component representing the data in this object.
+    fn to_component(&self) -> Component {
+        let mut text_component = TextComponent::new(String::new(), Some(PredefinedColor::White.into()));
+        text_component.extra = Some(self.to_component_parts());
+        Component::Text(text_component)
     }
 }
 
@@ -184,7 +203,7 @@ impl TextComponent {
 
     // Apply just the formatting of this component
     #[cfg(unix)]
-    fn apply_format(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn apply_format(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Apply the color
         if let Some(color) = &self.color {
             color.apply(f)?;
@@ -213,9 +232,9 @@ impl TextComponent {
     }
 }
 
-impl fmt::Display for TextComponent {
+impl Display for TextComponent {
     #[cfg(unix)]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Gnome supports hyperlinks, so if we have a link as the click event, apply it
         let mut link_applied = false;
         if let Some(event) = &self.click_event {
@@ -254,7 +273,7 @@ impl fmt::Display for TextComponent {
     }
 
     #[cfg(not(unix))]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		write!(f, "{}", self.text)?;
 		if let Some(children) = &self.extra {
 			for child in children.iter() {

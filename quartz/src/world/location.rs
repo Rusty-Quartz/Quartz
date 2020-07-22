@@ -1,7 +1,7 @@
 use std::fmt::{self, Display, Formatter};
 use std::ops::{Shl, Shr};
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockPosition {
     pub x: i32,
     pub y: i16,

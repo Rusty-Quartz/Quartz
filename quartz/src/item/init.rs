@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use crate::item::{Item, ItemInfo};
@@ -30,7 +31,7 @@ pub fn init_items() {
     let mut item_list: HashMap<UnlocalizedName, Item> = HashMap::with_capacity(raw_list.len());
 
     for (name, raw_data) in raw_list {
-        let uln = UnlocalizedName::parse(&name).expect("Invalid item name in items.json");
+        let uln = UnlocalizedName::from_str(&name).expect("Invalid item name in items.json");
 
         // This should never happen if the data integrity is not compromised 
         assert_ne!(0, raw_data.stack_size, "Item has max stack size of 0, {}", name);

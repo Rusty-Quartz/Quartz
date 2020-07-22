@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
 use lazy_static::lazy_static;
 use log::info;
 use serde::{Serialize, Deserialize};
@@ -61,7 +62,7 @@ pub fn init_blocks() {
     let mut largest_state: usize = 0;
 
     for (name, block_info) in parsed_data.iter() {
-        let uln = UnlocalizedName::parse(name).expect("Invalid block name encountered during registration.");
+        let uln = UnlocalizedName::from_str(name).expect("Invalid block name encountered during registration.");
         name_map.insert(name.clone(), uln.clone());
 
         // This should never happen if the data integrity is not compromised

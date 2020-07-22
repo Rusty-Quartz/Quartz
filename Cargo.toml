@@ -4,7 +4,6 @@ members = [
     "nbt",
     "quartz",
     "quartz_macros",
-    "quartz_launcher",
     "quartz_plugins",
     "quartz_plugins/example_plugin",
     "util"

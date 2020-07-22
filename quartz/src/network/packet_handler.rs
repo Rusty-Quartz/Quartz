@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::{
     Arc,
     mpsc::Sender
@@ -12,9 +13,9 @@ use rand::{thread_rng, Rng};
 use regex::Regex;
 use lazy_static::lazy_static;
 use hex::ToHex;
+use util::Uuid;
 use crate::network::{AsyncClientConnection, ConnectionState, PacketBuffer};
 use crate::server::{self, QuartzServer};
-use util::Uuid;
 use crate::command::CommandSender;
 
 /// The numeric protocol version the server uses.
@@ -217,7 +218,7 @@ impl AsyncPacketHandler {
         let mojang_req = ureq::get(&url).call();
         if mojang_req.ok() {
             match mojang_req.into_json_deserialize::<AuthResponse>() {
-                Ok(json) => match Uuid::from_string(&json.id) {
+                Ok(json) => match Uuid::from_str(&json.id) {
                     Ok(uuid) => conn.send_packet(&ClientBoundPacket::LoginSuccess {
                         uuid,
                         username: self.username.clone()
@@ -275,22 +276,22 @@ impl QuartzServer {
         let max_players = self.config.max_players.to_string();
 
         // Add String header
-        let mut string_vec:Vec<u16> = vec![0x00A7, 0x0031, 0x0000];
+        let mut string_vec: Vec<u16> = vec![0x00A7, 0x0031, 0x0000];
 
         // Add all fields to vector
-        string_vec.append(&mut protocol_version.chars().rev().collect::<String>().encode_utf16().collect::<Vec<u16>>());
+        string_vec.extend(protocol_version.chars().rev().collect::<String>().encode_utf16());
         string_vec.push(0x0000);
 
-        string_vec.append(&mut version.encode_utf16().collect::<Vec<u16>>());
+        string_vec.extend(version.encode_utf16());
         string_vec.push(0x0000);
 
-        string_vec.append(&mut motd.as_plain_text().encode_utf16().collect::<Vec<u16>>());
+        string_vec.extend(motd.as_plain_text().encode_utf16());
         string_vec.push(0x0000);
 
-        string_vec.append(&mut player_count.encode_utf16().collect::<Vec<u16>>());
+        string_vec.extend(player_count.encode_utf16());
         string_vec.push(0x0000);
 
-        string_vec.append(&mut max_players.encode_utf16().collect::<Vec<u16>>());
+        string_vec.extend(max_players.encode_utf16());
 
         let mut buffer = PacketBuffer::new(3 + string_vec.len());
 
@@ -315,7 +316,7 @@ impl QuartzServer {
             "players": {
                 "max": self.config.max_players,
                 "online": self.client_list.online_count(),
-                "sample": [] // Maybe implement this in the future
+                "sample": [] // TODO: Decide whether or not to implement "sample" in status req
             },
             "description": self.config.motd
         });
@@ -345,12 +346,15 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection, private_key: Arc
                 }
             },
             Err(e) => {
-                // TODO: handle properly
                 error!("Error in connection handler: {}", e);
+                conn.shutdown();
                 break;
             }
         }
     }
 
+    conn.forward_to_server(ServerBoundPacket::ClientDisconnected {
+        id: conn.id
+    });
     debug!("Client disconnected");
 }

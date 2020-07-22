@@ -310,10 +310,12 @@ impl<'cmd> From<Option<&'cmd CommandNode>> for ParserRedirection<'cmd> {
 
 /// A wrapper around command.
 #[derive(Clone)]
+#[repr(transparent)]
 pub struct ExecutableCommand<'cmd>(&'cmd str);
 
 impl<'cmd> ExecutableCommand<'cmd> {
     /// Dispatches the wrapped command using parameters from the given context.
+    #[inline]
     pub fn execute_with(&self, context: CommandContext<'cmd>) {
         context.executor.dispatch(self.0, context.server, context.sender);
     }
@@ -509,8 +511,9 @@ impl CommandNode {
         }
     }
 
-    // TODO: Complete documentation
-    /// Applies this node to the given context, potentially modifying the parser sate.
+    /// Applies this node to the given context, potentially modifying the parser sate. Argument nodes will attempt to parse
+    /// their value from the string argument and add it to the argument map in the context. Redirection nodes will send the
+    /// parser to a different node, at which point more arguments and literals can be consumed. Literals have no effect.
     fn apply<'cmd>(
         &'cmd self,
         state: &mut ParserState<'cmd>,

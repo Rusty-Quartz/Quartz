@@ -1,7 +1,61 @@
-use std::cell::Cell;
+use std::cell::{Cell, UnsafeCell};
 use std::marker::Unsize;
 use std::ops::{CoerceUnsized, Deref, DerefMut};
 use std::ptr;
+
+pub struct SingleAccessor<T> {
+    value: UnsafeCell<T>,
+    taken: Cell<bool>
+}
+
+unsafe impl<T: Send> Send for SingleAccessor<T> { }
+
+impl<T> SingleAccessor<T> {
+    #[inline]
+    pub const fn new(value: T) -> Self {
+        SingleAccessor {
+            value: UnsafeCell::new(value),
+            taken: Cell::new(false)
+        }
+    }
+
+    #[inline]
+    pub fn take(&self) -> Option<AccessGuard<'_, T>> {
+        if self.taken.replace(true) {
+            return None;
+        }
+
+        Some(AccessGuard {
+            value: &self.value,
+            flag: &self.taken
+        })
+    }
+}
+
+pub struct AccessGuard<'a, T> {
+    value: &'a UnsafeCell<T>,
+    flag: &'a Cell<bool>
+}
+
+impl<'a, T> Drop for AccessGuard<'a, T> {
+    fn drop(&mut self) {
+        self.flag.set(false);
+    }
+}
+
+impl<'a, T> Deref for AccessGuard<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.value.get() }
+    }
+}
+
+impl<'a, T> DerefMut for AccessGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.value.get() }
+    }
+}
 
 /// Acts the same as a box in terms of memory management and provides an interface allowing for interior
 /// mutability.
@@ -14,6 +68,7 @@ use std::ptr;
 /// [`PartialMove`]: crate::single_access::PartialMove
 /// [`RefCell`]: std::cell::RefCell
 /// [`take`]: crate::single_access::SingleAccessorBox::take
+// TODO: Delete if unused
 #[repr(transparent)]
 pub struct SingleAccessorBox<T: ?Sized> {
     value: Cell<*mut T>

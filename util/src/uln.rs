@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug, Display, Formatter};
+use std::str::FromStr;
 
 /// An unlocalized name is a two-part identifier composed of a namespace and identifier separated
 /// by a colon.
@@ -29,6 +30,10 @@ impl UnlocalizedName {
             identifier: identifier.to_owned()
         }
     }
+}
+
+impl FromStr for UnlocalizedName {
+    type Err = &'static str;
 
     /// Parses the given string into an unlocalized name.
     /// 
@@ -41,31 +46,31 @@ impl UnlocalizedName {
     /// 
     /// ```
     /// # use util::UnlocalizedName;
-    /// let stone = UnlocalizedName::parse("minecraft:stone").unwrap();
+    /// let stone = UnlocalizedName::from_str("minecraft:stone").unwrap();
     /// assert_eq!(stone.namespace, "minecraft");
     /// assert_eq!(stone.identifier, "stone");
     /// 
-    /// let advancement = UnlocalizedName::parse("story/mine_diamond").unwrap();
+    /// let advancement = UnlocalizedName::from_str("story/mine_diamond").unwrap();
     /// assert_eq!(advancement.namespace, "minecraft");
     /// 
-    /// let foobar = UnlocalizedName::parse("foo:bar").unwrap();
+    /// let foobar = UnlocalizedName::from_str("foo:bar").unwrap();
     /// assert_eq!(foobar.namespace, "foo");
     /// assert_eq!(foobar.identifier, "bar");
     /// 
-    /// assert!(UnlocalizedName::parse(":P").is_err());
+    /// assert!(UnlocalizedName::from_str(":P").is_err());
     /// ```
-    pub fn parse(string: &str) -> Result<UnlocalizedName, &'static str> {
-        let index = match string.find(':') {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let index = match s.find(':') {
             Some(index) => index,
-            None => return Ok(Self::minecraft(string))
+            None => return Ok(Self::minecraft(s))
         };
 
-        if index == 0 || index == string.len() - 1 {
+        if index == 0 || index == s.len() - 1 {
             Err("Expected two strings separated by a colon.")
         } else {
             Ok(UnlocalizedName {
-                namespace: string[0..index].to_owned(),
-                identifier: string[index + 1..].to_owned()
+                namespace: s[0..index].to_owned(),
+                identifier: s[index + 1..].to_owned()
             })
         }
     }

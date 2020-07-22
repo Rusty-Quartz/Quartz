@@ -8,7 +8,6 @@ use std::rc::Rc;
 use std::sync::{
     Arc,
     Mutex,
-    MutexGuard,
     atomic::{AtomicBool, Ordering},
     mpsc::{self, Sender, Receiver}
 };
@@ -31,7 +30,6 @@ use crate::block::init_blocks;
 use crate::item::init_items;
 use crate::config::Config;
 use crate::network::*;
-use crate::network::PacketBuffer;
 use crate::command::*;
 use quartz_plugins::PluginManager;
 
@@ -52,9 +50,9 @@ pub struct QuartzServer {
     /// The server config.
     pub config: Config,
     /// The list of connected clients.
-    pub client_list: ClientList,
+    pub(crate) client_list: ClientList,
     /// A handle to interact with the console.
-    pub console_interface: Arc<Interface<DefaultTerminal>>,
+    pub(crate) console_interface: Arc<Interface<DefaultTerminal>>,
     /// A cloneable channel to send packets to the main server thread.
     sync_packet_sender: Sender<WrappedServerBoundPacket>,
     /// The receiver for packets that need to be handled on the server thread.
@@ -62,7 +60,7 @@ pub struct QuartzServer {
     /// A map of thread join handles to join when the server is dropped.
     join_handles: HashMap<String, JoinHandle<()>>,
     /// The command executor instance for the server.
-    pub command_executor: Rc<RefCell<CommandExecutor>>,
+    pub(crate) command_executor: Rc<RefCell<CommandExecutor>>,
     /// The server clock, used to time and regulate ticks.
     pub clock: ServerClock,
     /// The server plugin manager.
@@ -209,7 +207,6 @@ impl QuartzServer {
         }
 
         let sync_packet_sender = self.sync_packet_sender.clone();
-        let client_list = self.client_list.clone();
 
         self.add_join_handle("TCP Server Thread", thread::spawn(move || {
             let mut next_connection_id: usize = 0;
@@ -231,21 +228,27 @@ impl QuartzServer {
                         debug!("Client connected");
 
                         // Construct a connection wrapper around the socket
-                        let packet_sender = sync_packet_sender.clone();
-                        let conn = AsyncClientConnection::new(next_connection_id, socket, packet_sender);
-                        next_connection_id += 1;
+                        let conn = AsyncClientConnection::new(
+                            next_connection_id,
+                            socket,
+                            sync_packet_sender.clone()
+                        );
 
                         // Register the client
-                        client_list.add_client(conn.id, conn.create_write_handle());
+                        let result = sync_packet_sender.send(WrappedServerBoundPacket::new(0, ServerBoundPacket::ClientConnected {
+                            id: next_connection_id,
+                            write_handle: conn.create_write_handle()
+                        }));
+                        if let Err(e) = result {
+                            error!("Fatal error: failed to register new client: {}", e);
+                            return;
+                        }
     
                         // Spawn a thread to handle the connection asynchronously
-                        let client_list_clone = client_list.clone();
                         let key_pair_clone = key_pair.clone();
-                        thread::spawn(move || {
-                            let client_id = conn.id;
-                            handle_async_connection(conn, key_pair_clone);
-                            client_list_clone.remove_client(client_id);
-                        });
+                        thread::spawn(move || handle_async_connection(conn, key_pair_clone));
+
+                        next_connection_id += 1;
                     },
     
                     // Wait before checking for a new connection and exit if the server is no longer running
@@ -288,8 +291,12 @@ impl QuartzServer {
     }
 
     fn handle_packets(&mut self) {
-        while let Ok(packet) = self.sync_packet_receiver.try_recv() {
-            dispatch_sync_packet(&packet, self);
+        while let Ok(wrapped_packet) = self.sync_packet_receiver.try_recv() {
+            match wrapped_packet.packet {
+                ServerBoundPacket::ClientConnected {id, write_handle} => self.client_list.add_client(id, write_handle),
+                ServerBoundPacket::ClientDisconnected {id} => self.client_list.remove_client(id),
+                _ => dispatch_sync_packet(&wrapped_packet, self)
+            }
         }
     }
 }
@@ -380,56 +387,43 @@ impl ServerClock {
 
 /// A thread-safe wrapper around a map of clients and their connection IDs.
 #[repr(transparent)]
-pub struct ClientList(Arc<Mutex<HashMap<usize, Client>>>);
+pub struct ClientList(HashMap<usize, Client>);
 
 impl ClientList {
     /// Creates a new, empty client list.
     pub fn new() -> Self {
-        ClientList(Arc::new(Mutex::new(HashMap::new())))
-    }
-
-    fn lock(&self) -> MutexGuard<'_, HashMap<usize, Client>> {
-        match self.0.lock() {
-            Ok(guard) => guard,
-            Err(_) => panic!("Client list mutex poisoned.")
-        }
+        ClientList(HashMap::new())
     }
 
     /// Adds a new client with the given ID and write handle.
-    pub fn add_client(&self, client_id: usize, connection: AsyncWriteHandle) {
-        self.lock().insert(client_id, Client::new(connection));
+    pub fn add_client(&mut self, client_id: usize, connection: AsyncWriteHandle) {
+        self.0.insert(client_id, Client::new(connection));
     }
 
     /// Removes the client with the given ID.
-    pub fn remove_client(&self, client_id: usize) {
-        self.lock().remove(&client_id);
+    pub fn remove_client(&mut self, client_id: usize) {
+        self.0.remove(&client_id);
     }
 
     /// Returns the number of players currently online.
     pub fn online_count(&self) -> usize {
-        self.lock().iter().map(|(_id, client)| client.player_id).flatten().count()
+        self.0.iter().map(|(_id, client)| client.player_id).flatten().count()
     }
 
     /// Sends a packet to the client with the given ID.
-    pub fn send_packet(&self, client_id: usize, packet: ClientBoundPacket) {
-        match self.lock().get_mut(&client_id) {
+    pub fn send_packet(&mut self, client_id: usize, packet: ClientBoundPacket) {
+        match self.0.get_mut(&client_id) {
             Some(client) => client.connection.send_packet(packet),
             None => warn!("Attempted to send packet to disconnected client.")
         }
     }
 
     /// Sends a raw byte buffer to the client with the given ID.
-    pub fn send_buffer(&self, client_id: usize, buffer: PacketBuffer) {
-        match self.lock().get_mut(&client_id) {
+    pub fn send_buffer(&mut self, client_id: usize, buffer: PacketBuffer) {
+        match self.0.get_mut(&client_id) {
             Some(client) => client.connection.send_buffer(buffer),
             None => warn!("Attempted to send buffer to disconnected client.")
         }
-    }
-}
-
-impl Clone for ClientList {
-    fn clone(&self) -> Self {
-        ClientList(self.0.clone())
     }
 }
 

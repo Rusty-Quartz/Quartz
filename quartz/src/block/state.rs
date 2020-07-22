@@ -3,8 +3,11 @@ use std::fmt::{self, Display, Formatter};
 use lazy_static::lazy_static;
 use util::UnlocalizedName;
 
+/// A type alias for the numeric block state type, currently `u16`.
 pub type StateID = u16;
 
+/// A specific block type, not to be confused with a block state which specifies variants of a type. This
+/// is used as a data handle for block states.
 pub struct Block {
     pub name: UnlocalizedName,
     pub properties: BTreeMap<String, Vec<String>>,
@@ -115,11 +118,11 @@ impl StateBuilder {
                     let owned_value = value.to_owned();
 
                     // Make sure the value being added is valid
-                    if !accepted_values.contains(&owned_value) {
-                        Err(format!("Invalid property value for {} in {}: {}", name, self.state.handle.name, value))
-                    } else {
+                    if accepted_values.contains(&owned_value) {
                         *val = owned_value;
                         Ok(())
+                    } else {
+                        Err(format!("Invalid property value for {} in {}: {}", name, self.state.handle.name, value))
                     }
                 },
 

@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use util::UnlocalizedName;
 use nbt::NbtCompound;
 use crate::item::get_item;
@@ -65,10 +66,10 @@ impl ItemStack {
     /// ```
     /// For `tag` format check https://minecraft.gamepedia.com/Player.dat_format#Item_structure
     pub fn write_nbt(&self, tag: &mut NbtCompound) {
-        tag.set_byte("Count".to_owned(), self.count as i8);
-        tag.set_byte("Damage".to_owned(), self.damage as i8);
-        tag.set_string("id".to_owned(), self.item.id.to_string());
-        tag.set_compound("tag".to_owned(), self.nbt.clone());
+        tag.set("Count".to_owned(), self.count as i8);
+        tag.set("Damage".to_owned(), self.damage as i8);
+        tag.set("id".to_owned(), self.item.id.to_string());
+        tag.set("tag".to_owned(), self.nbt.clone());
     }
 
     /// Create an ItemStack from a nbt tag
@@ -84,18 +85,18 @@ impl ItemStack {
     /// For `tag` format check https://minecraft.gamepedia.com/Player.dat_format#Item_structure
     pub fn from_nbt(tag: NbtCompound) -> Self {
         let tag = match tag.has("tag") {
-            true => match tag.get_compound("tag") {
+            true => match tag.get::<&NbtCompound>("tag") {
                 Some(tag) => tag.clone().to_owned(),
                 _ => NbtCompound::new()
             },
             _ => NbtCompound::new()
         };
 
-        let damage = if tag.has("Damage") { tag.get_int("Damage").unwrap_or(0) } else { 0 } as u32;
+        let damage = if tag.has("Damage") { tag.get::<i32>("Damage").unwrap_or(0) } else { 0 } as u32;
 
         ItemStack {
-            item: get_item(&UnlocalizedName::parse(tag.get_string("id").unwrap_or("minecraft:air")).unwrap()).unwrap(),
-            count: tag.get_byte("Count").unwrap_or(0) as u8,
+            item: get_item(&UnlocalizedName::from_str(tag.get("id").unwrap_or("minecraft:air")).unwrap()).unwrap(),
+            count: tag.get("Count").unwrap_or(0) as u8,
             damage,
             nbt: tag
         }

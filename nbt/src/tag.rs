@@ -1,16 +1,16 @@
 use std::collections::HashMap;
-use std::ops::{Index, IndexMut};
-use std::iter::*;
+use std::convert::{AsMut, AsRef, TryFrom, TryInto};
 use std::fmt;
-
+use std::ops::{Index, IndexMut};
+use std::option::NoneError;
+use std::str::FromStr;
 use chat::{
     Component,
     TextComponentBuilder,
     color::PredefinedColor,
-    component::TextComponent
+    component::{ToComponent, ToComponentParts}
 };
-use doc_comment::doc_comment;
-
+use crate::NbtRepr;
 use crate::snbt::SnbtParser;
 
 /// The generic NBT tag type, containing all supported tag variants which wrap around a corresponding rust type.
@@ -40,18 +40,6 @@ pub enum NbtTag {
     IntArray(Vec<i32>),
     /// An array (vec) of signed, eight-byte integers.
     LongArray(Vec<i64>)
-}
-
-// Formats some kind of list to the given formatter
-macro_rules! to_component {
-    () => {
-        #[doc = "Converts this tag entity into a formatted text component designed for user-friendly displaying of NBT data."]
-        pub fn to_component(&self) -> Component {
-            let mut text_component = TextComponent::new(String::new(), Some(PredefinedColor::White.into()));
-            text_component.extra = Some(self.to_component_parts());
-            Component::Text(text_component)
-        }
-    };
 }
 
 impl NbtTag {
@@ -178,9 +166,9 @@ impl NbtTag {
         snbt_string.push(surrounding);
         snbt_string
     }
+}
 
-    /// Converts this tag into a sequence of components which when displayed together will depict
-    /// this tag's data in a user-friendly form.
+impl ToComponentParts for NbtTag {
     fn to_component_parts(&self) -> Vec<Component> {
         macro_rules! primitive_to_component {
             ($value:expr) => {
@@ -279,20 +267,20 @@ impl NbtTag {
             NbtTag::LongArray(value) => list_to_component!(value)
         }
     }
-
-    to_component!();
 }
+
+impl ToComponent for NbtTag { }
 
 // Display the tag in a user-friendly form
 impl fmt::Display for NbtTag {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.to_component())
+        self.to_component().fmt(f)
     }
 }
 
 // Implement the from trait for all the tag's internal types
 macro_rules! tag_from {
-    ($($type:ty, $tag:ident),*) => {
+    ($($type:ty, $tag:ident);*) => {
         $(
             impl From<$type> for NbtTag {
                 fn from(value: $type) -> NbtTag {
@@ -304,100 +292,133 @@ macro_rules! tag_from {
 }
 
 tag_from!(
-    i8, Byte,
-    i16, Short,
-    i32, Int,
-    i64, Long,
-    f32, Float,
-    f64, Double,
-    Vec<i8>, ByteArray,
-    String, StringModUtf8,
-    NbtList, List,
-    NbtCompound, Compound,
-    Vec<i32>, IntArray,
+    i8, Byte;
+    i16, Short;
+    i32, Int;
+    i64, Long;
+    f32, Float;
+    f64, Double;
+    Vec<i8>, ByteArray;
+    String, StringModUtf8;
+    NbtList, List;
+    NbtCompound, Compound;
+    Vec<i32>, IntArray;
     Vec<i64>, LongArray
 );
 
-// String slices are a special case
 impl From<&str> for NbtTag {
     fn from(value: &str) -> NbtTag {
         NbtTag::StringModUtf8(value.to_owned())
     }
 }
 
+impl From<bool> for NbtTag {
+    fn from(value: bool) -> NbtTag {
+        NbtTag::Byte(if value { 1 } else { 0 })
+    }
+}
+
+impl<T: NbtRepr> From<T> for NbtTag {
+    #[inline]
+    fn from(x: T) -> Self {
+        NbtTag::Compound(x.to_nbt())
+    }
+}
+
+macro_rules! prim_from_tag {
+    ($($type:ty, $tag:ident);*) => {
+        $(
+            impl TryFrom<&NbtTag> for $type {
+                type Error = NoneError;
+
+                fn try_from(tag: &NbtTag) -> Result<Self, Self::Error> {
+                    if let NbtTag::$tag(value) = tag {
+                        Ok(*value)
+                    } else {
+                        Err(NoneError)
+                    }
+                }
+            }
+        )*
+    };
+}
+
+prim_from_tag!(
+    i8, Byte;
+    i16, Short;
+    i32, Int;
+    i64, Long;
+    f32, Float;
+    f64, Double
+);
+
+impl TryFrom<&NbtTag> for bool {
+    type Error = NoneError;
+
+    fn try_from(tag: &NbtTag) -> Result<Self, Self::Error> {
+        match tag {
+            NbtTag::Byte(value) => Ok(*value != 0),
+            NbtTag::Short(value) => Ok(*value != 0),
+            NbtTag::Int(value) => Ok(*value != 0),
+            NbtTag::Long(value) => Ok(*value != 0),
+            _ => Err(NoneError)
+        }
+    }
+}
+
+macro_rules! ref_from_tag {
+    ($($type:ty, $tag:ident);*) => {
+        $(
+            impl<'a> TryFrom<&'a NbtTag> for &'a $type {
+                type Error = NoneError;
+
+                fn try_from(tag: &'a NbtTag) -> Result<Self, Self::Error> {
+                    if let NbtTag::$tag(value) = tag {
+                        Ok(value)
+                    } else {
+                        Err(NoneError)
+                    }
+                }
+            }
+
+            impl<'a> TryFrom<&'a mut NbtTag> for &'a mut $type {
+                type Error = NoneError;
+
+                fn try_from(tag: &'a mut NbtTag) -> Result<Self, Self::Error> {
+                    if let NbtTag::$tag(value) = tag {
+                        Ok(value)
+                    } else {
+                        Err(NoneError)
+                    }
+                }
+            }
+        )*
+    };
+}
+
+ref_from_tag!(
+    i8, Byte;
+    i16, Short;
+    i32, Int;
+    i64, Long;
+    f32, Float;
+    f64, Double;
+    Vec<i8>, ByteArray;
+    [i8], ByteArray;
+    String, StringModUtf8;
+    str, StringModUtf8;
+    NbtList, List;
+    NbtCompound, Compound;
+    Vec<i32>, IntArray;
+    [i32], IntArray;
+    Vec<i64>, LongArray;
+    [i64], LongArray
+);
+
 /// The NBT tag list type which is essentially just a wrapper for a vec of NBT tags.
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct NbtList(Vec<NbtTag>);
-
-// Gets an element from the list, returning a default value if the types do not match
-macro_rules! list_get {
-    ($type:ty, $method:ident, $tag:ident) => {
-        doc_comment! {
-            concat!(
-                "
-                Returns the value of a `", stringify!($tag), "` tag at the given index.
-                If the index is out of bounds, or the tag is not a `", stringify!($tag), "` tag, then `None` is returned.
-                "
-            ),
-            pub fn $method(&self, index: usize) -> Option<$type> {
-                if let Some(NbtTag::$tag(value)) = self.0.get(index) {
-                    Some(*value)
-                } else {
-                    None
-                }
-            }
-        }
-    };
-}
-
-// Generates get and get_mut functions that return references to tag values
-// Returns None on a type mismatch
-macro_rules! list_get_ref {
-    ($type:ty, $method:ident, $method_mut:ident, $tag:ident) => {
-        doc_comment! {
-            concat!(
-                "
-                Returns a shared reference to the value of a `", stringify!($tag), "` tag at the given index.
-                If the index is out of bounds, or the tag is not a `", stringify!($tag), "` tag, then `None` is returned.
-                "
-            ),
-            pub fn $method(&self, index: usize) -> Option<&$type> {
-                if let Some(NbtTag::$tag(value)) = self.0.get(index) {
-                    Some(value)
-                } else {
-                    None
-                }
-            }
-        }
-
-        doc_comment! {
-            concat!(
-                "
-                Returns a mutable reference to the value of a `", stringify!($tag), "` tag at the given index.
-                If the index is out of bounds, or the tag is not a `", stringify!($tag), "` tag, then `None` is returned.
-                "
-            ),
-            pub fn $method_mut(&mut self, index: usize) -> Option<&mut $type> {
-                if let Some(NbtTag::$tag(value)) = self.0.get_mut(index) {
-                    Some(value)
-                } else {
-                    None
-                }
-            }
-        }
-    };
-}
-
-// Generates a function for wrapping a rust type in a nbt tag and adding it to the list
-macro_rules! list_add {
-    ($type:ty, $method:ident) => {
-        #[doc = "Adds the given value to the back of the list. The value will be wrapped in a corresponding `NbtTag` variant."]
-        pub fn $method(&mut self, value: $type) {
-            self.0.push(NbtTag::from(value));
-        }
-    };
-}
 
 impl NbtList {
     /// Returns a new NBT tag list with an empty internal vec.
@@ -410,17 +431,133 @@ impl NbtList {
         NbtList(Vec::with_capacity(capacity))
     }
 
+    /// Clones the data in the given list and converts it into an [`NbtList`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use nbt::NbtList;
+    /// let list: Vec<i32> = vec![1, 2, 3];
+    /// let nbt_list = NbtList::clone_from(&list);
+    /// assert_eq!(nbt_list.iter_map::<_, i32>().flatten().collect::<Vec<i32>>(), list);
+    /// ```
+    ///
+    /// [`NbtList`]: crate::tag::NbtList
+    pub fn clone_from<'a, T, L>(list: &'a L) -> Self
+    where
+        T: Clone + Into<NbtTag> + 'a,
+        &'a L: IntoIterator<Item = &'a T>
+    {
+        NbtList(list.into_iter().map(|x| x.clone().into()).collect())
+    }
+
+    /// Creates an [`NbtList`] of [`NbtCompound`]s by mapping each element in the given list to its
+    /// NBT representation.
+    ///
+    /// [`NbtCompound`]: crate::tag::NbtCompound
+    /// [`NbtList`]: crate::tag::NbtList
+    pub fn clone_repr_from<'a, T, L>(list: &'a L) -> Self
+    where
+        T: NbtRepr + 'a,
+        &'a L: IntoIterator<Item = &'a T>
+    {
+        NbtList(list.into_iter().map(|x| x.to_nbt().into()).collect())
+    }
+
+    pub fn iter_map<'a, E, T: TryFrom<&'a NbtTag, Error = E>>(&'a self) -> impl Iterator<Item = Result<T, E>> + 'a {
+        self.0.iter().map(|tag| T::try_from(tag))
+    }
+
+    pub fn iter_mut_map<'a, E, T: TryFrom<&'a mut NbtTag, Error = E>>(&'a mut self) -> impl Iterator<Item = Result<T, E>> + 'a {
+        self.0.iter_mut().map(|tag| T::try_from(tag))
+    }
+
+    pub fn iter_into_repr<T>(&self) -> impl Iterator<Item = Result<T, T::Error>> + '_
+    where
+        T: NbtRepr,
+        T::Error: From<NoneError>
+    {
+        self.0.iter().map(|tag| T::from_nbt(tag.try_into()?))
+    }
+
+    pub fn clone_into<'a, T, L>(&'a self, list: &mut L)
+    where
+        T: Clone + 'a,
+        &'a T: TryFrom<&'a NbtTag>,
+        L: Extend<T>
+    {
+        list.extend(self.0.iter().flat_map(|tag| TryInto::<&T>::try_into(tag).ok().map(|x| x.clone())));
+    }
+
+    pub fn clone_repr_into<'a, T, L>(&'a self, list: &mut L)
+    where
+        T: NbtRepr,
+        T::Error: From<NoneError>,
+        L: Extend<T>
+    {
+        list.extend(self.0.iter().flat_map(|tag| T::from_nbt(tag.try_into()?)));
+    }
+
     /// Converts this tag list to a valid SNBT string.
     pub fn to_snbt(&self) -> String {
         let mut snbt_list = String::with_capacity(2 + 8 * self.len());
         snbt_list.push('[');
-        snbt_list.push_str(&self.iter().map(|tag| tag.to_snbt()).collect::<Vec<String>>().join(","));
+        snbt_list.push_str(&self.as_ref().iter().map(|tag| tag.to_snbt()).collect::<Vec<String>>().join(","));
         snbt_list.push(']');
         snbt_list
     }
 
-    /// Converts this tag list into a sequence of components which when displayed together will depict
-    /// this list's data in a user-friendly form.
+    /// Returns the length of this list.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns true if this tag list has a length of zero, false otherwise.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the value of the tag at the given index, or `None` if the index is out of bounds. This method
+    /// should be used for obtaining primitives and shared references to lists and compounds.
+    pub fn get<'a, T: TryFrom<&'a NbtTag>>(&'a self, index: usize) -> Option<T> {
+        T::try_from(self.0.get(index)?).ok()
+    }
+
+    /// Returns a mutable reference to the tag at the given index, or `None` if the index is out of bounds. This
+    /// method should be used for obtaining mutable references to lists and compounds.
+    pub fn get_mut<'a, T: TryFrom<&'a mut NbtTag>>(&'a mut self, index: usize) -> Option<T> {
+        T::try_from(self.0.get_mut(index)?).ok()
+    }
+
+    /// Pushes the given value to the back of the list after wrapping it in an `NbtTag`.
+    pub fn add<T: Into<NbtTag>>(&mut self, value: T) {
+        self.0.push(value.into());
+    }
+}
+
+impl<T: Into<NbtTag>> From<Vec<T>> for NbtList {
+    fn from(list: Vec<T>) -> Self {
+        NbtList(list.into_iter().map(|x| x.into()).collect())
+    }
+}
+
+impl AsRef<Vec<NbtTag>> for NbtList {
+    #[inline]
+    fn as_ref(&self) -> &Vec<NbtTag> {
+        &self.0
+    }
+}
+
+impl AsMut<Vec<NbtTag>> for NbtList {
+    #[inline]
+    fn as_mut(&mut self) -> &mut Vec<NbtTag> {
+        &mut self.0
+    }
+}
+
+impl ToComponentParts for NbtList {
     fn to_component_parts(&self) -> Vec<Component> {
         if self.is_empty() {
             return vec![Component::text("[]".to_owned())];
@@ -430,7 +567,7 @@ impl NbtList {
         components.push(Component::text("[".to_owned()));
         components.extend(self[0].to_component_parts());
 
-        for tag in self.iter().skip(1) {
+        for tag in self.as_ref().iter().skip(1) {
             components.push(Component::text(", ".to_owned()));
             components.extend(tag.to_component_parts());
         }
@@ -438,109 +575,13 @@ impl NbtList {
         components.push(Component::text("]".to_owned()));
         components
     }
-
-    to_component!();
-
-    // The following are just calling the corresponding functions in the underlying vec
-
-    /// Returns an interator over shared references to tags in this list.
-    #[inline(always)]
-    pub fn iter(&self) -> std::slice::Iter<'_, NbtTag> {
-        self.0.iter()
-    }
-
-    /// Returns an interator over mutable references to tags in this list.
-    #[inline(always)]
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, NbtTag> {
-        self.0.iter_mut()
-    }
-
-    /// Returns the length of this list.
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Returns true if this tag list has a length of zero, false otherwise.
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Removes and returns the tag at the given index. Unlike a Vec, this method will not panic
-    /// if the index is out of bounds, rather `None` will be returned.
-    #[inline(always)]
-    pub fn remove(&mut self, index: usize) -> Option<NbtTag> {
-        if index < self.0.len() {
-            Some(self.0.remove(index))
-        } else {
-            None
-        }
-    }
-
-    /// Returns a reference to the tag at the given index, or None if the index is out of bounds.
-    pub fn get(&self, index: usize) -> Option<&NbtTag> {
-        self.0.get(index)
-    }
-
-    // Generate the get functions
-    list_get!(i8, get_byte, Byte);
-    list_get!(i16, get_short, Short);
-    list_get!(i32, get_int, Int);
-    list_get!(i64, get_long, Long);
-    list_get!(f32, get_float, Float);
-    list_get!(f64, get_double, Double);
-    list_get_ref!(Vec<i8>, get_byte_array, get_byte_array_mut, ByteArray);
-    list_get_ref!(str, get_string, get_string_mut, StringModUtf8);
-    list_get_ref!(NbtList, get_list, get_list_mut, List);
-    list_get_ref!(NbtCompound, get_compound, get_compound_mut, Compound);
-    list_get_ref!(Vec<i32>, get_int_array, get_int_array_mut, IntArray);
-    list_get_ref!(Vec<i64>, get_long_array, get_long_array_mut, LongArray);
-
-    /// Returns whether or not an integer-type tag at the given index has a value other than zero. If the
-    /// index is out of bounds or the tag at the given index is not an integer type, then `None` is returned.
-    pub fn get_bool(&self, index: usize) -> Option<bool> {
-        match self.0.get(index) {
-            Some(NbtTag::Byte(value)) => Some(*value != 0),
-            Some(NbtTag::Short(value)) => Some(*value != 0),
-            Some(NbtTag::Int(value)) => Some(*value != 0),
-            Some(NbtTag::Long(value)) => Some(*value != 0),
-            _ => None
-        }
-    }
-
-    /// Pushes the given `NbtTag` to the back of the list.
-    pub fn add(&mut self, tag: NbtTag) {
-        self.0.push(tag);
-    }
-
-    // Generate the add functions
-    list_add!(i8, add_byte);
-    list_add!(i16, add_short);
-    list_add!(i32, add_int);
-    list_add!(i64, add_long);
-    list_add!(f32, add_float);
-    list_add!(f64, add_double);
-    list_add!(Vec<i8>, add_byte_array);
-    list_add!(String, add_string);
-    list_add!(NbtList, add_list);
-    list_add!(NbtCompound, add_compound);
-    list_add!(Vec<i32>, add_int_array);
-    list_add!(Vec<i64>, add_long_array);
-
-    /// Adds a byte tag with value `1` if the given boolean is true, otherwise a byte tag with value `0` is added.
-    pub fn add_bool(&mut self, value: bool) {
-        if value {
-            self.add_byte(1);
-        } else {
-            self.add_byte(0);
-        }
-    }
 }
+
+impl ToComponent for NbtList { }
 
 impl fmt::Display for NbtList {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.to_component())
+        self.to_component().fmt(f)
     }
 }
 
@@ -564,85 +605,6 @@ impl IndexMut<usize> for NbtList {
 #[derive(Clone)]
 pub struct NbtCompound(HashMap<String, NbtTag>);
 
-// Generates a get function for a compound returning a default value if
-// the name is invalid or the types do not match
-macro_rules! compound_get {
-    ($type:ty, $method:ident, $tag:ident) => {
-        doc_comment! {
-            concat!(
-                "
-                Returns the value of the `", stringify!($tag), "` tag with the given name.
-                If a tag with the given name cannot be found, or the tag is not a `", stringify!($tag), "` tag,
-                then `None` is returned.
-                "
-            ),
-            pub fn $method(&self, name: &str) -> Option<$type> {
-                if let Some(NbtTag::$tag(value)) = self.0.get(name) {
-                    Some(*value)
-                } else {
-                    None
-                }
-            }
-        }
-    };
-}
-
-// Generates get and get_mut functions returning references to tag value
-// or None if the tag name is invalid or the types do not match
-macro_rules! compound_get_ref {
-    ($type:ty, $method:ident, $method_mut:ident, $tag:ident) => {
-        doc_comment! {
-            concat!(
-                "
-                Returns a shared reference to the value of the `", stringify!($tag), "` tag with the given name.
-                If a tag with the given name cannot be found, or the tag is not a `", stringify!($tag), "` tag,
-                then `None` is returned.
-                "
-            ),
-            pub fn $method(&self, name: &str) -> Option<&$type> {
-                if let Some(NbtTag::$tag(value)) = self.0.get(name) {
-                    Some(value)
-                } else {
-                    None
-                }
-            }
-        }
-
-        doc_comment! {
-            concat!(
-                "
-                Returns a mutable reference to the value of the `", stringify!($tag), "` tag with the given name.
-                If a tag with the given name cannot be found, or the tag is not a `", stringify!($tag), "` tag,
-                then `None` is returned.
-                "
-            ),
-            pub fn $method_mut(&mut self, name: &str) -> Option<&mut $type> {
-                if let Some(NbtTag::$tag(value)) = self.0.get_mut(name) {
-                    Some(value)
-                } else {
-                    None
-                }
-            }
-        }
-    };
-}
-
-// Generates an insert function that wraps the given rust type in an nbt tag
-// and inserts it into the inner map
-macro_rules! compound_insert {
-    ($type:ty, $method:ident) => {
-        #[doc =
-            "
-            Inserts a tag with the given value into this compound with the given name. 
-            The value will be wrapped in a corresponding `NbtTag` variant.
-            "
-        ]
-        pub fn $method(&mut self, name: String, value: $type) {
-            self.0.insert(name, NbtTag::from(value));
-        }
-    };
-}
-
 impl NbtCompound {
     /// Returns a new NBT tag compound with an empty internal hash map.
     pub fn new() -> Self {
@@ -654,12 +616,79 @@ impl NbtCompound {
         NbtCompound(HashMap::with_capacity(capacity))
     }
 
+    pub fn clone_from<'a, K, V, M>(map: &'a M) -> Self
+    where
+        K: ToString + 'a,
+        V: Clone + Into<NbtTag> + 'a,
+        &'a M: IntoIterator<Item = (&'a K, &'a V)>
+    {
+        NbtCompound(map.into_iter().map(|(key, value)| (key.to_string(), value.clone().into())).collect())
+    }
+
+    pub fn clone_repr_from<'a, K, V, M>(map: &'a M) -> Self
+    where
+        K: ToString + 'a,
+        V: NbtRepr + 'a,
+        &'a M: IntoIterator<Item = (&'a K, &'a V)>
+    {
+        NbtCompound(map.into_iter().map(|(key, value)| (key.to_string(), value.to_nbt().into())).collect())
+    }
+
+    pub fn iter_map<'a, E, T: TryFrom<&'a NbtTag, Error = E>>(&'a self) -> impl Iterator<Item = (&'a String, Result<T, E>)> + 'a {
+        self.0.iter().map(|(key, tag)| (key, T::try_from(tag)))
+    }
+
+    pub fn iter_mut_map<'a, E, T: TryFrom<&'a mut NbtTag, Error = E>>(&'a mut self) -> impl Iterator<Item = (&'a String, Result<T, E>)> + 'a {
+        self.0.iter_mut().map(|(key, tag)| (key, T::try_from(tag)))
+    }
+
+    pub fn iter_into_repr<T>(&self) -> impl Iterator<Item = (&'_ String, Result<T, T::Error>)> + '_
+    where
+        T: NbtRepr,
+        T::Error: From<NoneError>
+    {
+        self.0.iter().map(|(key, tag)| {
+            match TryInto::<&NbtCompound>::try_into(tag) {
+                Ok(nbt) => (key, T::from_nbt(nbt)),
+                Err(_) => (key, Err(T::Error::from(NoneError)))
+            }
+        })
+    }
+
+    pub fn clone_into_map<'a, K, V, M>(&'a self, map: &mut M)
+    where
+        K: FromStr,
+        V: Clone + 'a,
+        &'a V: TryFrom<&'a NbtTag>,
+        M: Extend<(K, V)>
+    {
+        map.extend(self.0.iter().flat_map(|(key, tag)| {
+            Some((K::from_str(key).ok()?, TryInto::<&V>::try_into(tag).ok()?.clone()))
+        }));
+    }
+
+    pub fn clone_repr_into_map<'a, K, V, M>(&'a self, map: &mut M)
+    where
+        K: FromStr,
+        V: NbtRepr,
+        M: Extend<(K, V)>
+    {
+        map.extend(self.0.iter().flat_map(|(key, tag)| {
+            Some((K::from_str(key).ok()?, V::from_nbt(tag.try_into()?).ok()?))
+        }));
+    }
+
+    #[inline]
+    pub fn clone_into<T: NbtRepr>(&self) -> Result<T, T::Error> {
+        T::from_nbt(self)
+    }
+
     /// Converts this tag compound into a valid SNBT string.
     pub fn to_snbt(&self) -> String {
         let mut snbt_compound = String::with_capacity(2 + 16 * self.len());
         snbt_compound.push('{');
         snbt_compound.push_str(
-            &self.iter()
+            &self.as_ref().iter()
                 .map(|(key, tag)| {
                     if NbtTag::should_quote(key) {
                         format!("{}:{}", NbtTag::string_to_snbt(key), tag.to_snbt())
@@ -674,8 +703,71 @@ impl NbtCompound {
         snbt_compound
     }
 
-    /// Converts this tag compound into a sequence of components which when displayed together will depict
-    /// this compound's data in a user-friendly form.
+    /// Returns the number of tags in this compound.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns true if the length of this compound is zero, false otherwise.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the value of the tag with the given name, or `None` if no tag could be found with the given name.
+    /// This method should be used to obtain primitives as well as shared references to lists and compounds.
+    pub fn get<'a, T: TryFrom<&'a NbtTag>>(&'a self, name: &str) -> Option<T> {
+        T::try_from(self.0.get(name)?).ok()
+    }
+
+    /// Returns the value of the tag with the given name, or `None` if no tag could be found with the given name.
+    /// This method should be used to obtain mutable references to lists and compounds.
+    pub fn get_mut<'a, T: TryFrom<&'a mut NbtTag>>(&'a mut self, name: &str) -> Option<T> {
+        T::try_from(self.0.get_mut(name)?).ok()
+    }
+
+    /// Returns whether or not this compound has a tag with the given name.
+    #[inline]
+    pub fn has(&self, key: &str) -> bool {
+        self.0.contains_key(key)
+    }
+
+    /// Adds the given value to this compound with the given name after wrapping that value in an `NbtTag`.
+    pub fn set<T: Into<NbtTag>>(&mut self, name: String, value: T) {
+        self.0.insert(name, value.into());
+    }
+
+    /// Parses a nbt compound from snbt
+    /// # Example
+    /// ```
+    /// let tag = NbtCompound::from_snbt(r#"{string:Stuff, list:[I;1,2,3,4,5]}"#).unwrap();
+    /// assert_eq!(tag.get_string("string"), "Stuff");
+    /// assert_eq!(tag.get_int_array("list"), vec![1,2,3,4,5]);
+    /// ```
+    pub fn from_snbt(input: &str) -> Result<Self, String> {
+        let input = input.to_owned();
+        let mut parser = SnbtParser::new(&input, 0);
+
+        parser.parse()
+    }
+}
+
+impl AsRef<HashMap<String, NbtTag>> for NbtCompound {
+    #[inline]
+    fn as_ref(&self) -> &HashMap<String, NbtTag> {
+        &self.0
+    }
+}
+
+impl AsMut<HashMap<String, NbtTag>> for NbtCompound {
+    #[inline]
+    fn as_mut(&mut self) -> &mut HashMap<String, NbtTag> {
+        &mut self.0
+    }
+}
+
+impl ToComponentParts for NbtCompound {
     fn to_component_parts(&self) -> Vec<Component> {
         if self.is_empty() {
             return vec![Component::text("{}".to_owned())];
@@ -684,7 +776,7 @@ impl NbtCompound {
         let mut components = Vec::with_capacity(2 + 3 * self.len());
 
         // Grab the elements and push the first one
-        let elements = self.iter().collect::<Vec<(&String, &NbtTag)>>();
+        let elements = self.as_ref().iter().collect::<Vec<(&String, &NbtTag)>>();
         components.push(Component::text("{".to_owned()));
 
         // Push the rest of the elements
@@ -718,149 +810,13 @@ impl NbtCompound {
         components.push(Component::text("}".to_owned()));
         components
     }
-
-    to_component!();
-
-    // The following just call the corresponding hash map functions
-
-    /// Returns an iterator over the keys of this tag compound.
-    #[inline(always)]
-    pub fn keys(&self) -> std::collections::hash_map::Keys<'_, String, NbtTag> {
-        self.0.keys()
-    }
-
-    /// Returns an iterator over the values of this tag compound.
-    #[inline(always)]
-    pub fn values(&self) -> std::collections::hash_map::Values<'_, String, NbtTag> {
-        self.0.values()
-    }
-
-    /// Returns an iterator over mutable references to the values of this tag compound.
-    #[inline(always)]
-    pub fn values_mut(&mut self) -> std::collections::hash_map::ValuesMut<'_, String, NbtTag> {
-        self.0.values_mut()
-    }
-
-    /// Returns an iterator over the key-value pairs of this tag compound.
-    #[inline(always)]
-    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, String, NbtTag> {
-        self.0.iter()
-    }
-
-    /// Returns an iterator over mutable references to the key-value pairs of this tag compound.
-    #[inline(always)]
-    pub fn iter_mut(&mut self) -> std::collections::hash_map::IterMut<'_, String, NbtTag> {
-        self.0.iter_mut()
-    }
-
-    /// Returns the number of tags in this compound.
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Returns true if the length of this compound is zero, false otherwise.
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Removes the tag with the given name, returning that tag. If a tag with the given name cannot be
-    /// found, then `None` is returned.
-    #[inline(always)]
-    pub fn remove(&mut self, name: &str) -> Option<NbtTag> {
-        self.0.remove(name)
-    }
-
-    /// Returns a shared reference to the tag with the given name, or `None` if there is no such tag
-    /// with the given name.
-    pub fn get(&self, name: &str) -> Option<&NbtTag> {
-        self.0.get(name)
-    }
-
-    // Generate the get functions
-    compound_get!(i8, get_byte, Byte);
-    compound_get!(i16, get_short, Short);
-    compound_get!(i32, get_int, Int);
-    compound_get!(i64, get_long, Long);
-    compound_get!(f32, get_float, Float);
-    compound_get!(f64, get_double, Double);
-    compound_get_ref!(Vec<i8>, get_byte_array, get_byte_array_mut, ByteArray);
-    compound_get_ref!(str, get_string, get_string_mut, StringModUtf8);
-    compound_get_ref!(NbtList, get_list, get_list_mut, List);
-    compound_get_ref!(NbtCompound, get_compound, get_compound_mut, Compound);
-    compound_get_ref!(Vec<i32>, get_int_array, get_int_array_mut, IntArray);
-    compound_get_ref!(Vec<i64>, get_long_array, get_long_array_mut, LongArray);
-
-    /// Returns whether or not an integer-type tag with the given name has a value other than zero. If there is no
-    /// tag with the given name, or the tag is not an integer type, then `None` is returned.
-    pub fn get_bool(&self, name: &str) -> Option<bool> {
-        match self.0.get(name) {
-            Some(tag) => {
-                match *tag {
-                    NbtTag::Byte(value) => Some(value != 0),
-                    NbtTag::Short(value) => Some(value != 0),
-                    NbtTag::Int(value) => Some(value != 0),
-                    NbtTag::Long(value) => Some(value != 0),
-                    _ => None
-                }
-            },
-            None => None
-        }
-    }
-
-    /// Returns whether or not this compound has a tag with the given name.
-    pub fn has(&self, key: &str) -> bool {
-        self.0.contains_key(key)
-    }
-
-    /// Adds the given `NbtTag` to this compound with the given name.
-    pub fn set(&mut self, name: String, tag: NbtTag) {
-        self.0.insert(name, tag);
-    }
-
-    // Generate set functions
-    compound_insert!(i8, set_byte);
-    compound_insert!(i16, set_short);
-    compound_insert!(i32, set_int);
-    compound_insert!(i64, set_long);
-    compound_insert!(f32, set_float);
-    compound_insert!(f64, set_double);
-    compound_insert!(Vec<i8>, set_byte_array);
-    compound_insert!(String, set_string);
-    compound_insert!(NbtList, set_list);
-    compound_insert!(NbtCompound, set_compound);
-    compound_insert!(Vec<i32>, set_int_array);
-    compound_insert!(Vec<i64>, set_long_array);
-
-    /// Inserts a byte tag with the given name, and with a value of `0` or `1` if the given boolean
-    /// is `false` or `true` respectively.
-    pub fn set_bool(&mut self, name: String, value: bool) {
-        if value {
-            self.set_byte(name, 1);
-        } else {
-            self.set_byte(name, 0);
-        }
-    }
-
-    /// Parses a nbt compound from snbt
-    /// # Example
-    /// ```
-    /// let tag = NbtCompound::from_snbt(r#"{string:Stuff, list:[I;1,2,3,4,5]}"#).unwrap();
-    /// assert_eq!(tag.get_string("string"), "Stuff");
-    /// assert_eq!(tag.get_int_array("list"), vec![1,2,3,4,5]);
-    /// ```
-    pub fn from_snbt(input: &str) -> Result<Self, String> {
-        let input = input.to_owned();
-        let mut parser = SnbtParser::new(&input, 0);
-
-        parser.parse()
-    }
 }
+
+impl ToComponent for NbtCompound { }
 
 // Display the compound as valid SNBT format
 impl fmt::Display for NbtCompound {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.to_component())
+        self.to_component().fmt(f)
     }
 }

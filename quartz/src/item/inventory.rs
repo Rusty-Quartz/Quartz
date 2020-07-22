@@ -60,12 +60,12 @@ impl Inventory {
     /// }]}
     /// ```
     pub fn from_tag(&mut self, nbt: &NbtCompound) {
-        let list = nbt.get_list("Items").unwrap();
+        let list = nbt.get::<&NbtList>("Items").unwrap();
 
         for i in 0..list.len() {
             // List has to have a element at every index because even slots without items need to have an empty stack
-            let compound = list.get_compound(i).unwrap();
-            let slot = compound.get_byte("Slot").unwrap_or(0) as usize;
+            let compound = list.get::<&NbtCompound>(i).unwrap();
+            let slot = compound.get("Slot").unwrap_or(0) as usize;
 
             if slot < self.size {
                 self.items[slot] = OptionalItemStack::new(Some(ItemStack::from_nbt(compound.clone())));
@@ -90,13 +90,13 @@ impl Inventory {
         for i in 0..self.size {
             let mut slot_tag = NbtCompound::new();
 
-            slot_tag.set_byte("Slot".to_owned(), i as i8);
+            slot_tag.set("Slot".to_owned(), i as i8);
             // Every index must have a stack, even if it is empty
             let item = self.items.get(i).unwrap();
             item.write_nbt(&mut slot_tag);
-            list.add_compound(slot_tag);
+            list.add(slot_tag);
         }
 
-        tag.set_list("Items".to_owned(), list);
+        tag.set("Items".to_owned(), list);
     }
 }

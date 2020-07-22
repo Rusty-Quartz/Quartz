@@ -1,5 +1,4 @@
-use std::io::Result;
-use std::io::{Write, Read};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind, Write, Read, Result};
 use std::net::{Shutdown, TcpStream};
 use std::sync::{
     Arc,
@@ -216,8 +215,7 @@ impl IOHandle {
 
             match decoder.read(&mut packet_buffer[..]) {
                 Ok(read) => if read != data_len {
-                    // TODO: Handle properly
-                    error!("Failed to decompress packet");
+                    return Err(IoError::new(IoErrorKind::InvalidData, "Failed to decompress packet"))
                 },
                 Err(e) => return Err(e)
             };

@@ -66,7 +66,7 @@ fn write_compound<W>(writer: &mut W, compound: &NbtCompound) -> Result<()>
 where
     W: Write
 {
-    for (name, tag) in compound.iter() {
+    for (name, tag) in compound.as_ref().iter() {
         writer.write_u8(tag.id())?;
         write_string(writer, name)?;
         write_tag_body(writer, tag)?;
@@ -106,7 +106,7 @@ where
                 writer.write_u8(type_id)?;
                 writer.write_i32::<BigEndian>(value.len() as i32)?;
 
-                for sub_tag in value.iter() {
+                for sub_tag in value.as_ref().iter() {
                     if sub_tag.id() != type_id {
                         return Err(Error::new(ErrorKind::InvalidInput, "Attempted to write NBT list with a non-homogenous type."));
                     }

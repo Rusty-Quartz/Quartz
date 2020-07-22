@@ -9,13 +9,14 @@ pub mod logging;
 pub mod map;
 /// Contains an implementation of a single-access box allowing for interior mutability.
 pub mod single_access;
-mod threadpool;
+/// Defines a dynamic threadpool which executes a single function and scales the number of internal workers
+/// based off of the load it is experiencing.
+pub mod threadpool;
 mod uln;
 mod uuid;
 /// Allows for downcasting of trait types.
 pub mod variant;
 
-pub use threadpool::DynamicThreadPool;
 pub use uln::UnlocalizedName;
 pub use uuid::Uuid;
 
@@ -96,30 +97,30 @@ mod tests {
 
     #[bench]
     #[cfg(not(debug_assertions))]
-    fn refcell_box(bencher: &mut Bencher) {
+    fn refcell(bencher: &mut Bencher) {
         use std::cell::RefCell;
 
-        let cell1 = RefCell::new(Box::new(0_i32));
-        let cell2 = RefCell::new(Box::new(0_i32));
+        let cell1 = RefCell::new(0_i32);
+        let cell2 = RefCell::new(0_i32);
 
         bencher.iter(move || {
             for _ in 0..1000 {
                 let mut ref1 = cell1.borrow_mut();
-                **ref1 += 1;
+                *ref1 += 1;
                 assert!(cell1.try_borrow_mut().is_err());
-                **cell2.borrow_mut() -= **ref1;
-                **ref1 += **cell2.borrow();
+                *cell2.borrow_mut() -= *ref1;
+                *ref1 += *cell2.borrow();
             }
         });
     }
 
     #[bench]
     #[cfg(not(debug_assertions))]
-    fn single_accessor_box(bencher: &mut Bencher) {
-        use single_access::SingleAccessorBox;
+    fn single_accessor(bencher: &mut Bencher) {
+        use single_access::SingleAccessor;
 
-        let sa1 = SingleAccessorBox::new(0_i32);
-        let sa2 = SingleAccessorBox::new(0_i32);
+        let sa1 = SingleAccessor::new(0_i32);
+        let sa2 = SingleAccessor::new(0_i32);
 
         bencher.iter(move || {
             for _ in 0..1000 {

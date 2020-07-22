@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::fmt::Display;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -16,10 +17,12 @@ use log::error;
 /// The actual size this pool chooses within those bounds will be based on a measured load value which is
 /// recalculated every time the threadpool is resized.
 /// 
-/// [`resize`]: crate::DynamicThreadPool::resize
+/// [`resize`]: crate::threadpool::DynamicThreadPool::resize
 pub struct DynamicThreadPool<J, S, E> {
     name: String,
     pool: Vec<Worker<J>>,
+    pool_cursor: usize,
+    distribution_strategy: DistributionStrategy,
     executor: fn(J, &mut S) -> Result<(), E>,
     initial_state: S
 }
@@ -44,10 +47,30 @@ where
     /// The initial state provided is the state in which all new worker threads will be spawned.
     /// This method spawns the given number of worker threads which immediately block while waiting
     /// for incoming jobs to complete.
-    pub fn open(name: String, initial_size: usize, initial_state: S, executor: fn(J, &mut S) -> Result<(), E>) -> Self {
+    /// 
+    /// # Arguments
+    /// 
+    /// * `name` - The name of the thread pool
+    /// * `initial_size` - The initial number of workers this pool is constructed with
+    /// * `initial_state` - The initial state of all worker threads in this pool
+    /// * `distribution_strategy` - The distribution strategy of this pool (see [`DistributionStrategy`]
+    /// and [`add_job`] for more details)
+    /// * `executor` - The job executor
+    /// 
+    /// [`DistributionStrategy`]: crate::threadpool::DistributionStrategy
+    /// [`add_job`]: crate::threadpool::DynamicThreadPool::add_job
+    pub fn open<N: Display>(
+        name: &N,
+        initial_size: usize,
+        initial_state: S,
+        distribution_strategy: DistributionStrategy,
+        executor: fn(J, &mut S) -> Result<(), E>
+    ) -> Self {
         let mut pool = DynamicThreadPool {
-            name,
+            name: name.to_string(),
             pool: Vec::with_capacity(initial_size.max(1)),
+            pool_cursor: 0,
+            distribution_strategy,
             executor,
             initial_state
         };
@@ -64,23 +87,44 @@ where
         self.pool.push(Worker::spawn(self.name.clone(), number, self.initial_state.clone(), self.executor));
     }
 
-    /// Adds a job for the pool to complete. The pool will select the worker with the minimum number of pending
-    /// jobs to execute the given job.
+    /// Adds a job for the pool to complete.
+    /// 
+    /// The pool will select a worker based on the distribution strategy this pool was opened with. If
+    /// the [`EqualLoad`] strategy was used, then the worker with the minimum number of pending jobs will
+    /// be selected. If the [`Fast`] strategy was used, then the pool will assign one job to every worker
+    /// in the pool before the same worker is given a second job.
+    /// 
+    /// [`EqualLoad`]: crate::threadpool::DistributionStrategy::EqualLoad
+    /// [`Fast`]: crate::threadpool::DistributionStrategy::Fast
     pub fn add_job(&mut self, job: J) {
-        let mut min_pending = usize::MAX;
         let mut available_worker: Option<&Worker<J>> = None;
 
-        for worker in self.pool.iter() {
-            // Calculate the load
-            let pending_jobs = worker.pending_job_count();
+        match self.distribution_strategy {
+            DistributionStrategy::EqualLoad => {
+                let mut min_pending = usize::MAX;
 
-            // Find a worker
-            if pending_jobs == 0 {
-                available_worker = Some(worker);
-                break;
-            } else if pending_jobs < min_pending {
-                min_pending = pending_jobs;
-                available_worker = Some(worker);
+                for worker in self.pool.iter() {
+                    // Calculate the load
+                    let pending_jobs = worker.pending_job_count();
+
+                    // Find a worker
+                    if pending_jobs == 0 {
+                        available_worker = Some(worker);
+                        break;
+                    } else if pending_jobs < min_pending {
+                        min_pending = pending_jobs;
+                        available_worker = Some(worker);
+                    }
+                }
+            },
+
+            DistributionStrategy::Fast => {
+                if self.pool_cursor >= self.pool.len() {
+                    self.pool_cursor = 0;
+                }
+
+                available_worker = self.pool.get(self.pool_cursor);
+                self.pool_cursor += 1;
             }
         }
 
@@ -122,6 +166,16 @@ impl<J, S, E> Drop for DynamicThreadPool<J, S, E> {
     fn drop(&mut self) {
         self.close();
     }
+}
+
+/// Different strategies a dynamic thread pool can use to spread the job load.
+pub enum DistributionStrategy {
+    /// Ensures that, to the best of the pool's ability, each worker has approximately and equal work
+    /// load.
+    EqualLoad,
+    /// Does not guarantee that workers will have an equal load, however jobs will be given out as
+    /// evenly as possible without sacrificing efficiency.
+    Fast
 }
 
 /// A worker for a dynamic threadpool. Workers keep track of their pending job count autonomously.

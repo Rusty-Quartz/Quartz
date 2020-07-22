@@ -1,5 +1,6 @@
 use std::u128;
-use std::fmt;
+use std::fmt::{self, Display, Formatter};
+use std::str::FromStr;
 
 use rand::prelude::*;
 
@@ -87,40 +88,13 @@ impl Uuid {
         Uuid(Self::correct_version(inner))
     }
 
-    /// Converts the given string into a UUID and applies the correct version and variant information.
-    /// 
-    /// This function will accept strings with or without dashes. If the string with dashes removed is not
-    /// 32 hex characters long, then an error is returned. If the hex is invalid, then an error is also
-    /// returned.
-    /// 
-    /// # Examples
-    /// 
-    /// ```
-    /// # use util::Uuid;
-    /// let uuid = Uuid::from_string("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
-    /// assert_eq!(uuid.as_u128(), 0x7919a79bb2564782bf3613990ca65bb7_u128);
-    /// 
-    /// assert!(Uuid::from_string("invalid").is_err());
-    /// ```
-    pub fn from_string(string: &str) -> Result<Self, &'static str> {
-        let raw = string.to_owned().replace("-", "");
-        if raw.len() != 32 {
-            return Err("Expected condensed string to have length 32.");
-        }
-
-        match u128::from_str_radix(&raw, 16) {
-            Ok(inner) => Ok(Uuid(Self::correct_version(inner))),
-            Err(_) => Err("Invalid UUID string.")
-        }
-    }
-
     /// Returns the most significant 64 bits of this UUID's 128-bit value.
     /// 
     /// # Examples
     /// 
     /// ```
     /// # use util::Uuid;
-    /// let uuid = Uuid::from_string("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
+    /// let uuid = Uuid::from_str("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
     /// assert_eq!(uuid.most_significant_bits(), 0x7919a79bb2564782_u64);
     /// ```
     pub fn most_significant_bits(&self) -> u64 {
@@ -133,7 +107,7 @@ impl Uuid {
     /// 
     /// ```
     /// # use util::Uuid;
-    /// let uuid = Uuid::from_string("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
+    /// let uuid = Uuid::from_str("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
     /// assert_eq!(uuid.least_significant_bits(), 0xbf3613990ca65bb7_u64);
     /// ```
     pub fn least_significant_bits(&self) -> u64 {
@@ -152,8 +126,39 @@ impl From<u128> for Uuid {
     }
 }
 
-impl fmt::Display for Uuid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FromStr for Uuid {
+    type Err = &'static str;
+
+    /// Converts the given string into a UUID and applies the correct version and variant information.
+    /// 
+    /// This function will accept strings with or without dashes. If the string with dashes removed is not
+    /// 32 hex characters long, then an error is returned. If the hex is invalid, then an error is also
+    /// returned.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// # use util::Uuid;
+    /// let uuid = Uuid::from_str("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
+    /// assert_eq!(uuid.as_u128(), 0x7919a79bb2564782bf3613990ca65bb7_u128);
+    /// 
+    /// assert!(Uuid::from_str("invalid").is_err());
+    /// ```
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let raw = s.to_owned().replace("-", "");
+        if raw.len() != 32 {
+            return Err("Expected condensed string to have length 32.");
+        }
+
+        match u128::from_str_radix(&raw, 16) {
+            Ok(inner) => Ok(Uuid(Self::correct_version(inner))),
+            Err(_) => Err("Invalid UUID string.")
+        }
+    }
+}
+
+impl Display for Uuid {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
