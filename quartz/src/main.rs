@@ -3,9 +3,13 @@ use std::path::Path;
 use std::sync::Arc;
 use linefeed::Interface;
 use log::error;
-use quartz::config::*;
-use quartz::server::QuartzServer;
-use quartz::util::logging;
+use quartz::{
+    Config,
+    QuartzServer,
+    config::load_config,
+    registry::StaticRegistry,
+    util::logging
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let console_interface = Arc::new(Interface::new("quartz-server")?);
@@ -22,13 +26,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let mut server = QuartzServer::new(config, console_interface);
+    let mut server: QuartzServer<StaticRegistry> = QuartzServer::new(config, console_interface);
     
     server.init();
 
     use quartz::world::chunk::ChunkProvider;
     use quartz::world::location::CoordinatePair;
-    let mut provider = ChunkProvider::new("world", Path::new("/hd-pa/projects/FarLands2/run/world/region"))?;
+    let mut provider: ChunkProvider<StaticRegistry> = ChunkProvider::new("world", Path::new("/hd-pa/projects/FarLands2/run/world/region"))?;
     provider.request_load_full(CoordinatePair::new(0, 0));
 
     server.run();

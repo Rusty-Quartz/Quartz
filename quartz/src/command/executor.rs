@@ -3,16 +3,17 @@ use chat::{
     Component,
     color::PredefinedColor
 };
+use crate::Registry;
 use crate::command::arg::*;
 use crate::command::CommandSender;
-use crate::server::QuartzServer;
+use crate::QuartzServer;
 
 /// Contains a map of commands and their descriptions
-pub struct CommandExecutor {
-    commands: HashMap<&'static str, (CommandNode, String)>
+pub struct CommandExecutor<R: Registry> {
+    commands: HashMap<&'static str, (CommandNode<R>, String)>
 }
 
-impl CommandExecutor {
+impl<R: Registry> CommandExecutor<R> {
     /// Creates a new command executor with an empty internal map.
     pub fn new() -> Self {
         CommandExecutor {
@@ -22,7 +23,7 @@ impl CommandExecutor {
 
     /// Registers the given command node with its defined syntax. If the node is not a literal,
     /// then this function currently just ignores it and does nothing.
-    pub fn register(&mut self, node: CommandNode, description: &str) {
+    pub fn register(&mut self, node: CommandNode<R>, description: &str) {
         match &node {
             CommandNode::Literal {base, ..} => {
                 let name = base.name;
@@ -36,7 +37,7 @@ impl CommandExecutor {
     /// Attempts to dispatch the given command, first attempting to parse it according to the registered command
     /// syntax trees, and then applying an execution context to a valid stack generated from the tree. If an error
     /// occurs at some point, then the sender is notified.
-    pub fn dispatch(&self, command: &str, server: &mut QuartzServer, sender: CommandSender) {
+    pub fn dispatch(&self, command: &str, server: &mut QuartzServer<R>, sender: CommandSender) {
         let mut context = CommandContext::new(server, self, sender);
         let mut raw_args = ArgumentTraverser::new(command);
 
@@ -162,7 +163,7 @@ impl CommandExecutor {
     /// 
     /// If no arguments are present in the given command string, then the full list of commands is returned. If
     /// one argument is present, then the suggestions are generated based off the available commands.
-    pub fn get_suggestions(&self, command: &str, server: &mut QuartzServer, sender: CommandSender) -> Vec<String> {
+    pub fn get_suggestions(&self, command: &str, server: &mut QuartzServer<R>, sender: CommandSender) -> Vec<String> {
         let mut context = CommandContext::new(server, self, sender);
         let mut raw_args = ArgumentTraverser::new(command);
 
@@ -237,7 +238,7 @@ impl CommandExecutor {
     }
 
     /// We were expecting more arguments, so notify the sender what was expected.
-    fn expect_args(children: &[CommandNode], context: &CommandContext<'_>) {
+    fn expect_args(children: &[CommandNode<R>], context: &CommandContext<'_, R>) {
         let mut message = "Expected one of the following arguments: ".to_owned();
         message.push_str(&children.iter().map(|child| child.name()).collect::<Vec<&'static str>>().join(", "));
         context.sender.send_message(Component::colored(message, PredefinedColor::Red));
@@ -256,18 +257,18 @@ impl CommandExecutor {
 
 /// Encapsulates the internal state of the parser, including the argument traverser, current node
 /// and node stack.
-pub struct ParserState<'cmd> {
+pub struct ParserState<'cmd, R: Registry> {
     raw_args: ArgumentTraverser<'cmd>,
     /// The current node the parser is on.
-    pub current_node: &'cmd CommandNode,
+    pub current_node: &'cmd CommandNode<R>,
     /// The record of visited nodes.
-    pub stack: Vec<&'cmd CommandNode>
+    pub stack: Vec<&'cmd CommandNode<R>>
 }
 
-impl<'cmd> ParserState<'cmd> {
+impl<'cmd, R: Registry> ParserState<'cmd, R> {
     /// Creates a new parser sate with the given traverser and initial node. The given node is placed at
     /// the bottom of the stack.
-    pub fn new(raw_args: ArgumentTraverser<'cmd>, node: &'cmd CommandNode) -> Self {
+    pub fn new(raw_args: ArgumentTraverser<'cmd>, node: &'cmd CommandNode<R>) -> Self {
         ParserState {
             raw_args,
             current_node: node,
@@ -276,7 +277,7 @@ impl<'cmd> ParserState<'cmd> {
     }
 
     /// Returns the node on the stack at the given index, or `None` if the index is out of bounds.
-    pub fn node(&self, index: usize) -> Option<&'cmd CommandNode> {
+    pub fn node(&self, index: usize) -> Option<&'cmd CommandNode<R>> {
         self.stack.get(index).map(|node| *node)
     }
 }
@@ -284,11 +285,11 @@ impl<'cmd> ParserState<'cmd> {
 /// Defines a way in which the parser is redirected to another node on the tree. A value of `None`
 /// implies that there was a redirection error, and should only be used in that context.
 #[derive(Clone)]
-pub enum ParserRedirection<'cmd> {
+pub enum ParserRedirection<'cmd, R: Registry> {
     /// A redirection to another node on the parser stack.
     Node(
         /// The node on the stack.
-        &'cmd CommandNode
+        &'cmd CommandNode<R>
     ),
     /// Directs the parser to close off the current stack and push the remaining portion of the
     /// command into the arguments map, wrapped in an `ExecutableCommand`. This semantically implies
@@ -299,8 +300,8 @@ pub enum ParserRedirection<'cmd> {
     None
 }
 
-impl<'cmd> From<Option<&'cmd CommandNode>> for ParserRedirection<'cmd> {
-    fn from(option: Option<&'cmd CommandNode>) -> Self {
+impl<'cmd, R: Registry> From<Option<&'cmd CommandNode<R>>> for ParserRedirection<'cmd, R> {
+    fn from(option: Option<&'cmd CommandNode<R>>) -> Self {
         match option {
             Some(node) => ParserRedirection::Node(node),
             None => ParserRedirection::None
@@ -316,17 +317,17 @@ pub struct ExecutableCommand<'cmd>(&'cmd str);
 impl<'cmd> ExecutableCommand<'cmd> {
     /// Dispatches the wrapped command using parameters from the given context.
     #[inline]
-    pub fn execute_with(&self, context: CommandContext<'cmd>) {
+    pub fn execute_with<R: Registry>(&self, context: CommandContext<'cmd, R>) {
         context.executor.dispatch(self.0, context.server, context.sender);
     }
 }
 
 /// The context in which a command is executed. This has no use outside the lifecycle of a command.
-pub struct CommandContext<'cmd> {
+pub struct CommandContext<'cmd, R: Registry> {
     /// A shared reference to the server.
-    pub server: &'cmd mut QuartzServer,
+    pub server: &'cmd mut QuartzServer<R>,
     /// A shared reference to the executor that created this context.
-    pub executor: &'cmd CommandExecutor,
+    pub executor: &'cmd CommandExecutor<R>,
     /// The sender of the command.
     pub sender: CommandSender,
     /// The parsed command arguments.
@@ -334,9 +335,9 @@ pub struct CommandContext<'cmd> {
 }
 
 // Shortcut functions for getting argument values
-impl<'cmd> CommandContext<'cmd> {
+impl<'cmd, R: Registry> CommandContext<'cmd, R> {
     /// Creates a new command context with the given parameters.
-    pub fn new(server: &'cmd mut QuartzServer, executor: &'cmd CommandExecutor, sender: CommandSender) -> Self {
+    pub fn new(server: &'cmd mut QuartzServer<R>, executor: &'cmd CommandExecutor<R>, sender: CommandSender) -> Self {
         CommandContext {
             server,
             executor,
@@ -379,17 +380,25 @@ impl<'cmd> CommandContext<'cmd> {
 }
 
 /// The base for all command nodes which includes a name and optional executor.
-#[derive(Clone)]
-pub struct NodeBase {
+pub struct NodeBase<R: Registry> {
     name: &'static str,
-    executor: Option<fn(CommandContext<'_>)>
+    executor: Option<fn(CommandContext<'_, R>)>
 }
 
-impl NodeBase {
+impl<R: Registry> NodeBase<R> {
     fn new(name: &'static str) -> Self {
         NodeBase {
             name,
             executor: None
+        }
+    }
+}
+
+impl<R: Registry> Clone for NodeBase<R> {
+    fn clone(&self) -> Self {
+        NodeBase {
+            name: self.name,
+            executor: self.executor.clone()
         }
     }
 }
@@ -399,39 +408,38 @@ impl NodeBase {
 /// the `Argument` enum for more detail). Redirection nodes provide a `ParserRedirection` based on the
 /// current parser state, either redirecting to another node on the stack or the "root" node which can be
 /// any command, or `None` if a redirection error occurs.
-#[derive(Clone)]
-pub enum CommandNode {
+pub enum CommandNode<R: Registry> {
     /// A string literal such as "foo".
     Literal {
         /// The basic components of this node.
-        base: NodeBase,
+        base: NodeBase<R>,
         /// The children of this node.
-        children: Vec<CommandNode>
+        children: Vec<CommandNode<R>>
     },
     /// An argument node, such as an integer value or position.
     Argument {
         /// The basic components of this node.
-        base: NodeBase,
+        base: NodeBase<R>,
         /// The children of this node.
-        children: Vec<CommandNode>,
+        children: Vec<CommandNode<R>>,
         /// The argument type.
         argument: Argument<'static>,
         /// An option suggestion generator.
-        suggester: Option<fn(&CommandContext<'_>, &str) -> Vec<String>>,
+        suggester: Option<fn(&CommandContext<'_, R>, &str) -> Vec<String>>,
         /// Whether or not this argument has a default value.
         default: bool
     },
     /// A redirection node.
     Redirection {
         /// The basic components of this node.
-        base: NodeBase,
+        base: NodeBase<R>,
         /// The function which determines where the parser is redirected.
-        selector: for<'cmd> fn(&ParserState<'cmd>) -> ParserRedirection<'cmd>
+        selector: for<'cmd> fn(&ParserState<'cmd, R>) -> ParserRedirection<'cmd, R>
     }
 }
 
-impl CommandNode {
-    fn literal(name: &'static str) -> CommandNode {
+impl<R: Registry> CommandNode<R> {
+    fn literal(name: &'static str) -> Self {
         CommandNode::Literal {
             base: NodeBase::new(name),
             children: Vec::new()
@@ -448,7 +456,7 @@ impl CommandNode {
         }
     }
 
-    fn redirection(name: &'static str, selector: for<'cmd> fn(&ParserState<'cmd>) -> ParserRedirection<'cmd>) -> Self {
+    fn redirection(name: &'static str, selector: for<'cmd> fn(&ParserState<'cmd, R>) -> ParserRedirection<'cmd, R>) -> Self {
         CommandNode::Redirection {
             base: NodeBase::new(name),
             selector
@@ -471,7 +479,7 @@ impl CommandNode {
         }
     }
 
-    fn children(&self) -> Option<&[CommandNode]> {
+    fn children(&self) -> Option<&[CommandNode<R>]> {
         match self {
             CommandNode::Literal {children, ..} => Some(&children),
             CommandNode::Argument {children, ..} => Some(&children),
@@ -479,7 +487,7 @@ impl CommandNode {
         }
     }
 
-    fn children_mut(&mut self) -> &mut Vec<CommandNode> {
+    fn children_mut(&mut self) -> &mut Vec<CommandNode<R>> {
         match &mut *self {
             CommandNode::Literal {children, ..} => children,
             CommandNode::Argument {children, ..} => children,
@@ -503,7 +511,7 @@ impl CommandNode {
         }
     }
 
-    fn executor(&self) -> Option<fn(CommandContext<'_>)> {
+    fn executor(&self) -> Option<fn(CommandContext<'_, R>)> {
         match self {
             CommandNode::Literal {base, ..} => base.executor,
             CommandNode::Argument {base, ..} => base.executor,
@@ -516,8 +524,8 @@ impl CommandNode {
     /// parser to a different node, at which point more arguments and literals can be consumed. Literals have no effect.
     fn apply<'cmd>(
         &'cmd self,
-        state: &mut ParserState<'cmd>,
-        context: &mut CommandContext<'cmd>,
+        state: &mut ParserState<'cmd, R>,
+        context: &mut CommandContext<'cmd, R>,
         arg: &'cmd str
     ) -> Result<(), Component> {
         match self {
@@ -551,7 +559,7 @@ impl CommandNode {
     /// 
     /// # Panics
     /// Panics if called on a redirection node.
-    pub fn then(mut self, child: CommandNode) -> Self {
+    pub fn then(mut self, child: CommandNode<R>) -> Self {
         self.children_mut().push(child);
         self
     }
@@ -560,7 +568,7 @@ impl CommandNode {
     /// 
     /// # Panics
     /// Panics if called on a redirection node.
-    pub fn any_then(mut self, child: CommandNode) -> Self {
+    pub fn any_then(mut self, child: CommandNode<R>) -> Self {
         for current_child in self.children_mut().iter_mut() {
             current_child.children_mut().push(child.clone());
         }
@@ -568,7 +576,7 @@ impl CommandNode {
     }
 
     /// Adds an executor to this node.
-    pub fn executes(mut self, executor: fn(CommandContext<'_>)) -> Self {
+    pub fn executes(mut self, executor: fn(CommandContext<'_, R>)) -> Self {
         match &mut self {
             CommandNode::Literal {base, ..} => base.executor = Some(executor),
             CommandNode::Argument {base, ..} => base.executor = Some(executor),
@@ -579,7 +587,7 @@ impl CommandNode {
     }
 
     /// Attempts to execute the node with the given context and returns whether or not an executor was called.
-    pub fn execute(&self, context: CommandContext<'_>) -> bool {
+    pub fn execute(&self, context: CommandContext<'_, R>) -> bool {
         match &self.executor() {
             Some(executor) => {
                 executor(context);
@@ -591,7 +599,7 @@ impl CommandNode {
 
     /// Adds a suggestion generator to this node. This method has no effect if not called on an argument
     /// node.
-    pub fn suggests(mut self, sugg: fn(&CommandContext<'_>, &str) -> Vec<String>) -> Self {
+    pub fn suggests(mut self, sugg: fn(&CommandContext<'_, R>, &str) -> Vec<String>) -> Self {
         match &mut self {
             CommandNode::Argument {suggester, ..} => *suggester = Some(sugg),
             _ => {}
@@ -601,7 +609,7 @@ impl CommandNode {
     }
 
     /// Adds suggestions to the given list based off of the given state variables and this node's type.
-    pub fn add_suggestions<'cmd>(&self, state: &ParserState<'cmd>, context: &CommandContext<'_>, arg: &str, suggestions: &mut Vec<String>) {
+    pub fn add_suggestions<'cmd>(&self, state: &ParserState<'cmd, R>, context: &CommandContext<'_, R>, arg: &str, suggestions: &mut Vec<String>) {
         match self {
             CommandNode::Literal {base, ..} => suggestions.push(base.name.to_owned()),
             CommandNode::Argument {suggester, ..} => match suggester {
@@ -624,62 +632,84 @@ impl CommandNode {
     }
 }
 
+impl<R: Registry> Clone for CommandNode<R> {
+    fn clone(&self) -> Self {
+        match self {
+            CommandNode::Literal {base, children} => CommandNode::Literal {
+                base: base.clone(),
+                children: children.clone()
+            },
+            CommandNode::Argument {base, children, argument, suggester, default} => CommandNode::Argument {
+                base: base.clone(),
+                children: children.clone(),
+                argument: argument.clone(),
+                suggester: suggester.clone(),
+                default: *default
+            },
+            CommandNode::Redirection {base, selector} => CommandNode::Redirection {
+                base: base.clone(),
+                selector: *selector
+            }
+        }
+    }
+}
+
 /// A command literal, or an exact string such as "foo".
 #[inline]
-pub fn literal(literal: &'static str) -> CommandNode {
+pub fn literal<R: Registry>(literal: &'static str) -> CommandNode<R> {
     CommandNode::literal(literal)
 }
 
 /// An integer value, signed or unsigned, parsed as an i64.
 #[inline]
-pub fn integer(name: &'static str) -> CommandNode {
+pub fn integer<R: Registry>(name: &'static str) -> CommandNode<R> {
     CommandNode::argument(name, Argument::Integer(0), false)
 }
 
 /// An integer with a default value.
 #[inline]
-pub fn integer_default(name: &'static str, default: i64) -> CommandNode {
+pub fn integer_default<R: Registry>(name: &'static str, default: i64) -> CommandNode<R> {
     CommandNode::argument(name, Argument::Integer(default), true)
 }
 
 /// A floating point value parsed as an f64.
 #[inline]
-pub fn float(name: &'static str) -> CommandNode {
+pub fn float<R: Registry>(name: &'static str) -> CommandNode<R> {
     CommandNode::argument(name, Argument::FloatingPoint(0.0), false)
 }
 
 /// A floating point argument with a default value.
 #[inline]
-pub fn float_default(name: &'static str, default: f64) -> CommandNode {
+pub fn float_default<R: Registry>(name: &'static str, default: f64) -> CommandNode<R> {
     CommandNode::argument(name, Argument::FloatingPoint(default), true)
 }
 
 /// A string argument, which is essentially just the raw argument.
 #[inline]
-pub fn string(name: &'static str) -> CommandNode {
+pub fn string<R: Registry>(name: &'static str) -> CommandNode<R> {
     CommandNode::argument(name, Argument::String(""), false)
 }
 
 /// A string argument with a default value.
 #[inline]
-pub fn string_default(name: &'static str, default: &'static str) -> CommandNode {
+pub fn string_default<R: Registry>(name: &'static str, default: &'static str) -> CommandNode<R> {
     CommandNode::argument(name, Argument::String(default), true)
 }
 
 /// A redirection to another node.
 #[inline]
-pub fn redirect(selector: for<'cmd> fn(&ParserState<'cmd>) -> ParserRedirection<'cmd>) -> CommandNode {
+pub fn redirect<R: Registry>(selector: for<'cmd> fn(&ParserState<'cmd, R>) -> ParserRedirection<'cmd, R>) -> CommandNode<R> {
     CommandNode::redirection("<redirection>", selector)
 }
 
 /// A redirection to the root node, or any valid command syntax tree.
 #[inline]
-pub fn redirect_root(name: &'static str) -> CommandNode {
+pub fn redirect_root<R: Registry>(name: &'static str) -> CommandNode<R> {
     CommandNode::redirection(name, |_state| ParserRedirection::Root)
 }
 
 /// Chains the given nodes together in the given order.
-pub fn after(mut args: Vec<CommandNode>, last: CommandNode) -> CommandNode {
+pub fn after<R: Registry>(mut args: Vec<CommandNode<R>>, last: CommandNode<R>) -> CommandNode<R> {
     if args.is_empty() {
         return last;
     }

@@ -5,11 +5,12 @@ use chat::{
     color::PredefinedColor
 };
 use log::info;
+use crate::Registry;
 use crate::command::executor::*;
 use crate::server::RUNNING;
 
 /// Registers all native minecraft commands to the given executor.
-pub fn init_commands(command_executor: &mut CommandExecutor) {
+pub fn init_commands<R: Registry>(command_executor: &mut CommandExecutor<R>) {
     info!("Registering commands");
     
     /* NOTE: Please keep commands in alphabetical order */

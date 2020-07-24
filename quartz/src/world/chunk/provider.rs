@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use nbt::read::{read_nbt_gz_compressed, read_nbt_zlib_compressed};
 use util::threadpool::{DistributionStrategy, DynamicThreadPool};
+use crate::Registry;
 use crate::world::{
     chunk::Chunk,
     location::{
@@ -25,19 +26,19 @@ const PROVIDER_POOL_LOAD_FACTOR: usize = 100;
 /// factor is two to the power of this constant.
 const REGION_SCALE: usize = 5;
 
-pub struct ChunkProvider {
-    regions: RegionMap,
-    thread_pool: DynamicThreadPool<ProviderRequest, WorkerHandle, Box<dyn Error>>,
-    chunk_receiver: Receiver<Chunk>
+pub struct ChunkProvider<R: Registry> {
+    regions: RegionMap<R>,
+    thread_pool: DynamicThreadPool<ProviderRequest, WorkerHandle<R>, Box<dyn Error>>,
+    chunk_receiver: Receiver<Chunk<R>>
 }
 
-impl ChunkProvider {
+impl<R: Registry> ChunkProvider<R> {
     pub fn new<P: AsRef<Path>>(world_name: &str, root_directory: P) -> io::Result<Self> {
         // Ensure the root directory exists
         fs::create_dir_all(root_directory.as_ref())?;
 
         let regions = RegionMap::new(root_directory.as_ref().to_owned());
-        let (chunk_sender, chunk_receiver) = mpsc::channel::<Chunk>();
+        let (chunk_sender, chunk_receiver) = mpsc::channel::<Chunk<R>>();
         let pool = DynamicThreadPool::open(
             &format!("{}/ChunkProvider", world_name),
             1, // Initial size
@@ -82,8 +83,8 @@ impl ChunkProvider {
         );
     }
 
-    // TODO: Add coords to error messages
-    fn handle_request(request: ProviderRequest, handle: &mut WorkerHandle) -> Result<(), Box<dyn Error>> {
+    // TODO: Add coords to error messages and change error type
+    fn handle_request(request: ProviderRequest, handle: &mut WorkerHandle<R>) -> Result<(), Box<dyn Error>> {
         match request {
             ProviderRequest::LoadFull(chunk_coords) => {
                 let mut map_guard = handle.regions.lock()?;
@@ -158,10 +159,18 @@ impl ChunkProvider {
     }
 }
 
-#[derive(Clone)]
-struct WorkerHandle {
-    regions: RegionMap,
-    chunk_channel: Sender<Chunk>
+struct WorkerHandle<R: Registry> {
+    regions: RegionMap<R>,
+    chunk_channel: Sender<Chunk<R>>
+}
+
+impl<R: Registry> Clone for WorkerHandle<R> {
+    fn clone(&self) -> Self {
+        WorkerHandle {
+            regions: self.regions.clone(),
+            chunk_channel: self.chunk_channel.clone()
+        }
+    }
 }
 
 pub enum ProviderRequest {
@@ -169,14 +178,13 @@ pub enum ProviderRequest {
     Unload(ChunkCoordinatePair)
 }
 
-#[derive(Clone)]
-struct RegionMap {
+struct RegionMap<R: Registry> {
     // TODO: Consider changing to RwLock in the future
-    inner: Arc<Mutex<HashMap<RegionCoordinatePair, Region>>>,
+    inner: Arc<Mutex<HashMap<RegionCoordinatePair, Region<R>>>>,
     root_directory: PathBuf
 }
 
-impl RegionMap {
+impl<R: Registry> RegionMap<R> {
     fn new(root_directory: PathBuf) -> Self {
         RegionMap {
             inner: Arc::new(Mutex::new(HashMap::new())),
@@ -184,7 +192,7 @@ impl RegionMap {
         }
     }
 
-    fn lock(&self) -> Result<MapGuard<'_>, &'static str> {
+    fn lock(&self) -> Result<MapGuard<'_, R>, &'static str> {
         Ok(MapGuard {
             guard: self.inner.lock().map_err(|_| "Region map mutex poisoned")?,
             map: self
@@ -192,37 +200,46 @@ impl RegionMap {
     }
 }
 
-struct MapGuard<'a> {
-    guard: MutexGuard<'a, HashMap<RegionCoordinatePair, Region>>,
-    map: &'a RegionMap
+impl<R: Registry> Clone for RegionMap<R> {
+    fn clone(&self) -> Self {
+        RegionMap {
+            inner: self.inner.clone(),
+            root_directory: self.root_directory.clone()
+        }
+    }
 }
 
-impl<'a> MapGuard<'a> {
-    fn region_at(&mut self, location: RegionCoordinatePair) -> io::Result<&mut Region> {
+struct MapGuard<'a, R: Registry> {
+    guard: MutexGuard<'a, HashMap<RegionCoordinatePair, Region<R>>>,
+    map: &'a RegionMap<R>
+}
+
+impl<'a, R: Registry> MapGuard<'a, R> {
+    fn region_at(&mut self, location: RegionCoordinatePair) -> io::Result<&mut Region<R>> {
         Ok(self.guard.entry(location).or_insert(Region::new(&self.map.root_directory, location)?))
     }
 
-    fn loaded_region_at(&mut self, location: RegionCoordinatePair) -> Option<&mut Region> {
+    fn loaded_region_at(&mut self, location: RegionCoordinatePair) -> Option<&mut Region<R>> {
         self.guard.get_mut(&location)
     }
 
-    fn remove_region(&mut self, location: RegionCoordinatePair) -> Option<Region> {
+    fn remove_region(&mut self, location: RegionCoordinatePair) -> Option<Region<R>> {
         self.guard.remove(&location)
     }
 }
 
-struct Region {
+struct Region<R: Registry> {
     file: File,
     chunk_offset: ChunkCoordinatePair,
-    chunk_info: Box<[ChunkDataInfo]>,
+    chunk_info: Box<[ChunkDataInfo<R>]>,
     loaded_count: usize
 }
 
-impl Region {
+impl<R: Registry> Region<R> {
     fn new(root_directory: &Path, location: RegionCoordinatePair) -> io::Result<Self> {
         let file_path = root_directory.join(format!("r.{}.{}.mca", location.x, location.z));
 
-        let mut chunk_info: Vec<ChunkDataInfo> = Vec::with_capacity(1024);
+        let mut chunk_info: Vec<ChunkDataInfo<R>> = Vec::with_capacity(1024);
         chunk_info.resize_with(1024, ChunkDataInfo::uninitialized);
 
         if file_path.exists() {
@@ -254,7 +271,7 @@ impl Region {
         self.file.read_exact(&mut buffer)?;
 
         let mut j: usize;
-        let mut chunk_info: &mut ChunkDataInfo;
+        let mut chunk_info: &mut ChunkDataInfo<R>;
         for i in 0..1024 {
             j = i * 4;
 
@@ -280,7 +297,7 @@ impl Region {
         (absolute_position.x - self.chunk_offset.x + (absolute_position.z - self.chunk_offset.z) * 16) as usize
     }
 
-    fn cache(&mut self, chunk: Chunk) {
+    fn cache(&mut self, chunk: Chunk<R>) {
         if let Some(chunk_info) = self.chunk_info.get_mut(self.index_absolute(chunk.chunk_coordinates())) {
             chunk_info.cached_chunk = Some(Box::new(chunk));
             chunk_info.cache_active = true;
@@ -346,18 +363,18 @@ impl Region {
     }
 }
 
-struct ChunkDataInfo {
+struct ChunkDataInfo<R: Registry> {
     sector_offset: u32,
     sector_count: u8,
     last_saved: u32,
-    cached_chunk: Option<Box<Chunk>>,
+    cached_chunk: Option<Box<Chunk<R>>>,
     /// Whether or not the cached chunk value is actually being accessed. If this is set to false, then the region
     /// that contains this chunk data may be unloaded at any time.
     cache_active: bool
 }
 
-impl ChunkDataInfo {
-    pub const fn uninitialized() -> Self {
+impl<R: Registry> ChunkDataInfo<R> {
+    pub fn uninitialized() -> Self {
         ChunkDataInfo {
             sector_offset: 0,
             sector_count: 0,

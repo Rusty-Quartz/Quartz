@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
 
@@ -10,7 +9,7 @@ pub use chat;
 pub use nbt;
 pub use util;
 
-// Folders
+mod base;
 /// Contains all relevant code to blocks and their implementations.
 pub mod block;
 /// Defines a brigadier-like command system for rust.
@@ -22,14 +21,7 @@ pub mod network;
 /// Contains world and chunk implementations, including chunk I/O utilities.
 pub mod world;
 
-// Files in src
-/// Defines the server config.
-pub mod config;
-/// Main server module.
-pub mod server;
-
-pub use config::Config;
+pub use base::*;
 pub use quartz_plugins::Listeners;
 pub use quartz_plugins::PluginInfo;
 pub use quartz_plugins::plugin::plugin_info::get_quartz_info;
-pub use server::QuartzServer;

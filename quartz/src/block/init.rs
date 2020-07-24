@@ -5,11 +5,11 @@ use log::info;
 use serde::{Serialize, Deserialize};
 use serde_json;
 use once_cell::sync::OnceCell;
-use crate::block::{StateID, Block, BlockState, StateBuilder};
+use crate::block::{StateID, Block, DynamicBlockState, StateBuilder};
 use util::UnlocalizedName;
 
 static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block>> = OnceCell::new();
-static GLOBAL_PALETTE: OnceCell<Vec<BlockState>> = OnceCell::new();
+static GLOBAL_PALETTE: OnceCell<Vec<DynamicBlockState>> = OnceCell::new();
 
 lazy_static! {
     static ref DUMMY_BLOCK: Block = Block {
@@ -26,7 +26,7 @@ pub fn get_block_list() -> &'static HashMap<UnlocalizedName, Block> {
 }
 
 #[inline(always)]
-pub fn get_global_palette() -> &'static Vec<BlockState> {
+pub fn get_global_palette() -> &'static Vec<DynamicBlockState> {
     GLOBAL_PALETTE.get().expect("Global palette not initialized.")
 }
 
@@ -41,7 +41,7 @@ pub fn default_state(block_name: &UnlocalizedName) -> Option<StateID> {
 }
 
 #[inline]
-pub fn get_state(id: StateID) -> Option<&'static BlockState> {
+pub fn get_state(id: StateID) -> Option<&'static DynamicBlockState> {
     get_global_palette().get(id as usize)
 }
 
@@ -89,8 +89,8 @@ pub fn init_blocks() {
         Err(_) => panic!("Block list already initialized.")
     }
 
-    let mut global_palette: Vec<BlockState> = Vec::with_capacity(largest_state + 1);
-    global_palette.resize_with(largest_state + 1, || BlockState {
+    let mut global_palette: Vec<DynamicBlockState> = Vec::with_capacity(largest_state + 1);
+    global_palette.resize_with(largest_state + 1, || DynamicBlockState {
         handle: &DUMMY_BLOCK,
         properties: BTreeMap::new()
     });
@@ -103,7 +103,7 @@ pub fn init_blocks() {
             // Make sure we're not going out of bounds
             assert!((state_info.id as usize) < global_palette.len(), "Invalid state ID encountered: {} > {}", state_info.id, global_palette.len());
 
-            let state = BlockState {
+            let state = DynamicBlockState {
                 handle,
                 properties: state_info.properties
             };

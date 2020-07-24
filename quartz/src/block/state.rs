@@ -5,6 +5,7 @@ use util::UnlocalizedName;
 
 /// A type alias for the numeric block state type, currently `u16`.
 pub type StateID = u16;
+pub type GenericStateData = BTreeMap<String, String>;
 
 /// A specific block type, not to be confused with a block state which specifies variants of a type. This
 /// is used as a data handle for block states.
@@ -16,18 +17,39 @@ pub struct Block {
 }
 
 impl Display for Block {
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)
+        self.name.fmt(f)
+    }
+}
+
+pub trait BlockState {
+    fn handle(&self) -> &Block;
+
+    fn id(&self) -> StateID;
+}
+
+// TODO: Implement static block state
+pub struct StaticBlockState {
+}
+
+impl BlockState for StaticBlockState {
+    fn handle(&self) -> &Block {
+        unimplemented!();
+    }
+
+    fn id(&self) -> StateID {
+        0
     }
 }
 
 #[derive(Clone)]
-pub struct BlockState {
+pub struct DynamicBlockState {
     pub handle: &'static Block,
     pub properties: BTreeMap<String, String>
 }
 
-impl BlockState {
+impl DynamicBlockState {
     // Computes the ID for this block state, guaranteed not to fail even if the state is corrupted
     pub fn id(&self) -> StateID {
         lazy_static! {
@@ -85,7 +107,7 @@ impl BlockState {
     }
 }
 
-impl Display for BlockState {
+impl Display for DynamicBlockState {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.handle.name)?;
 
@@ -100,11 +122,11 @@ impl Display for BlockState {
 }
 
 pub struct StateBuilder {
-    state: BlockState
+    state: DynamicBlockState
 }
 
 impl StateBuilder {
-    pub fn new(base: &BlockState) -> Self {
+    pub fn new(base: &DynamicBlockState) -> Self {
         StateBuilder {
             state: base.clone()
         }
@@ -147,7 +169,7 @@ impl StateBuilder {
         self
     }
 
-    pub fn build(self) -> BlockState {
+    pub fn build(self) -> DynamicBlockState {
         self.state
     }
 }

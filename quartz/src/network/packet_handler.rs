@@ -14,6 +14,7 @@ use regex::Regex;
 use lazy_static::lazy_static;
 use hex::ToHex;
 use util::Uuid;
+use crate::Registry;
 use crate::network::{AsyncClientConnection, ConnectionState, PacketBuffer};
 use crate::server::{self, QuartzServer};
 use crate::command::CommandSender;
@@ -238,7 +239,7 @@ impl AsyncPacketHandler {
     }
 }
 
-impl QuartzServer {
+impl<R: Registry> QuartzServer<R> {
     fn login_success_server(&mut self, _sender: usize, _uuid: &Uuid, _username: &str) {
         // TODO: Implement login_success_server
     }

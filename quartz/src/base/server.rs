@@ -26,9 +26,10 @@ use linefeed::{
 };
 use log::*;
 use openssl::rsa::Rsa;
-use crate::block::init_blocks;
+use crate::Config;
+use crate::Registry;
+use crate::block::{init_blocks};
 use crate::item::init_items;
-use crate::config::Config;
 use crate::network::*;
 use crate::command::*;
 use quartz_plugins::PluginManager;
@@ -37,7 +38,7 @@ use quartz_plugins::PluginManager;
 pub const VERSION: &str = "1.16.1";
 /// The state variable that controls whether or not the server and its various sub-processes are running.
 /// If set to false then the server will gracefully stop.
-pub static RUNNING: AtomicBool = AtomicBool::new(false);
+pub(crate) static RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// Returns whether or not the server is running.
 #[inline]
@@ -46,9 +47,11 @@ pub fn is_running() -> bool {
 }
 
 /// The main struct containing all relevant data to the quartz server instance.
-pub struct QuartzServer {
+pub struct QuartzServer<R: Registry> {
     /// The server config.
     pub config: Config,
+    /// The server registry, containing an API to access types, block data, item data, etc.
+    pub registry: Option<R>,
     /// The list of connected clients.
     pub(crate) client_list: ClientList,
     /// A handle to interact with the console.
@@ -60,14 +63,14 @@ pub struct QuartzServer {
     /// A map of thread join handles to join when the server is dropped.
     join_handles: HashMap<String, JoinHandle<()>>,
     /// The command executor instance for the server.
-    pub(crate) command_executor: Rc<RefCell<CommandExecutor>>,
+    pub(crate) command_executor: Rc<RefCell<CommandExecutor<R>>>,
     /// The server clock, used to time and regulate ticks.
     pub clock: ServerClock,
     /// The server plugin manager.
     pub plugin_manager: PluginManager
 }
 
-impl QuartzServer {
+impl<R: Registry> QuartzServer<R> {
     /// Creates a new server instance with the given config and terminal handle.
     pub fn new(config: Config, console_interface: Arc<Interface<DefaultTerminal>>) -> Self {
         if RUNNING.compare_and_swap(false, true, Ordering::SeqCst) {
@@ -78,6 +81,7 @@ impl QuartzServer {
 
         QuartzServer {
             config,
+            registry: Some(R::new()),
             client_list: ClientList::new(),
             console_interface,
             sync_packet_sender: sender,
@@ -92,6 +96,10 @@ impl QuartzServer {
     /// Initializes the server. This loads all blocks, items, and other game data, initializes commands
     /// and plugins, and starts the TCP server.
     pub fn init(&mut self) {      
+        RUNNING.store(self.init_internal(), Ordering::SeqCst);
+    }
+
+    fn init_internal(&mut self) -> bool {
         // Register all of the things
         init_blocks();
         init_items();
@@ -101,8 +109,7 @@ impl QuartzServer {
             Ok(mut executor) => init_commands(&mut *executor),
             Err(_) => {
                 error!("Internal error: could not borrow command_executor as mutable during initialization.");
-                RUNNING.store(false, Ordering::SeqCst);
-                return;
+                return false;
             }
         }
 
@@ -112,8 +119,25 @@ impl QuartzServer {
         // Setup TCP server
         if let Err(e) = self.start_tcp_server() {
             error!("Failed to start TCP server: {}", e);
-            RUNNING.store(false, Ordering::SeqCst);
+            return false;
         }
+
+        // Extract the registry
+        let registry = match self.registry.take() {
+            Some(registry) => registry,
+            None => {
+                error!("Internal error: could not extract registry object during initialization.");
+                return false;
+            }
+        };
+
+        // Initialize the global registry
+        if let Err(_) = R::set_global(registry) {
+            error!("Internal error: attempted to overwrite initialized global registry.");
+            return false;
+        }
+
+        true
     }
 
     fn init_command_handler(&mut self) {
@@ -193,7 +217,9 @@ impl QuartzServer {
             }
         }));
     }
+}
 
+impl<R: Registry> QuartzServer<R> {
     fn start_tcp_server(&mut self) -> Result<(), Box<dyn Error>> {
         let listener = TcpListener::bind(format!("{}:{}", self.config.server_ip, self.config.port))?;
 
@@ -301,7 +327,7 @@ impl QuartzServer {
     }
 }
 
-impl Drop for QuartzServer {
+impl<R: Registry> Drop for QuartzServer<R> {
     fn drop(&mut self) {
         // In case this is reached due to a panic
         RUNNING.store(false, Ordering::SeqCst);

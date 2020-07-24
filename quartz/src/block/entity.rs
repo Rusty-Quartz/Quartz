@@ -15,6 +15,6 @@ pub trait BlockEntity {
 }
 
 #[enum_dispatch(BlockEntity)]
-pub enum TypedBlockEntity {
+pub enum StaticBlockEntity {
     FurnaceBlockEntity
 }

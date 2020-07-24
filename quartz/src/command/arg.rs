@@ -1,3 +1,4 @@
+use crate::Registry;
 use crate::command::executor::{CommandContext, ExecutableCommand};
 
 use lazy_static::lazy_static;
@@ -157,7 +158,7 @@ impl<'cmd> Argument<'cmd> {
 
     /// Attempts to parse the given argument according to this argument's type. If the parse is successful, an argument
     /// of the same type is added to the context with the given name with the parsed value of the given string argument.
-    pub fn apply<'ctx>(&self, context: &mut CommandContext<'ctx>, name: &'static str, argument: &'ctx str) -> Result<(), String> {
+    pub fn apply<'ctx, R: Registry>(&self, context: &mut CommandContext<'ctx, R>, name: &'static str, argument: &'ctx str) -> Result<(), String> {
         match self {
             Argument::Integer(_value) => {
                 let parsed = argument.parse::<i64>();

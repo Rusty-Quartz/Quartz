@@ -7,18 +7,18 @@ use util::{
     UnlocalizedName,
     single_access::{AccessGuard, SingleAccessor}
 };
+use crate::Registry;
 use crate::block::{self, StateID};
-use crate::block::entity::TypedBlockEntity;
 use crate::world::location::{BlockPosition, CoordinatePair, ChunkCoordinatePair};
 
-pub struct Chunk {
+pub struct Chunk<R: Registry> {
     block_offset: CoordinatePair,
     sections: [OptionalSection; 16],
-    block_entities: HashMap<BlockPosition, SingleAccessor<TypedBlockEntity>>
+    block_entities: HashMap<BlockPosition, SingleAccessor<R::BlockEntity>>
 }
 
-impl Chunk {
-    pub fn from_nbt(nbt: &NbtCompound) -> Option<Chunk> {
+impl<R: Registry> Chunk<R> {
+    pub fn from_nbt(nbt: &NbtCompound) -> Option<Chunk<R>> {
         let mut chunk = Chunk {
             block_offset: CoordinatePair::new(0, 0),
             sections: array_init(|_index| OptionalSection::default()),
@@ -94,7 +94,7 @@ impl Chunk {
         self.block_offset >> 4
     }
 
-    pub fn block_entity_at(&self, absolute_position: BlockPosition) -> Option<AccessGuard<'_, TypedBlockEntity>> {
+    pub fn block_entity_at(&self, absolute_position: BlockPosition) -> Option<AccessGuard<'_, R::BlockEntity>> {
         self.block_entities.get(&absolute_position)?.take()
     }
 }
