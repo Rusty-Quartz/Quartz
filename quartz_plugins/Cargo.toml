@@ -8,5 +8,5 @@ edition = "2018"
 
 [dependencies]
 libloading = "0.6.2"
-log = "0.4.8"
+log = "0.4.11"
 log4rs = "0.12.0"
