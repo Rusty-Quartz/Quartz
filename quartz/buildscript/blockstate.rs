@@ -285,12 +285,3 @@ struct PropertyData {
     values: Vec<String>,
     blocks: Vec<String>
 }
-
-
-/*
-Cassy22/07/2020
-struct SugarcaneState {
-  data
-}
-
-*/
