@@ -66,28 +66,38 @@ fn find_shared_properties(data: &HashMap<String, RawBlockInfo>) -> Vec<PropertyD
 
         for block in blocks {
             let block_properties = data.get(block).unwrap().properties.get(&lowercase_name).unwrap();
-            let first_char = get_block_name(block).chars().nth(0).unwrap().to_ascii_uppercase();
 
             // If this is the first block in the property
             if property_values.is_empty() {
                 property_values = block_properties.clone();
-                enum_name.push(first_char);
                 property_blocks.push(block.clone());
             } else {
                 // If the property values match
                 if vec_match(&property_values, block_properties) {
-                    enum_name.push(first_char);
                     property_blocks.push(block.clone());
                 } else {
                     match property_conflicts.get_mut(block_properties) {
                         // If an alt with the same properties already exists
                         Some((alt, block_vec)) => {
-                            alt.push(first_char);
                             block_vec.push(block.clone());
                         }
 
                         None => {
-                            property_conflicts.insert(block_properties.clone(), (format!("{}_{}", property_name, first_char), vec![block.clone()]));
+                            let differences = get_differences(&property_values, block_properties);
+
+                            let mut ending: String = differences.iter().map(|v| v[..1].to_owned()).collect();
+                            ending.make_ascii_uppercase();
+
+                            if ending.len() == 0 {
+                                let differences = get_differences(block_properties, &property_values);
+                                let mut ending: String = differences.iter().map(|v| v[..1].to_owned()).collect();
+                                ending.make_ascii_uppercase();
+                                enum_name.push_str(&ending);
+                            }
+
+                            println!("{:?}  {}", differences, ending);
+
+                            property_conflicts.insert(block_properties.clone(), (format!("{}_{}", property_name, ending), vec![block.clone()]));
                         }
                     }
                 }
@@ -118,8 +128,13 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
         let is_bool = property.values.get(0).unwrap().parse::<bool>().is_ok();
 
         let original_name = get_original_property_name(property);
+        let enum_name = if is_num {
+            property.name.clone()
+        } else {
+            property.name.replace('_', "")
+        };
 
-        let mut curr_enum = format!("\n\n/// Blockstate property {} for", property.name);
+        let mut curr_enum = format!("\n\n/// Blockstate property {} for", enum_name);
         
         for block in &property.blocks {
             curr_enum.push_str(&format!("\n///\t{}", block));
@@ -128,7 +143,7 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
         if is_num {
             curr_enum.push_str("\n#[repr(u8)]");
         }
-        curr_enum.push_str(&format!("\npub enum {} {{", property.name));
+        curr_enum.push_str(&format!("\npub enum {} {{", enum_name));
 
         let mut property_value_names = Vec::new();
         for value in &property.values {
@@ -146,7 +161,7 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
 
         enums.push_str(&format!("{}\n}}", curr_enum));
         
-        let mut const_arr_name = property.name.clone();
+        let mut const_arr_name = enum_name.clone();
 
         const_arr_name.make_ascii_uppercase();
         enums.push_str(&format!("\nconst {}_VALUES: [&str; {}] = [", const_arr_name, property_value_names.len()));
@@ -157,7 +172,7 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
         
         enums.push_str("];");
         
-        enums.push_str(&format!("\nimpl {} {{\n\tpub const fn string_values() -> &'static [&'static str] {{\n\t\t", property.name.clone()));
+        enums.push_str(&format!("\nimpl {} {{\n\tpub const fn string_values() -> &'static [&'static str] {{\n\t\t", enum_name));
         enums.push_str(&format!("&{}_VALUES", const_arr_name));
         enums.push_str("\n\t}\n}");
     }
@@ -192,6 +207,8 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> String {
     let mut output = String::new();
 
     for (uln_name, block_info) in block_data.iter() {
+        if block_info.properties.len() < 1 {continue}
+
         let mut block_struct = String::new();
 
         let block_name = snake_to_camel(&get_block_name(uln_name));
@@ -202,7 +219,11 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> String {
 
             let lowercase_name = get_original_property_name(&PropertyData {name: property_name.to_owned(), values: vals.to_owned(), blocks: Vec::new()});
 
-            block_struct.push_str(&format!("\n\t{}: {},", lowercase_name.replace("type", "r#type"), property_name));
+            block_struct.push_str(&format!("\n\t{}: {},", lowercase_name.replace("type", "r#type"), if vals.get(0).unwrap().parse::<u8>().is_ok() {
+                property_name.clone()
+            } else {
+                property_name.replace('_', "")
+            }));
         }
         block_struct.push_str("\n}");
         output.push_str(&block_struct);
@@ -216,7 +237,11 @@ fn gen_struct_enum(block_data: &HashMap<String, RawBlockInfo>) -> String {
 
     for (name, data) in block_data.iter() {
         let block_name = snake_to_camel(&get_block_name(name));
-        enum_str.push_str(&format!("\n\t{}({}State) = {},", block_name, block_name, data.default))
+        if data.properties.len() < 1 {
+            enum_str.push_str(&format!("\n\t{} = {},", block_name, data.default))
+        } else {
+            enum_str.push_str(&format!("\n\t{}({}State) = {},", block_name, block_name, data.default))
+        }
     }
     
     enum_str.push_str("\n}");
@@ -260,6 +285,18 @@ fn get_original_property_name(property: &PropertyData) -> String {
     }
     lowercase_name.make_ascii_lowercase();
     lowercase_name
+}
+
+fn get_differences(first: &Vec<String>, second: &Vec<String>) -> Vec<String> {
+    let mut differences = Vec::new();
+
+    for val in second {
+        if !first.contains(val) {
+            differences.push(val.clone());
+        }
+    }
+
+    differences
 }
 
 type StateID = u16;
