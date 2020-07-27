@@ -54,7 +54,7 @@ pub fn new_state(block_name: &UnlocalizedName) -> Option<StateBuilder> {
 pub fn init_blocks() {
     info!("Loading block data");
 
-    let parsed_data = serde_json::from_str::<HashMap<String, RawBlockInfo>>(include_str!("../../../assets/blocks.json"))
+    let parsed_data = serde_json::from_str::<HashMap<String, RawBlockInfo>>(include_str!("../../buildscript/assets/blocks.json"))
         .expect("assets/blocks.json is corrupted.");
 
     let mut block_list: HashMap<UnlocalizedName, Block> = HashMap::with_capacity(parsed_data.len());

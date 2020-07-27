@@ -1,5 +1,6 @@
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
+#![feature(arbitrary_enum_discriminant)]
 
 //! This crate contains virtually all of the code, APIs, and other malarkey that makes quartz run. The server
 //! code is launched through the separate `quartz_launcher` crate. Plugins should use this crate as a library
