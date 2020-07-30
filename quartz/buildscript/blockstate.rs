@@ -107,13 +107,17 @@ fn find_shared_properties(data: &HashMap<String, RawBlockInfo>) -> Vec<PropertyD
         // Insert the current property data in order to be able to just loop over property_conflicts
         property_conflicts.insert(property_values, (enum_name, property_blocks));
 
-        for (values, (name, blocks)) in property_conflicts {
-            let name = if values.get(0).unwrap().parse::<u8>().is_ok() {
+        for (values, (name, blocks)) in &property_conflicts {
+            let mut block_name = false;
+            let name = if blocks.len() == 1 {
+                block_name = true;
+                format!("{}_{}", property_name, snake_to_camel(&get_block_name(&blocks.get(0).unwrap())))
+            } else if values.get(0).unwrap().parse::<u8>().is_ok() {
                 format!("{}_{}_{}", property_name, values.get(0).unwrap(), values.get(values.len()-1).unwrap())
             } else {
-                name
+                name.clone()
             };
-            property_data.push(PropertyData {name, blocks, values});
+            property_data.push(PropertyData {name, blocks: blocks.clone(), values: values.clone(), block_name});
         }
     }
 
@@ -126,7 +130,7 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
 
         let is_num = property.values.get(0).unwrap().parse::<u8>().is_ok();
         let is_bool = property.values.get(0).unwrap().parse::<bool>().is_ok();
-
+        println!("{}", property.values.get(0).unwrap());
         let original_name = get_original_property_name(property);
         let enum_name = if is_num {
             property.name.clone()
@@ -182,22 +186,14 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
 fn update_block_property_names(block_data: &mut HashMap<String, RawBlockInfo>, property_data: &Vec<PropertyData>) {
     for property in property_data {
 
-        // Calculate original property name in the json
-        // I feel like this could be made less hacky but idk how
-        let mut split_name = property.name.split('_');
-        let mut lowercase_name = String::new();
-        let offset = if property.values.get(0).unwrap().parse::<u8>().is_ok() {2} else {1};
-        for i in 0..split_name.clone().count() - offset {
-            lowercase_name.push_str(&format!("{}{}", if i > 0 {"_"} else {""}, split_name.next().unwrap()))
-        }
-        lowercase_name.make_ascii_lowercase();
-
         // replace the original name with the enum name
+        let og_name = get_original_property_name(property);
+
         for block in &property.blocks {
             let block_properties = block_data.get_mut(block).unwrap();
-            println!("{} {} {:?}", lowercase_name, block, block_properties.properties);
-            let vals = block_properties.properties.get(&lowercase_name).unwrap().clone();
-            block_properties.properties.remove(&lowercase_name);
+            println!("{} {} {} {:?}", property.name, og_name, block, block_properties.properties);
+            let vals = block_properties.properties.get(&og_name).unwrap().clone();
+            block_properties.properties.remove(&og_name);
             block_properties.properties.insert(property.name.clone(), vals);
         }
     }
@@ -217,7 +213,7 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> String {
 
         for (property_name, vals) in &block_info.properties {
 
-            let lowercase_name = get_original_property_name(&PropertyData {name: property_name.to_owned(), values: vals.to_owned(), blocks: Vec::new()});
+            let lowercase_name = get_original_property_name(&PropertyData {name: property_name.to_owned(), values: vals.to_owned(), blocks: Vec::new(), block_name: true});
 
             block_struct.push_str(&format!("\n\t{}: {},", lowercase_name.replace("type", "r#type"), if vals.get(0).unwrap().parse::<u8>().is_ok() {
                 property_name.clone()
@@ -279,7 +275,8 @@ fn snake_to_camel(str: &str) -> String {
 fn get_original_property_name(property: &PropertyData) -> String {
     let mut split_name = property.name.split('_');
     let mut lowercase_name = String::new();
-    let offset = if property.values.get(0).unwrap().parse::<u8>().is_ok() {2} else {1};
+    let offset = if property.block_name {1} else { if property.values.get(0).unwrap().parse::<u8>().is_ok() {2} else {1} };
+    println!("{} {}", split_name.clone().collect::<String>(), property.name);
     for i in 0..split_name.clone().count() - offset {
         lowercase_name.push_str(&format!("{}{}", if i > 0 {"_"} else {""}, split_name.next().unwrap()))
     }
@@ -320,5 +317,6 @@ struct RawStateInfo {
 struct PropertyData {
     name: String,
     values: Vec<String>,
-    blocks: Vec<String>
+    blocks: Vec<String>,
+    block_name: bool
 }
