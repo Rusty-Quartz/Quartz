@@ -40,17 +40,17 @@ impl BlockEntityRegistry for StaticRegistry {
 }
 
 impl Registry for StaticRegistry {
-    #[inline(always)]
+    #[inline]
     fn new() -> Self {
         StaticRegistry
     }
 
-    #[inline(always)]
+    #[inline]
     fn global() -> &'static Self {
         &GLOBAL_STATIC_REGISTRY
     }
 
-    #[inline(always)]
+    #[inline]
     fn set_global(_registry: Self) -> Result<(), Self> {
         Ok(())
     }

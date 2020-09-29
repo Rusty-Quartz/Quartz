@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-#![feature(coerce_unsized, unsize, test)]
+#![feature(coerce_unsized, unsize, set_ptr_value, test)]
 
 //! Provides generic utilities for quartz, the minecraft server implementation in rust.
 

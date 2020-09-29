@@ -1,6 +1,5 @@
 use crate::Registry;
 use crate::command::executor::{CommandContext, ExecutableCommand};
-
 use lazy_static::lazy_static;
 use regex::Regex;
 

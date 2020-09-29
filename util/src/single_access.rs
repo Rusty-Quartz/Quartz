@@ -63,9 +63,9 @@ impl<'a, T> DerefMut for AccessGuard<'a, T> {
 /// This type, unlike [`RefCell`], only allows one reference to its data at a time, and that reference is
 /// always mutable. In fact, when [`take`] is called on a single access box, its internal pointer is set to
 /// null until the smart pointer is dropped, at which point it is replaced. For this reason, the smart
-/// pointer returned by [`take`] is called [`PartialMove`].
+/// pointer returned by [`take`] is called [`BoxAccessGuard`].
 /// 
-/// [`PartialMove`]: crate::single_access::PartialMove
+/// [`BoxAccessGuard`]: crate::single_access::BoxAccessGuard
 /// [`RefCell`]: std::cell::RefCell
 /// [`take`]: crate::single_access::SingleAccessorBox::take
 // TODO: Delete if unused
@@ -116,8 +116,8 @@ impl<T: ?Sized> SingleAccessorBox<T> {
     /// assert_eq!(x.take().as_mut().map(|guard| **guard), Some(10_i32));
     /// ```
     #[inline]
-    pub fn take(&self) -> Option<PartialMove<'_, T>> {
-        PartialMove::new(&self.value)
+    pub fn take(&self) -> Option<BoxAccessGuard<'_, T>> {
+        BoxAccessGuard::new(&self.value)
     }
 }
 
@@ -135,13 +135,13 @@ impl<T: ?Sized> Drop for SingleAccessorBox<T> {
 /// 
 /// [`SingleAccessorBox`]: crate::single_access::SingleAccessorBox
 /// [`take`]: crate::single_access::SingleAccessorBox::take
-pub struct PartialMove<'a, T: ?Sized> {
+pub struct BoxAccessGuard<'a, T: ?Sized> {
     source: &'a Cell<*mut T>,
     value: *mut T
 }
 
-impl<'a, T: ?Sized> PartialMove<'a, T> {
-    /// Creates a new partial-move smart pointer with the given cell.
+impl<'a, T: ?Sized> BoxAccessGuard<'a, T> {
+    /// Creates a new access-guard smart pointer with the given cell.
     /// 
     /// If the pointer in the cell is null, then `None` is returned, otherwise the data part of the pointer
     /// is set to null and the reference is constructed and returned.
@@ -149,32 +149,28 @@ impl<'a, T: ?Sized> PartialMove<'a, T> {
     fn new(source: &'a Cell<*mut T>) -> Option<Self> {
         let value = source.get();
 
-        // Ensure the value hasn't already been moved
+        // Ensure the value hasn't already been taken
         if value.is_null() {
             return None;
         }
 
         // Set the data part of the pointer in the cell to null
-        unsafe {
-            let mut copy = value;
-            *(&mut copy as *mut *mut T as *mut *mut u8) = ptr::null_mut();
-            source.set(copy);
-        }
+        source.set(value.set_ptr_value(ptr::null_mut()));
 
-        Some(PartialMove {
+        Some(BoxAccessGuard {
             source,
             value
         })
     }
 }
 
-impl<'a, T: ?Sized> Drop for PartialMove<'a, T> {
+impl<'a, T: ?Sized> Drop for BoxAccessGuard<'a, T> {
     fn drop(&mut self) {
         self.source.set(self.value);
     }
 }
 
-impl<'a, T: ?Sized> Deref for PartialMove<'a, T> {
+impl<'a, T: ?Sized> Deref for BoxAccessGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -182,7 +178,7 @@ impl<'a, T: ?Sized> Deref for PartialMove<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> DerefMut for PartialMove<'a, T> {
+impl<'a, T: ?Sized> DerefMut for BoxAccessGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.value }
     }

@@ -1,17 +1,16 @@
-use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 use lazy_static::lazy_static;
+use tinyvec::ArrayVec;
 use util::UnlocalizedName;
 
 /// A type alias for the numeric block state type, currently `u16`.
 pub type StateID = u16;
-pub type GenericStateData = BTreeMap<String, String>;
 
 /// A specific block type, not to be confused with a block state which specifies variants of a type. This
 /// is used as a data handle for block states.
 pub struct Block {
     pub name: UnlocalizedName,
-    pub properties: BTreeMap<String, Vec<String>>,
+    pub properties: ArrayVec<[(String, Vec<String>); 16]>,
     pub base_state: StateID,
     pub default_state: StateID
 }
@@ -46,7 +45,7 @@ impl BlockState for StaticBlockState {
 #[derive(Clone)]
 pub struct DynamicBlockState {
     pub handle: &'static Block,
-    pub properties: BTreeMap<String, String>
+    pub properties: ArrayVec<[(String, String); 16]>
 }
 
 impl DynamicBlockState {
@@ -67,7 +66,7 @@ impl DynamicBlockState {
 
             // Yes, this makes a difference
             1 => {
-                let state_property_value = self.properties.iter().next().unwrap().1;
+                let state_property_value = &self.properties[0].1;
 
                 match self.handle.properties.iter().next() {
                     // The entry is in the form (property_name, all_property_values)
@@ -83,7 +82,11 @@ impl DynamicBlockState {
                     // Map this state's property values to their index in the block's reference properties and pass along
                     // the total number of possible property values as well
                     .map(|(property_name, all_property_values)| {
-                        let state_property_value = self.properties.get(property_name).unwrap_or(&DEFAULT_PROPERTY_VALUE);
+                        let state_property_value = self.properties
+                            .iter()
+                            .find(|(key, _)| key == property_name)
+                            .map(|(_, value)| value)
+                            .unwrap_or(&DEFAULT_PROPERTY_VALUE);
 
                         (
                             // Value index
@@ -133,26 +136,25 @@ impl StateBuilder {
     }
 
     pub fn add_property(&mut self, name: &str, value: &str) -> Result<(), String> {
-        match self.state.properties.get_mut(name) {
-            // The property has to already exist in the state
-            Some(val) => match self.state.handle.properties.get(name) {
-                Some(accepted_values) => {
-                    let owned_value = value.to_owned();
+        match self.state.properties.iter_mut().enumerate().find(|(_, (key, _))| name == key) {
+            Some((index, (value_mut, _))) => {
+                match self.state.handle.properties.get(index) {
+                    Some((_, accepted_values)) => {
+                        let owned_value = value.to_owned();
 
-                    // Make sure the value being added is valid
-                    if accepted_values.contains(&owned_value) {
-                        *val = owned_value;
-                        Ok(())
-                    } else {
-                        Err(format!("Invalid property value for {} in {}: {}", name, self.state.handle.name, value))
-                    }
-                },
+                        // Make sure the value being added is valid
+                        if accepted_values.contains(&owned_value) {
+                            *value_mut = owned_value;
+                            Ok(())
+                        } else {
+                            Err(format!("Invalid property value for {} in {}: {}", name, self.state.handle.name, value))
+                        }
+                    },
 
-                // This should never happen unless something is really off
-                None => Err(format!("Encountered corrupted state while building {}", self.state.handle.name))
+                    None => Err(format!("Encountered corrupted state while building {}", self.state.handle.name))
+                }
             },
 
-            // If the property does not exist already then it does not exist for this type of block
             None => Err(format!("Invalid property for {}: {}", self.state.handle.name, name))
         }
     }
@@ -165,7 +167,7 @@ impl StateBuilder {
     }
 
     pub fn with_property_unchecked(mut self, name: &str, value: &str) -> Self {
-        *self.state.properties.get_mut(name).unwrap() = value.to_owned();
+        self.state.properties.iter_mut().find(|(key, v)| name == key).unwrap().1 = value.to_owned();
         self
     }
 

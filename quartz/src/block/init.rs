@@ -5,16 +5,17 @@ use log::info;
 use serde::{Serialize, Deserialize};
 use serde_json;
 use once_cell::sync::OnceCell;
+use tinyvec::ArrayVec;
 use crate::block::{StateID, Block, DynamicBlockState, StateBuilder};
 use util::UnlocalizedName;
 
 static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block>> = OnceCell::new();
-static GLOBAL_PALETTE: OnceCell<Vec<DynamicBlockState>> = OnceCell::new();
+static GLOBAL_PALETTE: OnceCell<Box<[DynamicBlockState]>> = OnceCell::new();
 
 lazy_static! {
     static ref DUMMY_BLOCK: Block = Block {
         name: UnlocalizedName::minecraft("dummy"),
-        properties: BTreeMap::new(),
+        properties: ArrayVec::new(),
         base_state: 0,
         default_state: 0
     };
@@ -26,7 +27,7 @@ pub fn get_block_list() -> &'static HashMap<UnlocalizedName, Block> {
 }
 
 #[inline(always)]
-pub fn get_global_palette() -> &'static Vec<DynamicBlockState> {
+pub fn get_global_palette() -> &'static [DynamicBlockState] {
     GLOBAL_PALETTE.get().expect("Global palette not initialized.")
 }
 
@@ -72,7 +73,7 @@ pub fn init_blocks() {
 
         block_list.insert(uln.clone(), Block {
             name: uln,
-            properties: block_info.properties.clone(),
+            properties: block_info.properties.clone().into_iter().collect::<ArrayVec<_>>(),
             base_state: block_info.states[0].id,
             default_state: block_info.default
         });
@@ -92,7 +93,7 @@ pub fn init_blocks() {
     let mut global_palette: Vec<DynamicBlockState> = Vec::with_capacity(largest_state + 1);
     global_palette.resize_with(largest_state + 1, || DynamicBlockState {
         handle: &DUMMY_BLOCK,
-        properties: BTreeMap::new()
+        properties: ArrayVec::new()
     });
 
     for (name, block) in parsed_data {
@@ -105,7 +106,7 @@ pub fn init_blocks() {
 
             let state = DynamicBlockState {
                 handle,
-                properties: state_info.properties
+                properties: state_info.properties.into_iter().collect::<ArrayVec<_>>()
             };
 
             // Make sure the computed ID matches the ID in the generated data
@@ -115,7 +116,7 @@ pub fn init_blocks() {
         }
     }
 
-    match GLOBAL_PALETTE.set(global_palette) {
+    match GLOBAL_PALETTE.set(global_palette.into_boxed_slice()) {
         Ok(()) => {},
         Err(_) => panic!("Global palette already initialized.")
     }

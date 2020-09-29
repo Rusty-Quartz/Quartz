@@ -13,7 +13,7 @@ use crate::world::location::{BlockPosition, CoordinatePair, ChunkCoordinatePair}
 
 pub struct Chunk<R: Registry> {
     block_offset: CoordinatePair,
-    sections: [OptionalSection; 16],
+    sections: [Section; 16],
     block_entities: HashMap<BlockPosition, SingleAccessor<R::BlockEntity>>
 }
 
@@ -21,7 +21,7 @@ impl<R: Registry> Chunk<R> {
     pub fn from_nbt(nbt: &NbtCompound) -> Option<Chunk<R>> {
         let mut chunk = Chunk {
             block_offset: CoordinatePair::new(0, 0),
-            sections: array_init(|_index| OptionalSection::default()),
+            sections: array_init(|_index| Section::default()),
             block_entities: HashMap::new()
         };
 
@@ -76,7 +76,7 @@ impl<R: Registry> Chunk<R> {
         Some(chunk)
     }
 
-    #[inline(always)]
+    #[inline]
     fn section_index_absolute(&self, pos: BlockPosition) -> usize {
         ((pos.x - self.block_offset.x) + (pos.z - self.block_offset.z) * 16 + (pos.y as i32 % 16) * 256) as usize
     }
@@ -99,38 +99,34 @@ impl<R: Registry> Chunk<R> {
     }
 }
 
-#[repr(transparent)]
-struct OptionalSection(Option<Box<Section>>);
-
-impl OptionalSection {
-    fn init(&mut self) {
-        self.0 = Some(Box::new(Section::new()))
-    }
-
-    fn block_id(&self, index: usize) -> StateID {
-        match &self.0 {
-            Some(section) => section.block_data.get(index).map(|id| *id).unwrap_or(0),
-            None => 0
-        }
-    }
-}
-
-impl Default for OptionalSection {
-    fn default() -> Self {
-        OptionalSection(None)
-    }
-}
-
 struct Section {
-    block_data: [StateID; 4096],
-    lighting: [u8; 2048]
+    block_data: Option<Box<[StateID]>>,
+    lighting: Option<Box<[u8]>>
 }
 
 impl Section {
     const fn new() -> Self {
         Section {
-            block_data: [0 as StateID; 4096],
-            lighting: [0_u8; 2048]
+            block_data: None,
+            lighting: None
         }
+    }
+
+    fn init(&mut self) {
+        self.block_data = Some(vec![0 as StateID; 4096].into_boxed_slice());
+        self.lighting = Some(vec![0_u8; 2048].into_boxed_slice());
+    }
+
+    fn block_id(&self, index: usize) -> StateID {
+        match self.block_data.as_ref() {
+            Some(block_data) => block_data.get(index).map(|id| *id).unwrap_or(0),
+            None => 0
+        }
+    }
+}
+
+impl Default for Section {
+    fn default() -> Self {
+        Self::new()
     }
 }

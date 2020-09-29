@@ -79,7 +79,7 @@ fn find_shared_properties(data: &HashMap<String, RawBlockInfo>) -> Vec<PropertyD
                 } else {
                     match property_conflicts.get_mut(block_properties) {
                         // If an alt with the same properties already exists
-                        Some((_, block_vec)) => {
+                        Some((_alt, block_vec)) => {
                             block_vec.push(block.clone());
                         }
 
