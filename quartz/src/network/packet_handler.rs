@@ -3,6 +3,7 @@ use std::sync::{
     Arc,
     mpsc::Sender
 };
+use chat::{Component, color::PredefinedColor};
 use log::{debug, warn, error};
 use serde::Deserialize;
 use serde_json::json;
@@ -13,11 +14,14 @@ use rand::{thread_rng, Rng};
 use regex::Regex;
 use lazy_static::lazy_static;
 use hex::ToHex;
-use util::Uuid;
-use crate::Registry;
+use util::{UnlocalizedName, Uuid};
+use crate::{world::location::BlockPosition, Registry};
 use crate::network::{AsyncClientConnection, ConnectionState, PacketBuffer};
 use crate::server::{self, QuartzServer};
 use crate::command::CommandSender;
+use nbt::NbtCompound;
+
+use super::AsyncWriteHandle;
 
 /// The numeric protocol version the server uses.
 pub const PROTOCOL_VERSION: i32 = 736;
@@ -25,6 +29,122 @@ pub const PROTOCOL_VERSION: i32 = 736;
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
 include!(concat!(env!("OUT_DIR"), "/packet_output.rs"));
+include!(concat!(env!("OUT_DIR"), "/packet_types.rs"));
+
+#[allow(missing_docs)]
+pub enum EntityMetadata {
+    Byte(i8),
+    VarInt(i32),
+    Float(f32),
+    String(String),
+    Chat(Component),
+    OptChat(bool, Option<Component>),
+    Slot(Slot),
+    Boolean(bool),
+    Rotation(f32, f32, f32),
+    Position(BlockPosition),
+    OptPosition(bool, Option<BlockPosition>),
+    Direction(i32),
+    OptUUID(bool, Option<Uuid>),
+    OptBlockId(i32),
+    NBT(NbtCompound),
+    Particle(WrappedParticle),
+    VillagerData(i32, i32, i32),
+    OptVarInt(i32),
+    Pose(i32)
+}
+
+#[allow(missing_docs)]
+pub enum Particle {
+    AmbientEntityEffect,
+    AngryVillager,
+    Barrier,
+    Block(i32),
+    Bubble,
+    Cloud,
+    Crit,
+    DamageIndicator,
+    DragonBreath,
+    DrippingLava,
+    FallingLava,
+    LandingLava,
+    DrippingWater,
+    FallingWater,
+    Dust(f32,f32,f32,f32),
+    Effect,
+    ElderGuardian,
+    EnchantedHit,
+    Enchant,
+    EndRod,
+    EntityEffect,
+    ExplosionEmitter,
+    Explosion,
+    FallingDust(i32),
+    Firework,
+    Fishing,
+    Flame,
+    Flash,
+    HappyVillager,
+    Composter,
+    Heart,
+    InstantEffect,
+    Item(Slot),
+    ItemSlime,
+    ItemSnowball,
+    LargeSmoke,
+    Lava,
+    Mycelium,
+    Note,
+    Poof,
+    Portal,
+    Rain,
+    Smoke,
+    Sneeze,
+    Spit,
+    SquidInk,
+    SweepAttack,
+    TotemOfUndying,
+    Underwater,
+    Splash,
+    Witch,
+    BubblePop,
+    CurrentDown,
+    BubbleColumnUp,
+    Nautilus,
+    Dolphin,
+    CampfireCosySmoke,
+    CampfireSignalSmoke,
+    DrippingHoney,
+    FallingHoney,
+    LandingHoney,
+    FallingNectar
+}
+
+#[allow(missing_docs)]
+pub enum PlayerInfoAction {
+    AddPlayer {
+        name: String,
+        number_of_properties: i32,
+        properties: Vec<PlayerProperty>,
+        gamemode: i32,
+        ping: i32,
+        has_display_name: bool,
+        display_name: Option<Component>
+    },
+    UpdateGamemode {
+        gamemode: i32
+    },
+    UpdateLatency {
+        ping: i32
+    },
+    UpdateDisplayName {
+        has_display_name: bool,
+        display_name: Option<Component>
+    },
+    RemovePlayer
+}
+
+
 
 /// A wraper for a server-bound packet which includes the sender ID.
 pub struct WrappedServerBoundPacket {
@@ -111,9 +231,9 @@ impl AsyncPacketHandler {
 
         conn.send_packet(&ClientBoundPacket::EncryptionRequest {
             server_id: "".to_owned(),
-            pub_key_len: pub_key_der.len() as i32,
-            pub_key: pub_key_der,
-            verify_token_len: verify_token.len() as i32,
+            public_key_length: pub_key_der.len() as i32,
+            public_key: pub_key_der,
+            verify_token_length: verify_token.len() as i32,
             verify_token: verify_token.to_vec()
         })
     }
@@ -131,7 +251,7 @@ impl AsyncPacketHandler {
         if self.verify_token != decrypted_verify {
             error!("verify for client {} didn't match, {:x?}, {:x?}", conn.id, self.verify_token, decrypted_verify);
             return conn.send_packet(&ClientBoundPacket::Disconnect {
-                reason: "Error verifying encryption".to_owned()
+                reason: Component::colored("Error verifying encryption".to_owned(), PredefinedColor::Red)
             });
         }
 
@@ -234,7 +354,7 @@ impl AsyncPacketHandler {
         }    
     }
 
-    fn login_plugin_response(&mut self, _conn: &mut AsyncClientConnection, _message_id: i32, _successful: bool, _data: &Vec<u8>) {
+    fn login_plugin_response(&mut self, _conn: &mut AsyncClientConnection, _message_id: i32, _successful: bool, _data: &Option<Vec<u8>>) {
         // TODO: Implement login_plugin_response
     }
 }
@@ -268,7 +388,7 @@ impl<R: Registry> QuartzServer<R> {
         };
     }
 
-    fn legacy_ping(&mut self, sender: usize) {
+    fn legacy_server_list_ping(&mut self, sender: usize, _payload: &u8) {
         // Load in all needed values from server object
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
@@ -328,6 +448,108 @@ impl<R: Registry> QuartzServer<R> {
             json_response: json_response.to_string()
         });
     }
+    #[allow(unused_variables)]
+    fn client_disconnected(&mut self, id: &usize) {}
+    #[allow(unused_variables)]
+    fn client_connected(&mut self, id: &usize, write_handle: &&AsyncWriteHandle) {}
+    #[allow(unused_variables)]
+    fn use_item(&mut self, sender: usize, hand: &i32) {}
+    #[allow(unused_variables)]
+    fn player_block_placement(&mut self, sender: usize, hand: &i32, location: &BlockPosition, face: & i32, cursor_position_x: &f32, cursor_position_y: &f32, cursor_position_z: &f32, inside_block: &bool) {}
+    #[allow(unused_variables)]
+    fn spectate(&mut self, sender: usize, target_player: &Uuid) {}
+    #[allow(unused_variables)]
+    fn animation_serverbound(&mut self, sender: usize, hand: &i32) {}
+    #[allow(unused_variables)]
+    fn update_sign(&mut self, sender: usize, location: &BlockPosition, line_1: &str, line_2: &str, line_3: &str, line_4: &String) {}
+    #[allow(unused_variables)]
+    fn update_structure_block(&mut self, sender: usize, location: &BlockPosition, action: &i32, mode: &i32, name: &String, offset_x: &i8, offset_y: &i8, offset_z: &i8, size_x: &i8, size_y: &i8, size_z: &i8, mirror: &i32, rotation: &i32, metadate: &str, integrity: &f32, seed: &i64, flags: &i8) {}
+    #[allow(unused_variables)]
+    fn creative_inventory_action(&mut self, sender: usize, slot: &i16, clicked_item: &Slot) {}
+    #[allow(unused_variables)]
+    fn update_jigsaw_block(&mut self, sender: usize, location: &BlockPosition, name: &UnlocalizedName, target: &UnlocalizedName, pool: &UnlocalizedName, final_state: &str, joint_type: &str) {}
+    #[allow(unused_variables)]
+    fn update_command_block_minecart(&mut self, sender: usize, entity_id: &i32, command: &str, track_output: &bool) {}
+    #[allow(unused_variables)]
+    fn update_command_block(&mut self, sender: usize, location: &BlockPosition, command: &str, mode: &i32, flags: &i8) {}
+    #[allow(unused_variables)]
+    fn held_item_change_serverbound(&mut self, sender: usize, slot: &i16) {}
+    #[allow(unused_variables)]
+    fn set_beacon_effect(&mut self, sender: usize, primary_effect: &i32, secondary_effect: &i32) {}
+    #[allow(unused_variables)]
+    fn select_trade(&mut self, sender: usize, selected_slod: &i32) {}
+    #[allow(unused_variables)]
+    fn advancement_tab(&mut self, sender: usize, action: &i32, tab_id: &Option<UnlocalizedName>) {}
+    #[allow(unused_variables)]
+    fn resource_pack_status(&mut self, sender: usize, result: &i32) {}
+    #[allow(unused_variables)]
+    fn name_item(&mut self, sender: usize, item_name: &str) {}
+    #[allow(unused_variables)]
+    fn set_recipe_book_state(&mut self, sender: usize, book_id: &i32, book_open: &bool, filter_active: &bool) {}
+    #[allow(unused_variables)]
+    fn set_displayed_recipe(&mut self, sender: usize, recipe_id: &UnlocalizedName) {}
+    #[allow(unused_variables)]
+    fn steer_vehicle(&mut self, sender: usize, sideways: &f32, forward: &f32, flags: &u8) {}
+    #[allow(unused_variables)]
+    fn entity_action(&mut self, sender: usize, entity_id: &i32, action_id: &i32, jump_boost: &i32) {}
+    #[allow(unused_variables)]
+    fn player_digging(&mut self, sender: usize, status: &i32, location: &BlockPosition, face: &i8) {}
+    #[allow(unused_variables)]
+    fn player_abilities_serverbound(&mut self, sender: usize, flags: &i8) {}
+    #[allow(unused_variables)]
+    fn craft_recipe_request(&mut self, sender: usize, window_id: &i8, recipe: &UnlocalizedName, make_all: &bool) {}
+    #[allow(unused_variables)]
+    fn pick_item(&mut self, sender: usize, slot_to_use: &i32) {}
+    #[allow(unused_variables)]
+    fn steer_boat(&mut self, sender: usize, left_paddle_turning: &bool, right_paddle_turning: &bool) {}
+    #[allow(unused_variables)]
+    fn player_movement(&mut self, sender: usize, on_ground: &bool) {}
+    #[allow(unused_variables)]
+    fn player_rotation(&mut self, sender: usize, yaw: &f32, pitch: &f32, on_ground: &bool) {}
+    #[allow(unused_variables)]
+    fn vehicle_move_serverbound(&mut self, sender: usize, x: &f64, y: &f64, z: &f64, yaw: &f32, pitch: &f32) {}
+    #[allow(unused_variables)]
+    fn player_position(&mut self, sender: usize, x: &f64, feet_y: &f64, z: &f64, on_ground: &bool) {}
+    #[allow(unused_variables)]
+    fn player_position_and_rotation_serverbound(&mut self, sender: usize, x: &f64, feet_y: &f64, z: &f64, yaw: &f32, pitch: &f32, on_ground: &bool) {}
+    #[allow(unused_variables)]
+    fn lock_difficulty(&mut self, sender: usize, locked: &bool) {}
+    #[allow(unused_variables)]
+    fn keep_alive_serverbound(&mut self, sender: usize, keep_alive_id: &i64) {}
+    #[allow(unused_variables)]
+    fn generate_structure(&mut self, sender: usize, location: &BlockPosition, levels: &i32, keep_jigsaws: &bool) {}
+    #[allow(unused_variables)]
+    fn interact_entity(&mut self, sender: usize, entity_id: &i32, r#type: &i32, target_x: &Option<f32>, target_y: &Option<f32>, target_z: &Option<f32>, hand: &Option<i32>, sneaking: &bool) {}
+    #[allow(unused_variables)]
+    fn edit_book(&mut self, sender: usize, new_book: &Slot, is_signing: &bool, hand: &i32) {}
+    #[allow(unused_variables)]
+    fn plugin_message_serverbound(&mut self, sender: usize, channel: &UnlocalizedName, data: &Vec<u8>) {}
+    #[allow(unused_variables)]
+    fn close_window_serverbound(&mut self, sender: usize, window_id: &u8) {}
+    #[allow(unused_variables)]
+    fn click_window(&mut self, sender: usize, window_id: &u8, slot: &i16, button: &i8, action_number: &i16, mode: &i32, clicked_item: &Slot) {}
+    #[allow(unused_variables)]
+    fn click_window_button(&mut self, sender: usize, window_id: &i8, button_id: &i8) {}
+    #[allow(unused_variables)]
+    fn window_confirmation_serverbound(&mut self, sender: usize, window_id: &i8, action_number: &i16, accepted: &bool) {}
+    #[allow(unused_variables)]
+    fn tab_complete_serverbound(&mut self, sender: usize, trasaction_id: &i32, text: &str) {}
+    #[allow(unused_variables)]
+    fn client_settings(&mut self, sender: usize, locale: &str, view_distance: &i8, chat_mode: &i32, chat_colors: &bool, displayed_skin_parts: &u8, main_hand: &i32) {}
+    #[allow(unused_variables)]
+    fn client_status(&mut self, sender: usize, action_id: &i32) {}
+    #[allow(unused_variables)]
+    fn chat_message_serverbound(&mut self, sender: usize, messag: &str) {}
+    #[allow(unused_variables)]
+    fn set_difficulty(&mut self, sender: usize, new_difficulty: &i8) {}
+    #[allow(unused_variables)]
+    fn query_entity_nbt(&mut self, sender: usize, trasaction_id: &i32, entity_id: &i32) {}
+    #[allow(unused_variables)]
+    fn query_block_nbt(&mut self, sender: usize, trasaction_id: &i32, location: &BlockPosition) {}
+    #[allow(unused_variables)]
+    fn teleport_confirm(&mut self, sender: usize, teleport_id: &i32) {}
+
+
 }
 
 /// Handles the given asynchronos connecting using blocking I/O opperations.

@@ -1,9 +1,15 @@
-use std::str;
+use std::str::{self, FromStr};
 use std::fmt::{self, Display, Formatter};
 use std::ops::{Index, IndexMut};
 use std::ptr;
 use std::slice::SliceIndex;
-use util::Uuid;
+use chat::Component;
+use nbt::NbtCompound;
+use util::{Uuid, UnlocalizedName};
+
+use crate::world::location::BlockPosition;
+
+use super::{EntityMetadata, Particle, PlayerInfoAction};
 
 /// A wrapper around a vec used for reading/writing packet data efficiently.
 pub struct PacketBuffer {
@@ -246,6 +252,25 @@ impl PacketBuffer {
         result
     }
 
+    /// Reads an unsigned 16-byte integer from this buffer, returning `0` if not enough bytes remain.
+    #[inline]
+    pub fn read_u128(&mut self) -> u128 {
+        if self.cursor + 15 >= self.inner.len() {
+            return 0;
+        }
+
+        let result = (self.inner[self.cursor] as u128) << 120 | (self.inner[self.cursor + 1] as u128) << 112 |
+                (self.inner[self.cursor + 2] as u128) << 104 | (self.inner[self.cursor + 3] as u128) << 96 |
+                (self.inner[self.cursor + 4] as u128) << 88 | (self.inner[self.cursor + 5] as u128) << 80 |
+                (self.inner[self.cursor + 6] as u128) << 72 | (self.inner[self.cursor + 7] as u128) << 64 |
+                (self.inner[self.cursor + 8] as u128) << 56 | (self.inner[self.cursor + 9] as u128) << 48 |
+                (self.inner[self.cursor + 10] as u128) << 40 | (self.inner[self.cursor + 11] as u128) << 32 |
+                (self.inner[self.cursor + 12] as u128) << 24 | (self.inner[self.cursor + 13] as u128) << 16 |
+                (self.inner[self.cursor + 14] as u128) << 8 | (self.inner[self.cursor + 15] as u128);
+        self.cursor += 16;
+        result
+    }
+
     /// Reads a 32-bit float from this buffer, returning `0` if not enough bytes remain.
     #[inline]
     pub fn read_f32(&mut self) -> f32 {
@@ -274,6 +299,22 @@ impl PacketBuffer {
         result
     }
 
+    /// Reads a variable length, signed long from this buffer. Bits will continue to be pushed onto
+    /// the resulting long as long as the most signifint bit in each successive byte is set to one.
+    pub fn read_varlong(&mut self) -> i64 {
+        let mut next = self.read();
+        let mut result: i64 = (next & 0x7F) as i64;
+        let mut num_read = 1;
+
+        while next & 0x80 != 0 {
+            next = self.read();
+            result |= ((next & 0x7F) as i64) << (7 * num_read);
+            num_read += 1;
+        }
+
+        result
+    }
+
     /// Reads a length-prefixed string from the buffer. The length is encoded by a variable length integer.
     pub fn read_string(&mut self) -> String {
         let mut bytes: Vec<u8> = vec![0; self.read_varint() as usize];
@@ -295,6 +336,71 @@ impl PacketBuffer {
             self.read_bytes(&mut result);
             result
         }
+    }
+
+    /// Reads an array of type `T` using `func` until `len` is met. If `len` cannot be met the last element is invalid.
+    pub fn read_array<T>(&mut self, len: usize, func: fn(&mut Self) -> T) -> Vec<T> {
+        if len == 0 {
+            Vec::new()
+        } else {
+            let mut count = 0;
+            let mut result = Vec::new();
+
+            while count < len && self.cursor < self.inner.len() {
+                result.push(func(self));
+                count += 1;
+            }
+
+            result
+        }
+    }
+
+    /// Reads a [`BlockPosition`](crate::world::location::BlockPosition) from an eight byte integer in this buffer.
+    pub fn read_position(&mut self) -> BlockPosition {
+        let long = self.read_i64();
+
+        let x = (long >> 38) as i32;
+        let y = (long & 0xFFF) as i16;
+        let z = (long << 26 >> 38) as i32;
+
+        crate::world::location::BlockPosition {x,y,z}
+    }
+
+    /// Reads a [`UUID`](util::Uuid) from a 16-byte integer in this buffer.
+    pub fn read_uuid(&mut self) -> Uuid {
+        Uuid::from(self.read_u128())
+    }
+
+    /// Reads an [`UnlocalizedName`](util::UnlocalizedName) from a string stored in this buffer
+    pub fn read_unlocalized_name(&mut self) -> UnlocalizedName {
+        let str = self.read_string();
+        UnlocalizedName::from_str(&str).unwrap()
+    }
+
+    /// Reads a [`NbtCompound`](nbt::NbtCompound) from bytes stored in this buffer
+    /// Does not expect compression
+    pub fn read_nbt_tag(&mut self) -> NbtCompound {
+        nbt::read::read_nbt_uncompressed(&mut self.inner.as_slice()).expect("Error reading nbt compound").0
+    }
+
+    /// Never used and is unimplemented
+    pub fn read_entity_metadata(&mut self, _var_type: i32) -> EntityMetadata {
+        unimplemented!()
+    }
+
+    /// Never used and is unimplemented
+    pub fn read_particle(&mut self, _id: i32) -> Particle {
+        unimplemented!()
+    }
+
+    /// Never used and is unimplemented
+    pub fn read_player_info_action(&mut self) -> PlayerInfoAction {
+        unimplemented!()
+    }
+
+    /// Reads a [`Component`](chat::Component) from a json string in this buffer
+    pub fn read_chat(&mut self) -> Component {
+        serde_json::from_str(&self.read_string()).expect("Error reading Component")
     }
 
     /// Writes a byte to this buffer, expanding the buffer if needed.
@@ -454,10 +560,29 @@ impl PacketBuffer {
         }
     }
 
+    /// Writes the given variable length long to this buffer.
+    pub fn write_varlong(&mut self, mut value: i64) {
+        if value == 0 {
+            self.write(0);
+            return;
+        }
+    
+        let mut next_byte: u8;
+    
+        while value != 0 {
+            next_byte = (value & 0x7F) as u8;
+            value >>= 7;
+            if value != 0 {
+                next_byte |= 0x80;
+            }
+            self.write(next_byte);
+        }
+    }
+
     /// Writes the given string to this buffer, prefixed by its length encoded as a variable lengthed
     /// integer.
     #[inline]
-    pub fn write_string(&mut self, value: &str) {
+    pub fn write_string(&mut self, value: &String) {
         let bytes = value.as_bytes();
         self.write_varint(bytes.len() as i32);
         self.ensure_size(self.cursor + value.len());
@@ -475,5 +600,144 @@ impl PacketBuffer {
     #[inline]
     pub fn write_uuid(&mut self, value: Uuid) {
         self.write_u128(value.as_u128());
+    }
+
+    /// Writes all the elements in the array to the buffer using using the provided serializer method
+    #[inline]
+    pub fn write_array<T>(&mut self, value: &Vec<T>, serializer: fn(&mut Self, &T) -> ()) {
+        for e in value {
+            serializer(self, e);
+        }
+    }
+
+    /// Writes all the elements in the array to the buffer using using the provided serializer method
+    #[inline]
+    pub fn write_primative_array<T: Copy>(&mut self, value: &Vec<T>, serializer: fn(&mut Self, T) -> ()) {
+        for &e in value {
+            serializer(self, e);
+        }
+    }
+
+    /// Converts a [`BlockPosition`](crate::world::location::BlockPosition) to an i64 and writes it to this buffer
+    #[inline]
+    pub fn write_position(&mut self, value: &BlockPosition) {
+        self.write_i64(((value.x as i64 & 0x3FFFFFF) << 38) | ((value.z as i64 & 0x3FFFFFF) << 12) | (value.y as i64 & 0xFFF));
+    }
+
+    /// Converts an [`UnlocalizedName`](util::UnlocalizedName) to a string and writes it to this buffer
+    #[inline]
+    pub fn write_unlocalized_name(&mut self, value: &UnlocalizedName) {
+        self.write_string(&value.to_string());
+    }
+
+    /// Converts a [`NbtCompound`](nbt::NbtCompound) to bytes and writes it to this buffer
+    /// This does not apply compression
+    #[inline]
+    pub fn write_nbt_tag(&mut self, value: &nbt::NbtCompound) {
+        nbt::write::write_nbt_uncompressed(&mut self.inner, "root", value).expect("Error writing nbt compound")
+    }
+
+    /// Writes a [`EntityMetadata`](super::network_handler::EntityMetadata) to this buffer
+    pub fn write_entity_metadata(&mut self, value: &EntityMetadata) {
+        match value {
+            EntityMetadata::Byte(v) => self.write_i8(*v),
+            EntityMetadata::VarInt(v) => self.write_varint(*v),
+            EntityMetadata::Float(v) => self.write_f32(*v),
+            EntityMetadata::String(v) => self.write_string(v),
+            EntityMetadata::Chat(v) => self.write_chat(v),
+            EntityMetadata::OptChat(b, c) => {
+                self.write_bool(*b);
+                match c {
+                    Some(c) => self.write_chat(c),
+                    None => {}
+                }
+            },
+            EntityMetadata::Slot(v) => self.write_slot(v),
+            EntityMetadata::Boolean(v) => self.write_bool(*v),
+            EntityMetadata::Rotation(x,y,z) => {
+                self.write_f32(*x);
+                self.write_f32(*y);
+                self.write_f32(*z);
+            },
+            EntityMetadata::Position(v) => self.write_position(v),
+            EntityMetadata::OptPosition(b, p) => {
+                self.write_bool(*b);
+                match p {
+                    Some(p) => self.write_position(p),
+                    None => {}
+                }
+            },
+            EntityMetadata::Direction(v) => self.write_varint(*v),
+            EntityMetadata::OptUUID(b, u) => {
+                self.write_bool(*b);
+                match u {
+                    Some(u) => self.write_uuid(*u),
+                    None => {}
+                }
+            },
+            EntityMetadata::OptBlockId(v) => self.write_varint(*v),
+            EntityMetadata::NBT(v) => self.write_nbt_tag(v),
+            EntityMetadata::Particle(v) => self.write_wrapped_particle(v),
+            EntityMetadata::VillagerData(a,b,c) => {
+                self.write_varint(*a);
+                self.write_varint(*b);
+                self.write_varint(*c);
+            },
+            EntityMetadata::OptVarInt(v) => self.write_varint(*v),
+            EntityMetadata::Pose(v) => self.write_varint(*v)
+        }
+    }
+
+    /// Writes a [`Particle`](super::packet_handler::Particle) to this buffer
+    pub fn write_particle(&mut self, value: &Particle) {
+        match value {
+            Particle::Block(v) => self.write_varint(*v),
+            Particle::Dust(x,y,z,s) => {
+                self.write_f32(*x);
+                self.write_f32(*y);
+                self.write_f32(*z);
+                self.write_f32(*s);
+            },
+            Particle::FallingDust(v) => self.write_varint(*v),
+            Particle::Item(v) => self.write_slot(v),
+            _ => {}
+        }
+    }
+
+    /// Writes a [`PlayerInfoAction`](super::packet_handler::PlayerInfoAction) to this buffer
+    pub fn write_player_info_action(&mut self, value: &PlayerInfoAction) {
+        match value {
+            PlayerInfoAction::AddPlayer {name, number_of_properties, properties, gamemode, ping, has_display_name, display_name} => {
+                self.write_string(name);
+                self.write_varint(*number_of_properties);
+                self.write_array(properties, Self::write_player_property);
+                self.write_varint(*gamemode);
+                self.write_varint(*ping);
+                self.write_bool(*has_display_name);
+                match display_name {
+                    Some(v) => self.write_chat(v),
+                    None => {}
+                }
+            },
+            PlayerInfoAction::UpdateGamemode {gamemode} => {
+                self.write_varint(*gamemode);
+            },
+            PlayerInfoAction::UpdateLatency {ping} => {
+                self.write_varint(*ping);
+            }
+            PlayerInfoAction::UpdateDisplayName {has_display_name, display_name} => {
+                self.write_bool(*has_display_name);
+                match display_name {
+                    Some(v) => self.write_chat(v),
+                    None => {}
+                }
+            },
+            PlayerInfoAction::RemovePlayer => {}
+        }
+    }
+
+    /// Converts a [`Component`](chat::Component) to a json string and writes it to this buffer
+    pub fn write_chat(&mut self, value: &Component) {
+        self.write_string(&serde_json::to_string(value).expect("Error converting a Component to a string"));
     }
 }

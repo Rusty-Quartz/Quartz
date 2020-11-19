@@ -1,0 +1,468 @@
+[
+    {
+        "name": "Slot",
+        "fields": [
+            {
+                "name": "present",
+                "type": "bool"
+            },
+            {
+                "name": "item_id",
+                "type": "varint",
+                "option": true,
+                "condition": "present"
+            },
+            {
+                "name": "item_count",
+                "type": "i8",
+                "option": true,
+                "condition": "present"
+            },
+            {
+                "name": "nbt",
+                "type": "nbt_tag",
+                "option": true,
+                "condition": "present"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "TabCompleteMatch",
+        "fields": [
+            {
+                "name": "tab_match",
+                "type": "string"
+            },
+            {
+                "name": "has_tooltip",
+                "type": "bool"
+            },
+            {
+                "name": "tooltip",
+                "type": "chat",
+                "option": true,
+                "condition": "has_tooltip"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "Statistic",
+        "fields": [
+            {
+                "name": "category_id",
+                "type": "varint"
+            },
+            {
+                "name": "statistic_id",
+                "type": "varint"
+            },
+            {
+                "name": "value",
+                "type": "varint"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "BlockLights",
+        "fields": [
+            {
+                "name": "length",
+                "type": "varint"
+            },
+            {
+                "name": "values",
+                "type": "byte_array(2048)"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "MapIcon",
+        "fields": [
+            {
+                "name": "icon_type",
+                "type": "varint"
+            },
+            {
+                "name": "x",
+                "type": "i8"
+            },
+            {
+                "name": "z",
+                "type": "i8"
+            },
+            {
+                "name": "direction",
+                "type": "i8"
+            },
+            {
+                "name": "has_display_name",
+                "type": "bool"
+            },
+            {
+                "name": "display_name",
+                "type": "chat",
+                "option": true,
+                "condition": "has_display_name"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "VillagerTrade",
+        "fields": [
+            {
+                "name": "input_item_1",
+                "type": "slot"
+            },
+            {
+                "name": "output_item",
+                "type": "slot"
+            },
+            {
+                "name": "has_second_item",
+                "type": "bool"
+            },
+            {
+                "name": "input_item_2",
+                "type": "slot",
+                "option": true,
+                "condition": "has_second_item"
+            },
+            {
+                "name": "disabled",
+                "type": "bool"
+            },
+            {
+                "name": "times_used",
+                "type": "i32"
+            },
+            {
+                "name": "max_uses",
+                "type": "i32"
+            },
+            {
+                "name": "xp",
+                "type": "i32"
+            },
+            {
+                "name": "special_price",
+                "type": "i32"
+            },
+            {
+                "name": "price_multiplier",
+                "type": "f32"
+            },
+            {
+                "name": "demand",
+                "type": "i32"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "EntityMetadataWrapper",
+        "fields": [
+            {
+                "name": "index",
+                "type": "u8"
+            },
+            {
+                "name": "var_type",
+                "type": "varint",
+                "option": true,
+                "condition": "index != 0xff"
+            },
+            {
+                "name": "value",
+                "type": "entity_metadata(var_type.clone().unwrap())",
+                "option": true,
+                "condition": "index != 0xff"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "EquipmentSlot",
+        "fields": [
+            {
+                "name": "slot",
+                "type": "u8"
+            },
+            {
+                "name": "item",
+                "type": "slot"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "AdvancementMapElement",
+        "fields": [
+            {
+                "name": "key",
+                "type": "unlocalized_name"
+            },
+            {
+                "name": "value",
+                "type": "advancement"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "AdvancementProgressMapElement",
+        "fields": [
+            {
+                "name": "key",
+                "type": "unlocalized_name"
+            },
+            {
+                "name": "value",
+                "type": "advancement_progress"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "Advancement",
+        "fields": [
+            {
+                "name": "has_parent",
+                "type": "bool"
+            },
+            {
+                "name": "parent_id",
+                "type": "unlocalized_name",
+                "option": true,
+                "condition": "has_parent"
+            },
+            {
+                "name": "has_display",
+                "type": "bool"
+            },
+            {
+                "name": "display_data",
+                "type": "advancement_display"
+            },
+            {
+                "name": "criteria_len",
+                "type": "varint"
+            },
+            {
+                "name": "criteria",
+                "type": "unlocalized_name(criteria_len)",
+                "array": true
+            },
+            {
+                "name": "requirements_length",
+                "type": "varint"
+            },
+            {
+                "name": "requirements",
+                "type": "advancement_requirements(requirements_length)",
+                "array": true
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "AdvancementRequirements",
+        "fields": [
+            {
+                "name": "requirements_len",
+                "type": "varint"
+            },
+            {
+                "name": "requirements",
+                "type": "string(requirements_len)",
+                "array": true
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "AdvancementProgress",
+        "fields": [
+            {
+                "name": "size",
+                "type": "varint"
+            },
+            {
+                "name": "criteria",
+                "type": "advancement_progress_criteria(size)",
+                "array": true
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "AdvancementProgressCriteria",
+        "fields": [
+            {
+                "name": "identifier",
+                "type": "unlocalized_name"
+            },
+            {
+                "name": "progress",
+                "type": "criteria_progress"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "CriteriaProgress",
+        "fields": [
+            {
+                "name": "achieved",
+                "type": "bool"
+            },
+            {
+                "name": "date_achieved",
+                "type": "i64",
+                "option": true,
+                "condition": "achieved"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "AdvancementDisplay",
+        "fields": [
+            {
+                "name": "title",
+                "type": "chat"
+            },
+            {
+                "name": "description",
+                "type": "chat"
+            },
+            {
+                "name": "icon",
+                "type": "slot"
+            },
+            {
+                "name": "frame_type",
+                "type": "varint"
+            },
+            {
+                "name": "flags",
+                "type": "i32"
+            }
+        ],
+        "gen_serde":true
+    },
+    {
+        "name": "EntityProperty",
+        "fields": [
+            {
+                "name": "key",
+                "type": "unlocalized_name"
+            },
+            {
+                "name": "value",
+                "type": "f64"
+            },
+            {
+                "name": "number_of_modifiers",
+                "type": "varint"
+            },
+            {
+                "name": "modifiers",
+                "type": "attribute_modifier"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "AttributeModifier",
+        "fields": [
+            {
+                "name": "uuid",
+                "type": "uuid"
+            },
+            {
+                "name": "amount",
+                "type": "f64"
+            },
+            {
+                "name": "operation",
+                "type": "i8"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "Recipe",
+        "fields": [
+            {
+                "name": "recipe_type",
+                "type": "unlocalized_name"
+            },
+            {
+                "name": "recipe_id",
+                "type": "string"
+            },
+            {
+                "name": "data",
+                "type": "byte_array(self.remaining())"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "WrappedParticle",
+        "fields": [
+            {
+                "name": "id",
+                "type": "varint"
+            },
+            {
+                "name": "data",
+                "type": "particle(id)"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "PlayerProperty",
+        "fields": [
+            {
+                "name": "name",
+                "type": "string"
+            },
+            {
+                "name": "value",
+                "type": "string"
+            },
+            {
+                "name": "is_signed",
+                "type": "bool"
+            },
+            {
+                "name": "signature",
+                "type": "string",
+                "option": true,
+                "condition": "is_signed"
+            }
+        ],
+        "gen_serde": true
+    },
+    {
+        "name": "WrappedPlayerInfoAction",
+        "fields": [
+            {
+                "name": "uuid",
+                "type": "uuid"
+            },
+            {
+                "name": "action",
+                "type": "player_info_action"
+            }
+        ],
+        "gen_serde": true
+    }
+]
