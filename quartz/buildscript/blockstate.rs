@@ -9,11 +9,11 @@ pub fn gen_blockstates() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("blockstate_output.rs");
 
-    let mut output = "use util::UnlocalizedName;".to_owned();
-
+	
     // Load in the block info from blocks.json
     let mut data = serde_json::from_str::<HashMap<String, RawBlockInfo>>(include_str!("./assets/blocks.json")).expect("Error parsing blocks.json");
     
+    let mut output = format!("use util::UnlocalizedName;\npub const NUM_BLOCKS: usize = {};", data.len());
     // Find the shared properties
     let property_data = find_shared_properties(&data);
     output.push_str(&create_property_enums(&property_data));
