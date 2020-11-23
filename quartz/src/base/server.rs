@@ -101,7 +101,6 @@ impl<R: Registry> QuartzServer<R> {
 
     fn init_internal(&mut self) -> bool {
         // Register all of the things
-        init_blocks();
         init_items();
 
         // Initialize commands

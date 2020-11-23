@@ -1,19 +1,23 @@
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::info;
 use serde::{Serialize, Deserialize};
 use serde_json;
 use once_cell::sync::OnceCell;
 use tinyvec::ArrayVec;
-use crate::block::{StateID, Block, DynamicBlockState, StateBuilder};
+use crate::{
+    base::{registry::{DynamicStateID, StaticStateID}, assets},
+    block::{Block, DynamicBlockState, DynamicStateBuilder}
+};
 use util::UnlocalizedName;
 
-static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block>> = OnceCell::new();
+static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block<DynamicStateID>>> = OnceCell::new();
 static GLOBAL_PALETTE: OnceCell<Box<[DynamicBlockState]>> = OnceCell::new();
 
 lazy_static! {
-    static ref DUMMY_BLOCK: Block = Block {
+    static ref DUMMY_BLOCK: Block<DynamicStateID> = Block {
         name: UnlocalizedName::minecraft("dummy"),
         properties: ArrayVec::new(),
         base_state: 0,
@@ -22,7 +26,7 @@ lazy_static! {
 }
 
 #[inline(always)]
-pub fn get_block_list() -> &'static HashMap<UnlocalizedName, Block> {
+pub fn get_block_list() -> &'static HashMap<UnlocalizedName, Block<DynamicStateID>> {
     BLOCK_LIST.get().expect("Block list not initialized.")
 }
 
@@ -32,33 +36,59 @@ pub fn get_global_palette() -> &'static [DynamicBlockState] {
 }
 
 #[inline]
-pub fn get_block(block_name: &UnlocalizedName) -> Option<&'static Block> {
+pub fn get_block(block_name: &UnlocalizedName) -> Option<&'static Block<DynamicStateID>> {
     get_block_list().get(block_name)
 }
 
 #[inline]
-pub fn default_state(block_name: &UnlocalizedName) -> Option<StateID> {
+pub fn default_state(block_name: &UnlocalizedName) -> Option<DynamicStateID> {
     get_block_list().get(block_name).map(|block| block.default_state)
 }
 
 #[inline]
-pub fn get_state(id: StateID) -> Option<&'static DynamicBlockState> {
+pub fn get_state(id: DynamicStateID) -> Option<&'static DynamicBlockState> {
     get_global_palette().get(id as usize)
 }
 
 #[inline]
-pub fn new_state(block_name: &UnlocalizedName) -> Option<StateBuilder> {
-    get_block_list().get(block_name).map(|block| StateBuilder::new(&get_global_palette()[block.default_state as usize]))
+pub fn new_state(block_name: &UnlocalizedName) -> Option<DynamicStateBuilder> {
+    get_block_list().get(block_name).map(|block| DynamicStateBuilder::new(&get_global_palette()[block.default_state as usize]))
+}
+
+pub fn load_block_list<'de, T: Deserialize<'de> + Copy>() -> Vec<Block<T>> {
+    info!("Loading block data");
+
+    let parsed_data = serde_json::from_str::<HashMap<String, RawBlockInfo<T>>>(assets::BLOCK_INFO)
+        .expect("assets/blocks.json is corrupted.");
+    let mut block_list = Vec::new();
+
+    for (name, block_info) in parsed_data.into_iter().sorted_by_key(|(_, info)| info.interm_id) {
+        let uln = UnlocalizedName::from_str(&name).expect("Invalid block name encountered during registration.");
+
+        // This should never happen if the data integrity is not compromised
+        if block_info.states.is_empty() {
+            panic!("Invalid block encountered: {}, no states found.", name);
+        }
+
+        block_list.push(Block {
+            name: uln,
+            properties: block_info.properties.clone().into_iter().collect::<ArrayVec<_>>(),
+            base_state: block_info.states[0].id,
+            default_state: block_info.default
+        });
+    }
+
+    block_list
 }
 
 /// Initializes the block list and global palette
 pub fn init_blocks() {
     info!("Loading block data");
 
-    let parsed_data = serde_json::from_str::<HashMap<String, RawBlockInfo>>(include_str!("../../buildscript/assets/blocks.json"))
+    let parsed_data = serde_json::from_str::<HashMap<String, RawBlockInfo<DynamicStateID>>>(assets::BLOCK_INFO)
         .expect("assets/blocks.json is corrupted.");
 
-    let mut block_list: HashMap<UnlocalizedName, Block> = HashMap::with_capacity(parsed_data.len());
+    let mut block_list: HashMap<UnlocalizedName, Block<DynamicStateID>> = HashMap::with_capacity(parsed_data.len());
     let mut name_map: HashMap<String, UnlocalizedName> = HashMap::with_capacity(parsed_data.len());
     let mut largest_state: usize = 0;
 
@@ -98,7 +128,7 @@ pub fn init_blocks() {
 
     for (name, block) in parsed_data {
         // All of the unwraps are guaranteed to succeed
-        let handle: &'static Block = BLOCK_LIST.get().unwrap().get(name_map.get(&name).unwrap()).unwrap();
+        let handle: &'static Block<DynamicStateID> = BLOCK_LIST.get().unwrap().get(name_map.get(&name).unwrap()).unwrap();
         
         for state_info in block.states {
             // Make sure we're not going out of bounds
@@ -123,17 +153,18 @@ pub fn init_blocks() {
 }
 
 #[derive(Serialize, Deserialize)]
-struct RawBlockInfo {
+struct RawBlockInfo<T> {
     // Use a BTreeMap for ordering so that we can compute state IDs
     #[serde(default = "BTreeMap::new")]
     properties: BTreeMap<String, Vec<String>>,
-    default: StateID,
-    states: Vec<RawStateInfo>
+    default: T,
+    interm_id: usize,
+    states: Vec<RawStateInfo<T>>
 }
 
 #[derive(Serialize, Deserialize)]
-struct RawStateInfo {
-    id: StateID,
+struct RawStateInfo<T> {
+    id: T,
     #[serde(default = "BTreeMap::new")]
     properties: BTreeMap<String, String>
 }

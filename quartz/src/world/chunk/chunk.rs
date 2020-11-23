@@ -3,17 +3,18 @@ use std::str::FromStr;
 use array_init::array_init;
 use log::{warn, error};
 use nbt::{NbtCompound, NbtList};
+use num_traits::{Num, Zero};
 use util::{
     UnlocalizedName,
     single_access::{AccessGuard, SingleAccessor}
 };
 use crate::Registry;
-use crate::block::{self, StateID};
+use crate::block::{BlockState, StateBuilder};
 use crate::world::location::{BlockPosition, CoordinatePair, ChunkCoordinatePair};
 
 pub struct Chunk<R: Registry> {
     block_offset: CoordinatePair,
-    sections: [Section; 16],
+    sections: [Section<R::StateID>; 16],
     block_entities: HashMap<BlockPosition, SingleAccessor<R::BlockEntity>>
 }
 
@@ -40,7 +41,7 @@ impl<R: Registry> Chunk<R> {
                 None => continue
             };
 
-            let mut palette = vec![0 as StateID; raw_palette.len()].into_boxed_slice();
+            let mut palette = vec![R::StateID::zero(); raw_palette.len()].into_boxed_slice();
             let mut index: usize = 0;
 
             // Iterate over the block states in the palette
@@ -49,7 +50,7 @@ impl<R: Registry> Chunk<R> {
                 let state_name: &str = state.get("Name")?;
 
                 // Initialize the state builder
-                let mut state_builder = match block::new_state(&UnlocalizedName::from_str(state_name).ok()?) {
+                let mut state_builder = match R::BlockState::builder(&UnlocalizedName::from_str(state_name).ok()?) {
                     Some(builder) => builder,
                     None => {
                         error!("Unknown block state encountered: {}", state_name);
@@ -82,10 +83,10 @@ impl<R: Registry> Chunk<R> {
     }
 
     #[inline]
-    pub fn block_id(&self, absolute_position: BlockPosition) -> StateID {
+    pub fn block_id(&self, absolute_position: BlockPosition) -> R::StateID {
         match self.sections.get((absolute_position.y as usize) >> 4) {
             Some(section) => section.block_id(self.section_index_absolute(absolute_position)),
-            None => 0
+            None => R::StateID::zero()
         }
     }
 
@@ -99,33 +100,35 @@ impl<R: Registry> Chunk<R> {
     }
 }
 
-struct Section {
-    block_data: Option<Box<[StateID]>>,
+struct Section<T> {
+    block_data: Option<Box<[T]>>,
     lighting: Option<Box<[u8]>>
 }
 
-impl Section {
+impl<T> Section<T> {
     const fn new() -> Self {
         Section {
             block_data: None,
             lighting: None
         }
     }
+}
 
+impl<T: Zero + Copy> Section<T> {
     fn init(&mut self) {
-        self.block_data = Some(vec![0 as StateID; 4096].into_boxed_slice());
+        self.block_data = Some(vec![T::zero(); 4096].into_boxed_slice());
         self.lighting = Some(vec![0_u8; 2048].into_boxed_slice());
     }
 
-    fn block_id(&self, index: usize) -> StateID {
+    fn block_id(&self, index: usize) -> T {
         match self.block_data.as_ref() {
-            Some(block_data) => block_data.get(index).map(|id| *id).unwrap_or(0),
-            None => 0
+            Some(block_data) => block_data.get(index).map(|id| *id).unwrap_or(T::zero()),
+            None => T::zero()
         }
     }
 }
 
-impl Default for Section {
+impl<T> Default for Section<T> {
     fn default() -> Self {
         Self::new()
     }

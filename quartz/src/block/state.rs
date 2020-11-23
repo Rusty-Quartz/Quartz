@@ -1,65 +1,80 @@
-use std::fmt::{self, Display, Formatter};
-use lazy_static::lazy_static;
+use crate::{
+    base::registry::*,
+    block::states::BlockStateData
+};
+use std::fmt::{self, Debug, Display, Formatter};
 use tinyvec::ArrayVec;
 use util::UnlocalizedName;
 
-/// A type alias for the numeric block state type, currently `u16`.
-pub type StateID = u16;
-
 /// A specific block type, not to be confused with a block state which specifies variants of a type. This
 /// is used as a data handle for block states.
-pub struct Block {
+pub struct Block<T> {
     pub name: UnlocalizedName,
     pub properties: ArrayVec<[(String, Vec<String>); 16]>,
-    pub base_state: StateID,
-    pub default_state: StateID
+    pub base_state: T,
+    pub default_state: T
 }
 
-impl Display for Block {
+impl<T> Display for Block<T> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.name.fmt(f)
+        Display::fmt(&self.name, f)
     }
 }
 
-pub trait BlockState {
-    fn handle(&self) -> &Block;
+impl<T> Debug for Block<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
+    } 
+}
 
-    fn id(&self) -> StateID;
+pub trait BlockState<T>: Sized {
+    type Builder: StateBuilder<Self>;
+
+    fn handle(&self) -> &Block<T>;
+
+    fn id(&self) -> T;
+
+    fn builder(block_name: &UnlocalizedName) -> Option<Self::Builder>;
 }
 
 // TODO: Implement static block state
+#[derive(Debug)]
 pub struct StaticBlockState {
+    pub handle: &'static Block<StaticStateID>,
+    pub data: BlockStateData
 }
 
-impl BlockState for StaticBlockState {
-    fn handle(&self) -> &Block {
-        unimplemented!();
+impl BlockState<StaticStateID> for StaticBlockState {
+    type Builder = StaticStateBuilder;
+
+    fn handle(&self) -> &Block<StaticStateID> {
+        self.handle
     }
 
-    fn id(&self) -> StateID {
-        0
+    fn id(&self) -> StaticStateID {
+        self.data.id()
+    }
+
+    fn builder(block_name: &UnlocalizedName) -> Option<Self::Builder> {
+        StaticRegistry::global().default_state(block_name).map(StaticStateBuilder::new)
     }
 }
 
 #[derive(Clone)]
 pub struct DynamicBlockState {
-    pub handle: &'static Block,
+    pub handle: &'static Block<DynamicStateID>,
     pub properties: ArrayVec<[(String, String); 16]>
 }
 
 impl DynamicBlockState {
     // Computes the ID for this block state, guaranteed not to fail even if the state is corrupted
-    pub fn id(&self) -> StateID {
-        lazy_static! {
-            static ref DEFAULT_PROPERTY_VALUE: String = "".to_owned();
-        }
-
+    pub fn id(&self) -> DynamicStateID {
         // This function works off a couple assumptions: state properties are sorted alphabetically and
         // that sorted list is used to construct the ID starting with the last property. Under these assumptions
         // we can do some simple arithmetic to construct the ID using indexing.
 
-        let mut state_id: StateID = self.handle.base_state;
+        let mut state_id: DynamicStateID = self.handle.base_state;
 
         match self.properties.len() {
             0 => state_id,
@@ -70,13 +85,13 @@ impl DynamicBlockState {
 
                 match self.handle.properties.iter().next() {
                     // The entry is in the form (property_name, all_property_values)
-                    Some(entry) => state_id + entry.1.iter().position(|value| value == state_property_value).unwrap_or(0) as StateID,
+                    Some(entry) => state_id + entry.1.iter().position(|value| value == state_property_value).unwrap_or(0) as DynamicStateID,
                     None => state_id
                 }
             },
 
             _ => {
-                let mut multiplier: StateID = 1;
+                let mut multiplier: DynamicStateID = 1;
         
                 for (state_property_index, num_property_values) in self.handle.properties.iter()
                     // Map this state's property values to their index in the block's reference properties and pass along
@@ -85,14 +100,14 @@ impl DynamicBlockState {
                         let state_property_value = self.properties
                             .iter()
                             .find(|(key, _)| key == property_name)
-                            .map(|(_, value)| value)
-                            .unwrap_or(&DEFAULT_PROPERTY_VALUE);
+                            .map(|(_, value)| value.as_str())
+                            .unwrap_or("");
 
                         (
                             // Value index
-                            all_property_values.iter().position(|value| value == state_property_value).unwrap_or(0) as StateID,
+                            all_property_values.iter().position(|value| value == state_property_value).unwrap_or(0) as DynamicStateID,
                             // Total possible values
-                            all_property_values.len() as StateID
+                            all_property_values.len() as DynamicStateID
                         )
                     })
                     // This lets us treat the property indices kind of like digits of a little endian integer
@@ -124,13 +139,67 @@ impl Display for DynamicBlockState {
     }
 }
 
-pub struct StateBuilder {
+pub trait StateBuilder<S>: Sized {
+    fn add_property(&mut self, name: &str, value: &str) -> Result<(), String>;
+
+    fn with_property(self, name: &str, value: &str) -> Result<Self, (Self, String)>;
+
+    fn with_property_unchecked(self, name: &str, value: &str) -> Self {
+        self.with_property(name, value).map_err(|(_, message)| message).unwrap()
+    }
+
+    fn build(self) -> S;
+}
+
+pub struct StaticStateBuilder {
+    state: StaticBlockState
+}
+
+impl StaticStateBuilder {
+    pub fn new(base: StaticBlockState) -> Self {
+        StaticStateBuilder {
+            state: base
+        }
+    }
+}
+
+impl StateBuilder<StaticBlockState> for StaticStateBuilder {
+    fn add_property(&mut self, name: &str, value: &str) -> Result<(), String> {
+        self.state.data = self.state.data.with_property(name, value).ok_or("Invalid name or property value.".to_owned())?;
+        Ok(())
+    }
+
+    fn with_property(mut self, name: &str, value: &str) -> Result<Self, (Self, String)> {
+        match self.state.data.with_property(name, value) {
+            Some(data) => {
+                self.state.data = data;
+                Ok(self)
+            },
+            None => Err((self, "Invalid name or property value.".to_owned()))
+        }
+    }
+
+    fn with_property_unchecked(mut self, name: &str, value: &str) -> Self {
+        match self.state.data.with_property(name, value) {
+            Some(data) => self.state.data = data,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        }
+
+        self
+    }
+
+    fn build(self) -> StaticBlockState {
+        self.state
+    }
+}
+
+pub struct DynamicStateBuilder {
     state: DynamicBlockState
 }
 
-impl StateBuilder {
+impl DynamicStateBuilder {
     pub fn new(base: &DynamicBlockState) -> Self {
-        StateBuilder {
+        DynamicStateBuilder {
             state: base.clone()
         }
     }

@@ -1,3 +1,5 @@
+/// Contains quartz assets data.
+pub mod assets;
 /// Defines the server config.
 pub mod config;
 /// Defines the master registry containing an API to access all game data.

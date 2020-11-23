@@ -1,7 +1,10 @@
 use std::str::FromStr;
 use once_cell::sync::OnceCell;
 use std::collections::HashMap;
-use crate::item::{Item, ItemInfo};
+use crate::{
+    base::assets,
+    item::{Item, ItemInfo}
+};
 use util::UnlocalizedName;
 use serde_json::from_str;
 use serde::Deserialize;
@@ -26,7 +29,7 @@ pub fn init_items() {
     info!("Loading item data");
 
     // Load in assets/items.json generated from data-generator
-    let raw_list = from_str::<HashMap<String, RawItemData>>(include_str!("../../buildscript/assets/items.json")).expect("items.json is corrupt");
+    let raw_list = from_str::<HashMap<String, RawItemData>>(assets::ITEM_INFO).expect("items.json is corrupt");
 
     let mut item_list: HashMap<UnlocalizedName, Item> = HashMap::with_capacity(raw_list.len());
 
