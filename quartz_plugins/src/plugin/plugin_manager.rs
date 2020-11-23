@@ -43,18 +43,17 @@ impl PluginManager {
 
                 // This is increadibly horribly unsafe but we're going to assume plugins are fine because idk any way to make sure they're safe
                 unsafe {
-                    let func: Symbol<unsafe extern "C" fn() -> PluginInfo> = match plugin
-                        .get(b"get_plugin_info")
-                    {
-                        Ok(f) => f,
-                        Err(_e) => {
-                            error!(
+                    let func: Symbol<unsafe extern "C" fn() -> PluginInfo> =
+                        match plugin.get(b"get_plugin_info") {
+                            Ok(f) => f,
+                            Err(_e) => {
+                                error!(
                                 "plugin {:?} doesn't have a get_plugin_info function, skipping it",
                                 path
                             );
-                            continue;
-                        }
-                    };
+                                continue;
+                            }
+                        };
 
                     plugin_info = func();
                 }

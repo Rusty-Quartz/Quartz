@@ -20,7 +20,7 @@ const CLIENT_PACKET_START: &str = r#"#[doc = "Packets sent from the server to th
 pub enum ClientBoundPacket {"#;
 
 const DESERIALIZER_START: &str = r#"#[doc = "Deserializes a packet from the connection's buffer and either handles it immediately or forwards it to the server thread."]
-fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, packet_len: usize) {
+async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, packet_len: usize) {
     let buffer = &mut conn.read_buffer;
     let id;
 
@@ -37,7 +37,7 @@ pub fn serialize(packet: &ClientBoundPacket, buffer: &mut PacketBuffer) {
     match packet {"#;
 
 const DISPATCHER_START: &str = r#"#[doc = "Dispatches a synchronous packet on the server thread."]
-pub fn dispatch_sync_packet<R: Registry>(wrapped_packet: &WrappedServerBoundPacket, handler: &mut QuartzServer<R>) {
+pub async fn dispatch_sync_packet<R: Registry>(wrapped_packet: &WrappedServerBoundPacket, handler: &mut QuartzServer<R>) {
     match &wrapped_packet.packet {"#;
 
 pub fn gen_packet_handlers() {
@@ -186,7 +186,7 @@ fn gen_deserializers(states_raw: &Vec<StatePacketInfo>, mappings_raw: &Mappings)
 
                 if packet.is_async() {
                     packet_str.push_str(&format!(
-                        "\n\t\t\t\t\tasync_handler.{}(conn, {});",
+                        "\n\t\t\t\t\tasync_handler.{}(conn, {}).await;",
                         packet.name.to_ascii_lowercase(),
                         packet.format_params(&mappings_raw)
                     ));
@@ -312,7 +312,7 @@ fn gen_sync_dispatch(server_bound: &Vec<Packet>, mappings_raw: &Mappings) -> Str
 
     for packet in server_bound.iter().filter(|packet| packet.dispatch) {
         dispatch.push_str(&format!(
-            "\n\t\tServerBoundPacket::{} {{{}}} => handler.{}({}),",
+            "\n\t\tServerBoundPacket::{} {{{}}} => handler.{}({}).await,",
             snake_to_camel(&packet.name),
             packet.struct_params(),
             packet.name.to_ascii_lowercase(),

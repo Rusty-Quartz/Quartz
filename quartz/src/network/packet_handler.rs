@@ -184,7 +184,7 @@ impl AsyncPacketHandler {
 }
 
 impl AsyncPacketHandler {
-    fn handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, next_state: i32) {
+    async fn handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, next_state: i32) {
         if version != PROTOCOL_VERSION {
             conn.connection_state = ConnectionState::Disconnected;
             return;
@@ -197,11 +197,11 @@ impl AsyncPacketHandler {
         }
     }
 
-    fn ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
-        conn.send_packet(&ClientBoundPacket::Pong { payload });
+    async fn ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
+        conn.send_packet(&ClientBoundPacket::Pong { payload }).await;
     }
 
-    fn login_start(&mut self, conn: &mut AsyncClientConnection, name: &str) {
+    async fn login_start(&mut self, conn: &mut AsyncClientConnection, name: &str) {
         // Store username for later
         self.username = name.to_owned();
 
@@ -228,9 +228,10 @@ impl AsyncPacketHandler {
             verify_token_length: verify_token.len() as i32,
             verify_token: verify_token.to_vec(),
         })
+        .await;
     }
 
-    fn encryption_response(
+    async fn encryption_response(
         &mut self,
         conn: &mut AsyncClientConnection,
         shared_secret: &Vec<u8>,
@@ -253,12 +254,14 @@ impl AsyncPacketHandler {
                 "verify for client {} didn't match, {:x?}, {:x?}",
                 conn.id, self.verify_token, decrypted_verify
             );
-            return conn.send_packet(&ClientBoundPacket::Disconnect {
-                reason: Component::colored(
-                    "Error verifying encryption".to_owned(),
-                    PredefinedColor::Red,
-                ),
-            });
+            return conn
+                .send_packet(&ClientBoundPacket::Disconnect {
+                    reason: Component::colored(
+                        "Error verifying encryption".to_owned(),
+                        PredefinedColor::Red,
+                    ),
+                })
+                .await;
         }
 
         // Decrypt shared secret
@@ -274,7 +277,7 @@ impl AsyncPacketHandler {
         decrypted_secret = decrypted_secret[..16].to_vec();
 
         // Initiate encryption
-        if let Err(e) = conn.initiate_encryption(decrypted_secret.as_slice()) {
+        if let Err(e) = conn.initiate_encryption(decrypted_secret.as_slice()).await {
             error!(
                 "Failed to initialize encryption for client connetion: {}",
                 e
@@ -358,10 +361,13 @@ impl AsyncPacketHandler {
         if mojang_req.ok() {
             match mojang_req.into_json_deserialize::<AuthResponse>() {
                 Ok(json) => match Uuid::from_str(&json.id) {
-                    Ok(uuid) => conn.send_packet(&ClientBoundPacket::LoginSuccess {
-                        uuid,
-                        username: self.username.clone(),
-                    }),
+                    Ok(uuid) => {
+                        conn.send_packet(&ClientBoundPacket::LoginSuccess {
+                            uuid,
+                            username: self.username.clone(),
+                        })
+                        .await
+                    }
                     Err(e) => error!("Malformed UUID in auth resonse: {}", e),
                 },
                 Err(e) => error!("Failed to upack JSON from session server response: {}", e),
@@ -371,7 +377,7 @@ impl AsyncPacketHandler {
         }
     }
 
-    fn login_plugin_response(
+    async fn login_plugin_response(
         &mut self,
         _conn: &mut AsyncClientConnection,
         _message_id: i32,
@@ -383,11 +389,11 @@ impl AsyncPacketHandler {
 }
 
 impl<R: Registry> QuartzServer<R> {
-    fn login_success_server(&mut self, _sender: usize, _uuid: &Uuid, _username: &str) {
+    async fn login_success_server(&mut self, _sender: usize, _uuid: &Uuid, _username: &str) {
         // TODO: Implement login_success_server
     }
 
-    fn handle_console_command(&mut self, command: &str) {
+    async fn handle_console_command(&mut self, command: &str) {
         let command_executor = self.command_executor.clone();
         match command_executor.try_borrow() {
             Ok(executor) => {
@@ -398,7 +404,7 @@ impl<R: Registry> QuartzServer<R> {
         };
     }
 
-    fn handle_console_completion(&mut self, command: &str, response: &Sender<Vec<String>>) {
+    async fn handle_console_completion(&mut self, command: &str, response: &Sender<Vec<String>>) {
         let command_executor = self.command_executor.clone();
         match command_executor.try_borrow() {
             Ok(executor) => {
@@ -411,7 +417,7 @@ impl<R: Registry> QuartzServer<R> {
         };
     }
 
-    fn legacy_server_list_ping(&mut self, sender: usize, _payload: &u8) {
+    async fn legacy_server_list_ping(&mut self, sender: usize, _payload: &u8) {
         // Load in all needed values from server object
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
@@ -454,10 +460,10 @@ impl<R: Registry> QuartzServer<R> {
             buffer.write_u16(bytes);
         }
 
-        self.client_list.send_buffer(sender, buffer);
+        self.client_list.send_buffer(sender, buffer).await;
     }
 
-    fn status_request(&mut self, sender: usize) {
+    async fn status_request(&mut self, sender: usize) {
         let json_response = json!({
             "version": {
                 "name": server::VERSION,
@@ -473,21 +479,23 @@ impl<R: Registry> QuartzServer<R> {
 
         // TODO: implement favicon
 
-        self.client_list.send_packet(
-            sender,
-            ClientBoundPacket::StatusResponse {
-                json_response: json_response.to_string(),
-            },
-        );
+        self.client_list
+            .send_packet(
+                sender,
+                ClientBoundPacket::StatusResponse {
+                    json_response: json_response.to_string(),
+                },
+            )
+            .await;
     }
     #[allow(unused_variables)]
-    fn client_disconnected(&mut self, id: &usize) {}
+    async fn client_disconnected(&mut self, id: &usize) {}
     #[allow(unused_variables)]
-    fn client_connected(&mut self, id: &usize, write_handle: &&AsyncWriteHandle) {}
+    async fn client_connected(&mut self, id: &usize, write_handle: &&AsyncWriteHandle) {}
     #[allow(unused_variables)]
-    fn use_item(&mut self, sender: usize, hand: &i32) {}
+    async fn use_item(&mut self, sender: usize, hand: &i32) {}
     #[allow(unused_variables)]
-    fn player_block_placement(
+    async fn player_block_placement(
         &mut self,
         sender: usize,
         hand: &i32,
@@ -500,11 +508,11 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn spectate(&mut self, sender: usize, target_player: &Uuid) {}
+    async fn spectate(&mut self, sender: usize, target_player: &Uuid) {}
     #[allow(unused_variables)]
-    fn animation_serverbound(&mut self, sender: usize, hand: &i32) {}
+    async fn animation_serverbound(&mut self, sender: usize, hand: &i32) {}
     #[allow(unused_variables)]
-    fn update_sign(
+    async fn update_sign(
         &mut self,
         sender: usize,
         location: &BlockPosition,
@@ -515,7 +523,7 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn update_structure_block(
+    async fn update_structure_block(
         &mut self,
         sender: usize,
         location: &BlockPosition,
@@ -537,9 +545,9 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn creative_inventory_action(&mut self, sender: usize, slot: &i16, clicked_item: &Slot) {}
+    async fn creative_inventory_action(&mut self, sender: usize, slot: &i16, clicked_item: &Slot) {}
     #[allow(unused_variables)]
-    fn update_jigsaw_block(
+    async fn update_jigsaw_block(
         &mut self,
         sender: usize,
         location: &BlockPosition,
@@ -551,7 +559,7 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn update_command_block_minecart(
+    async fn update_command_block_minecart(
         &mut self,
         sender: usize,
         entity_id: &i32,
@@ -560,7 +568,7 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn update_command_block(
+    async fn update_command_block(
         &mut self,
         sender: usize,
         location: &BlockPosition,
@@ -570,19 +578,31 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn held_item_change_serverbound(&mut self, sender: usize, slot: &i16) {}
+    async fn held_item_change_serverbound(&mut self, sender: usize, slot: &i16) {}
     #[allow(unused_variables)]
-    fn set_beacon_effect(&mut self, sender: usize, primary_effect: &i32, secondary_effect: &i32) {}
+    async fn set_beacon_effect(
+        &mut self,
+        sender: usize,
+        primary_effect: &i32,
+        secondary_effect: &i32,
+    ) {
+    }
     #[allow(unused_variables)]
-    fn select_trade(&mut self, sender: usize, selected_slod: &i32) {}
+    async fn select_trade(&mut self, sender: usize, selected_slod: &i32) {}
     #[allow(unused_variables)]
-    fn advancement_tab(&mut self, sender: usize, action: &i32, tab_id: &Option<UnlocalizedName>) {}
+    async fn advancement_tab(
+        &mut self,
+        sender: usize,
+        action: &i32,
+        tab_id: &Option<UnlocalizedName>,
+    ) {
+    }
     #[allow(unused_variables)]
-    fn resource_pack_status(&mut self, sender: usize, result: &i32) {}
+    async fn resource_pack_status(&mut self, sender: usize, result: &i32) {}
     #[allow(unused_variables)]
-    fn name_item(&mut self, sender: usize, item_name: &str) {}
+    async fn name_item(&mut self, sender: usize, item_name: &str) {}
     #[allow(unused_variables)]
-    fn set_recipe_book_state(
+    async fn set_recipe_book_state(
         &mut self,
         sender: usize,
         book_id: &i32,
@@ -591,19 +611,31 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn set_displayed_recipe(&mut self, sender: usize, recipe_id: &UnlocalizedName) {}
+    async fn set_displayed_recipe(&mut self, sender: usize, recipe_id: &UnlocalizedName) {}
     #[allow(unused_variables)]
-    fn steer_vehicle(&mut self, sender: usize, sideways: &f32, forward: &f32, flags: &u8) {}
+    async fn steer_vehicle(&mut self, sender: usize, sideways: &f32, forward: &f32, flags: &u8) {}
     #[allow(unused_variables)]
-    fn entity_action(&mut self, sender: usize, entity_id: &i32, action_id: &i32, jump_boost: &i32) {
+    async fn entity_action(
+        &mut self,
+        sender: usize,
+        entity_id: &i32,
+        action_id: &i32,
+        jump_boost: &i32,
+    ) {
     }
     #[allow(unused_variables)]
-    fn player_digging(&mut self, sender: usize, status: &i32, location: &BlockPosition, face: &i8) {
+    async fn player_digging(
+        &mut self,
+        sender: usize,
+        status: &i32,
+        location: &BlockPosition,
+        face: &i8,
+    ) {
     }
     #[allow(unused_variables)]
-    fn player_abilities_serverbound(&mut self, sender: usize, flags: &i8) {}
+    async fn player_abilities_serverbound(&mut self, sender: usize, flags: &i8) {}
     #[allow(unused_variables)]
-    fn craft_recipe_request(
+    async fn craft_recipe_request(
         &mut self,
         sender: usize,
         window_id: &i8,
@@ -612,9 +644,9 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn pick_item(&mut self, sender: usize, slot_to_use: &i32) {}
+    async fn pick_item(&mut self, sender: usize, slot_to_use: &i32) {}
     #[allow(unused_variables)]
-    fn steer_boat(
+    async fn steer_boat(
         &mut self,
         sender: usize,
         left_paddle_turning: &bool,
@@ -622,11 +654,11 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn player_movement(&mut self, sender: usize, on_ground: &bool) {}
+    async fn player_movement(&mut self, sender: usize, on_ground: &bool) {}
     #[allow(unused_variables)]
-    fn player_rotation(&mut self, sender: usize, yaw: &f32, pitch: &f32, on_ground: &bool) {}
+    async fn player_rotation(&mut self, sender: usize, yaw: &f32, pitch: &f32, on_ground: &bool) {}
     #[allow(unused_variables)]
-    fn vehicle_move_serverbound(
+    async fn vehicle_move_serverbound(
         &mut self,
         sender: usize,
         x: &f64,
@@ -637,10 +669,17 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn player_position(&mut self, sender: usize, x: &f64, feet_y: &f64, z: &f64, on_ground: &bool) {
+    async fn player_position(
+        &mut self,
+        sender: usize,
+        x: &f64,
+        feet_y: &f64,
+        z: &f64,
+        on_ground: &bool,
+    ) {
     }
     #[allow(unused_variables)]
-    fn player_position_and_rotation_serverbound(
+    async fn player_position_and_rotation_serverbound(
         &mut self,
         sender: usize,
         x: &f64,
@@ -652,11 +691,11 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn lock_difficulty(&mut self, sender: usize, locked: &bool) {}
+    async fn lock_difficulty(&mut self, sender: usize, locked: &bool) {}
     #[allow(unused_variables)]
-    fn keep_alive_serverbound(&mut self, sender: usize, keep_alive_id: &i64) {}
+    async fn keep_alive_serverbound(&mut self, sender: usize, keep_alive_id: &i64) {}
     #[allow(unused_variables)]
-    fn generate_structure(
+    async fn generate_structure(
         &mut self,
         sender: usize,
         location: &BlockPosition,
@@ -665,7 +704,7 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn interact_entity(
+    async fn interact_entity(
         &mut self,
         sender: usize,
         entity_id: &i32,
@@ -678,9 +717,9 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn edit_book(&mut self, sender: usize, new_book: &Slot, is_signing: &bool, hand: &i32) {}
+    async fn edit_book(&mut self, sender: usize, new_book: &Slot, is_signing: &bool, hand: &i32) {}
     #[allow(unused_variables)]
-    fn plugin_message_serverbound(
+    async fn plugin_message_serverbound(
         &mut self,
         sender: usize,
         channel: &UnlocalizedName,
@@ -688,9 +727,9 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn close_window_serverbound(&mut self, sender: usize, window_id: &u8) {}
+    async fn close_window_serverbound(&mut self, sender: usize, window_id: &u8) {}
     #[allow(unused_variables)]
-    fn click_window(
+    async fn click_window(
         &mut self,
         sender: usize,
         window_id: &u8,
@@ -702,9 +741,9 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn click_window_button(&mut self, sender: usize, window_id: &i8, button_id: &i8) {}
+    async fn click_window_button(&mut self, sender: usize, window_id: &i8, button_id: &i8) {}
     #[allow(unused_variables)]
-    fn window_confirmation_serverbound(
+    async fn window_confirmation_serverbound(
         &mut self,
         sender: usize,
         window_id: &i8,
@@ -713,9 +752,9 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn tab_complete_serverbound(&mut self, sender: usize, trasaction_id: &i32, text: &str) {}
+    async fn tab_complete_serverbound(&mut self, sender: usize, trasaction_id: &i32, text: &str) {}
     #[allow(unused_variables)]
-    fn client_settings(
+    async fn client_settings(
         &mut self,
         sender: usize,
         locale: &str,
@@ -727,25 +766,34 @@ impl<R: Registry> QuartzServer<R> {
     ) {
     }
     #[allow(unused_variables)]
-    fn client_status(&mut self, sender: usize, action_id: &i32) {}
+    async fn client_status(&mut self, sender: usize, action_id: &i32) {}
     #[allow(unused_variables)]
-    fn chat_message_serverbound(&mut self, sender: usize, messag: &str) {}
+    async fn chat_message_serverbound(&mut self, sender: usize, messag: &str) {}
     #[allow(unused_variables)]
-    fn set_difficulty(&mut self, sender: usize, new_difficulty: &i8) {}
+    async fn set_difficulty(&mut self, sender: usize, new_difficulty: &i8) {}
     #[allow(unused_variables)]
-    fn query_entity_nbt(&mut self, sender: usize, trasaction_id: &i32, entity_id: &i32) {}
+    async fn query_entity_nbt(&mut self, sender: usize, trasaction_id: &i32, entity_id: &i32) {}
     #[allow(unused_variables)]
-    fn query_block_nbt(&mut self, sender: usize, trasaction_id: &i32, location: &BlockPosition) {}
+    async fn query_block_nbt(
+        &mut self,
+        sender: usize,
+        trasaction_id: &i32,
+        location: &BlockPosition,
+    ) {
+    }
     #[allow(unused_variables)]
-    fn teleport_confirm(&mut self, sender: usize, teleport_id: &i32) {}
+    async fn teleport_confirm(&mut self, sender: usize, teleport_id: &i32) {}
 }
 
 /// Handles the given asynchronos connecting using blocking I/O opperations.
-pub fn handle_async_connection(mut conn: AsyncClientConnection, private_key: Arc<Rsa<Private>>) {
+pub async fn handle_async_connection(
+    mut conn: AsyncClientConnection,
+    private_key: Arc<Rsa<Private>>,
+) {
     let mut async_handler = AsyncPacketHandler::new(private_key);
 
     while conn.connection_state != ConnectionState::Disconnected {
-        match conn.read_packet() {
+        match conn.read_packet().await {
             Ok(packet_len) => {
                 // Client disconnected
                 if packet_len == 0 {
@@ -753,7 +801,7 @@ pub fn handle_async_connection(mut conn: AsyncClientConnection, private_key: Arc
                 }
                 // Handle the packet
                 else {
-                    handle_packet(&mut conn, &mut async_handler, packet_len);
+                    handle_packet(&mut conn, &mut async_handler, packet_len).await;
                 }
             }
             Err(e) => {

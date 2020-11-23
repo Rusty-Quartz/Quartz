@@ -4,7 +4,7 @@ use crate::Registry;
 use array_init::array_init;
 use log::{error, warn};
 use nbt::{NbtCompound, NbtList};
-use num_traits::{Num, Zero};
+use num_traits::Zero;
 use std::collections::HashMap;
 use std::str::FromStr;
 use util::{

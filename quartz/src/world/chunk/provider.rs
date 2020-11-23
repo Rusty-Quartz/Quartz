@@ -104,20 +104,21 @@ impl<R: Registry> ChunkProvider<R> {
                 drop(map_guard);
 
                 if saved_on_disk {
-                    let nbt =
-                        match buffer[0] {
-                            // GZip compression (not used in practice)
-                            1 => read_nbt_gz_compressed(&mut Cursor::new(&buffer[1..]))?,
-                            2 => read_nbt_zlib_compressed(&mut Cursor::new(&buffer[1..]))?,
-                            _ => return Err(IoError::new(
+                    let nbt = match buffer[0] {
+                        // GZip compression (not used in practice)
+                        1 => read_nbt_gz_compressed(&mut Cursor::new(&buffer[1..]))?,
+                        2 => read_nbt_zlib_compressed(&mut Cursor::new(&buffer[1..]))?,
+                        _ => {
+                            return Err(IoError::new(
                                 ErrorKind::InvalidData,
                                 format!(
                                     "Encountered invalid compression scheme ({}) for chunk at {}",
                                     buffer[0], chunk_coords
                                 ),
                             )
-                            .into()),
-                        };
+                            .into())
+                        }
+                    };
 
                     let chunk = Chunk::from_nbt(&nbt.0);
                     match chunk {

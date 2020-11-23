@@ -1,9 +1,9 @@
-use crate::block::init_blocks;
 use crate::command::*;
 use crate::item::init_items;
 use crate::network::*;
 use crate::Config;
 use crate::Registry;
+use futures_lite::future;
 use linefeed::{
     complete::{Completer, Completion, Suffix},
     prompter::Prompter,
@@ -12,11 +12,11 @@ use linefeed::{
 use log::*;
 use openssl::rsa::Rsa;
 use quartz_plugins::PluginManager;
+use smol::{net::TcpListener, LocalExecutor, Timer};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
-use std::io;
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream as StdTcpStream;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{
@@ -220,85 +220,78 @@ impl<R: Registry> QuartzServer<R> {
 
 impl<R: Registry> QuartzServer<R> {
     fn start_tcp_server(&mut self) -> Result<(), Box<dyn Error>> {
-        let listener =
-            TcpListener::bind(format!("{}:{}", self.config.server_ip, self.config.port))?;
-
-        // Decide whether or not be can set the stream to non-blocking based on the OS
-        if cfg!(target_os = "linux") {
-            info!("Running on linux, setting tcp listener to nonblocking");
-            listener.set_nonblocking(true)?;
-        } else {
-            info!("Running on windows, setting tcp listener to blocking");
-            listener.set_nonblocking(false)?;
-        }
+        let listener = smol::block_on(TcpListener::bind(format!(
+            "{}:{}",
+            self.config.server_ip, self.config.port
+        )))?;
 
         let sync_packet_sender = self.sync_packet_sender.clone();
 
         self.add_join_handle(
             "TCP Server Thread",
             thread::spawn(move || {
-                let mut next_connection_id: usize = 0;
-
-                info!("Started TCP Server Thread");
-
-                // If this fails a panic is justified
-                let key_pair = Arc::new(Rsa::generate(1024).unwrap());
-
-                loop {
-                    match listener.accept() {
-                        // Successful connection
-                        Ok((socket, _addr)) => {
-                            // Don't bother handling the connection if the server is shutting down
-                            if !RUNNING.load(Ordering::SeqCst) {
-                                return;
-                            }
-
-                            debug!("Client connected");
-
-                            // Construct a connection wrapper around the socket
-                            let conn = AsyncClientConnection::new(
-                                next_connection_id,
-                                socket,
-                                sync_packet_sender.clone(),
-                            );
-
-                            // Register the client
-                            let result = sync_packet_sender.send(WrappedServerBoundPacket::new(
-                                0,
-                                ServerBoundPacket::ClientConnected {
-                                    id: next_connection_id,
-                                    write_handle: conn.create_write_handle(),
-                                },
-                            ));
-                            if let Err(e) = result {
-                                error!("Fatal error: failed to register new client: {}", e);
-                                return;
-                            }
-
-                            // Spawn a thread to handle the connection asynchronously
-                            let key_pair_clone = key_pair.clone();
-                            thread::spawn(move || handle_async_connection(conn, key_pair_clone));
-
-                            next_connection_id += 1;
-                        }
-
-                        // Wait before checking for a new connection and exit if the server is no longer running
-                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            if RUNNING.load(Ordering::SeqCst) {
-                                thread::sleep(Duration::from_millis(100));
-                            } else {
-                                return;
-                            }
-                        }
-
-                        // Actual error
-                        Err(e) => error!("Failed to accept TCP socket: {}", e),
-                    };
-                }
+                let executor = LocalExecutor::new();
+                future::block_on(executor.run(Self::tcp_server(listener, sync_packet_sender)));
             }),
         );
 
         Ok(())
+    }
+
+    async fn tcp_server(
+        listener: TcpListener,
+        sync_packet_sender: Sender<WrappedServerBoundPacket>,
+    ) {
+        let mut next_connection_id: usize = 0;
+
+        info!("Started TCP Server Thread");
+
+        // If this fails a panic is justified
+        let key_pair = Arc::new(Rsa::generate(1024).unwrap());
+
+        loop {
+            match listener.accept().await {
+                // Successful connection
+                Ok((socket, _addr)) => {
+                    // Don't bother handling the connection if the server is shutting down
+                    if !RUNNING.load(Ordering::SeqCst) {
+                        return;
+                    }
+
+                    debug!("Client connected");
+
+                    // Construct a connection wrapper around the socket
+                    let conn = AsyncClientConnection::new(
+                        next_connection_id,
+                        socket,
+                        sync_packet_sender.clone(),
+                    );
+
+                    // Register the client
+                    let result = sync_packet_sender.send(WrappedServerBoundPacket::new(
+                        0,
+                        ServerBoundPacket::ClientConnected {
+                            id: next_connection_id,
+                            write_handle: conn.create_write_handle(),
+                        },
+                    ));
+                    if let Err(e) = result {
+                        error!("Fatal error: failed to register new client: {}", e);
+                        return;
+                    }
+
+                    // Spawn a thread to handle the connection asynchronously
+                    let key_pair_clone = key_pair.clone();
+                    smol::spawn(async move { handle_async_connection(conn, key_pair_clone).await })
+                        .detach();
+
+                    next_connection_id += 1;
+                }
+
+                // Actual error
+                Err(e) => error!("Failed to accept TCP socket: {}", e),
+            };
+        }
     }
 
     /// Registers a join handle to be joined when the server is dropped.
@@ -311,25 +304,27 @@ impl<R: Registry> QuartzServer<R> {
     pub fn run(&mut self) {
         info!("Started server thread");
 
-        while RUNNING.load(Ordering::Relaxed) {
-            self.clock.start();
-            self.tick();
-            self.clock.finish_tick();
-        }
+        smol::block_on(async {
+            while RUNNING.load(Ordering::Relaxed) {
+                self.clock.start();
+                self.tick().await;
+                self.clock.finish_tick().await;
+            }
+        });
     }
 
-    fn tick(&mut self) {
-        self.handle_packets();
+    async fn tick(&mut self) {
+        self.handle_packets().await;
     }
 
-    fn handle_packets(&mut self) {
+    async fn handle_packets(&mut self) {
         while let Ok(wrapped_packet) = self.sync_packet_receiver.try_recv() {
             match wrapped_packet.packet {
                 ServerBoundPacket::ClientConnected { id, write_handle } => {
                     self.client_list.add_client(id, write_handle)
                 }
                 ServerBoundPacket::ClientDisconnected { id } => self.client_list.remove_client(id),
-                _ => dispatch_sync_packet(&wrapped_packet, self),
+                _ => dispatch_sync_packet(&wrapped_packet, self).await,
             }
         }
     }
@@ -340,12 +335,8 @@ impl<R: Registry> Drop for QuartzServer<R> {
         // In case this is reached due to a panic
         RUNNING.store(false, Ordering::SeqCst);
 
-        // None-blocking mode doesn't work on windows, so we need to send a connection to the TCP
-        // server to unblock the thread
-        if cfg!(target_os = "windows") {
-            debug!("sending stupid connection to listener to close it");
-            TcpStream::connect(format!("{}:{}", self.config.server_ip, self.config.port)).unwrap();
-        }
+        // Send a connection to the server daemon to shut it down
+        StdTcpStream::connect(format!("{}:{}", self.config.server_ip, self.config.port)).unwrap();
 
         for (thread_name, handle) in self.join_handles.drain() {
             info!("Shutting down {}", thread_name);
@@ -382,17 +373,19 @@ impl ServerClock {
     }
 
     /// The tick code has finished executing, so record the time and sleep if extra time remains.
-    fn finish_tick(&mut self) {
+    async fn finish_tick(&mut self) {
         match self.time.elapsed() {
             Ok(duration) => {
                 self.micros_ema =
                     (99_f32 * self.micros_ema + duration.as_micros() as f32) / 100_f32;
 
                 if duration.as_millis() < self.full_tick_millis {
-                    thread::sleep(self.full_tick - duration);
+                    Timer::after(self.full_tick - duration).await;
                 }
             }
-            Err(_) => thread::sleep(self.full_tick),
+            Err(_) => {
+                Timer::after(self.full_tick).await;
+            }
         }
     }
 
@@ -450,17 +443,17 @@ impl ClientList {
     }
 
     /// Sends a packet to the client with the given ID.
-    pub fn send_packet(&mut self, client_id: usize, packet: ClientBoundPacket) {
+    pub async fn send_packet(&mut self, client_id: usize, packet: ClientBoundPacket) {
         match self.0.get_mut(&client_id) {
-            Some(client) => client.connection.send_packet(packet),
+            Some(client) => client.connection.send_packet(packet).await,
             None => warn!("Attempted to send packet to disconnected client."),
         }
     }
 
     /// Sends a raw byte buffer to the client with the given ID.
-    pub fn send_buffer(&mut self, client_id: usize, buffer: PacketBuffer) {
+    pub async fn send_buffer(&mut self, client_id: usize, buffer: PacketBuffer) {
         match self.0.get_mut(&client_id) {
-            Some(client) => client.connection.send_buffer(buffer),
+            Some(client) => client.connection.send_buffer(buffer).await,
             None => warn!("Attempted to send buffer to disconnected client."),
         }
     }
