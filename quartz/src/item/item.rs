@@ -44,7 +44,7 @@ impl ItemStack {
     /// Creates a new itemstack
     pub fn new(item: &'static Item) -> Self {
         ItemStack {
-            item: item,
+            item,
             count: 1,
             damage: if item.item_info.is_some() {
                 item.item_info.as_ref().unwrap().max_durability()
