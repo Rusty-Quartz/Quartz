@@ -9,16 +9,11 @@ pub mod logging;
 pub mod map;
 /// Contains an implementation of a single-access box allowing for interior mutability.
 pub mod single_access;
-/// Defines a dynamic threadpool which executes a single function and scales the number of internal workers
-/// based off of the load it is experiencing.
-pub mod threadpool;
 mod uln;
-mod uuid;
 /// Allows for downcasting of trait types.
 pub mod variant;
 
 pub use uln::UnlocalizedName;
-pub use uuid::Uuid;
 
 #[cfg(test)]
 mod tests {

@@ -5,7 +5,8 @@ use std::ops::{Index, IndexMut};
 use std::ptr;
 use std::slice::SliceIndex;
 use std::str::{self, FromStr};
-use util::{UnlocalizedName, Uuid};
+use util::UnlocalizedName;
+use uuid::Uuid;
 
 use crate::world::location::BlockPosition;
 
@@ -382,7 +383,7 @@ impl PacketBuffer {
 
     /// Reads a [`UUID`](util::Uuid) from a 16-byte integer in this buffer.
     pub fn read_uuid(&mut self) -> Uuid {
-        Uuid::from(self.read_u128())
+        Uuid::from_bytes(self.read_u128().to_be_bytes())
     }
 
     /// Reads an [`UnlocalizedName`](util::UnlocalizedName) from a string stored in this buffer

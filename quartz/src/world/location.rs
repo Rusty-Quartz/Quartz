@@ -1,4 +1,4 @@
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Debug, Display, Formatter};
 use std::ops::{Shl, Shr};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,6 +28,12 @@ impl CoordinatePair {
 impl Display for CoordinatePair {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "x: {}, z: {}", self.x, self.z)
+    }
+}
+
+impl Debug for CoordinatePair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
     }
 }
 

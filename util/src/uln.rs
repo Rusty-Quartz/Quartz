@@ -46,6 +46,7 @@ impl FromStr for UnlocalizedName {
     ///
     /// ```
     /// # use util::UnlocalizedName;
+    /// # use std::str::FromStr;
     /// let stone = UnlocalizedName::from_str("minecraft:stone").unwrap();
     /// assert_eq!(stone.namespace, "minecraft");
     /// assert_eq!(stone.identifier, "stone");

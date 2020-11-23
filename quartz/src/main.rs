@@ -24,13 +24,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     server.init();
 
-    /*use quartz::world::chunk::ChunkProvider;
+    use quartz::world::chunk::ChunkProvider;
     use quartz::world::location::CoordinatePair;
     let mut provider: ChunkProvider<StaticRegistry> = ChunkProvider::new(
         "world",
         Path::new("/hd-pa/projects/FarLands2/run/world/region"),
+        1,
     )?;
-    provider.request_load_full(CoordinatePair::new(0, 0));*/
+    provider.request_load_full(CoordinatePair::new(0, 0));
 
     server.run();
     drop(server);

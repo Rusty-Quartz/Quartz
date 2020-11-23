@@ -3,64 +3,75 @@ use crate::world::{
     location::{ChunkCoordinatePair, RegionCoordinatePair},
 };
 use crate::Registry;
+use futures_lite::{
+    future,
+    io::{AsyncReadExt, AsyncSeekExt},
+};
+use log::error;
 use nbt::read::{read_nbt_gz_compressed, read_nbt_zlib_compressed};
+use smol::{
+    channel::{self, Receiver, Sender},
+    fs::{File, OpenOptions},
+    io::{self, Error as IoError, ErrorKind, SeekFrom},
+    lock::{Mutex, MutexGuard},
+    Executor,
+};
 use std::collections::HashMap;
-use std::error::Error;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, prelude::*, Cursor, Error as IoError, ErrorKind, Read, SeekFrom};
+use std::io::Cursor as StdCursor;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex, MutexGuard};
-use util::threadpool::{DistributionStrategy, DynamicThreadPool};
+use std::sync::Arc;
+use std::thread;
 
-/// Minimum number of threads the pool can have
-const PROVIDER_POOL_MIN_SIZE: usize = 1;
-/// Maximum number of threads the pool can have
-const PROVIDER_POOL_MAX_SIZE: usize = 4;
-/// The maximum number of chunks that should be delegated to a worker in the pool.
-const PROVIDER_POOL_LOAD_FACTOR: usize = 100;
 /// The scaling between chunk coords and region coords in terms of bit shifts. The actual scale
 /// factor is two to the power of this constant.
 const REGION_SCALE: usize = 5;
 
 pub struct ChunkProvider<R: Registry> {
     regions: RegionMap<R>,
-    thread_pool: DynamicThreadPool<ProviderRequest, WorkerHandle<R>, Box<dyn Error>>,
+    chunk_sender: Sender<Chunk<R>>,
     chunk_receiver: Receiver<Chunk<R>>,
+    executor: Arc<Executor<'static>>,
+    _shutdown_signal: Sender<()>,
 }
 
 impl<R: Registry> ChunkProvider<R> {
-    pub fn new<P: AsRef<Path>>(world_name: &str, root_directory: P) -> io::Result<Self> {
+    pub fn new<P: AsRef<Path>>(
+        world_name: &str,
+        root_directory: P,
+        thread_count: usize,
+    ) -> io::Result<Self> {
         // Ensure the root directory exists
-        fs::create_dir_all(root_directory.as_ref())?;
+        std::fs::create_dir_all(root_directory.as_ref())?;
 
         let regions = RegionMap::new(root_directory.as_ref().to_owned());
-        let (chunk_sender, chunk_receiver) = mpsc::channel::<Chunk<R>>();
-        let pool = DynamicThreadPool::open(
-            &format!("{}/ChunkProvider", world_name),
-            1, // Initial size
-            WorkerHandle {
-                regions: regions.clone(),
-                chunk_channel: chunk_sender,
-            },
-            DistributionStrategy::Fast,
-            Self::handle_request,
-        );
+        let (chunk_sender, chunk_receiver) = channel::unbounded::<Chunk<R>>();
+        let (shutdown_signal, shutdown) = channel::unbounded::<()>();
+
+        let executor = Arc::new(Executor::new());
+        for i in 1..=usize::max(thread_count, 1) {
+            let shutdown_clone = shutdown.clone();
+            let executor_clone = executor.clone();
+
+            thread::Builder::new()
+                .name(format!("{}/ChunkProvider-{}", world_name, i))
+                .spawn(move || future::block_on(executor_clone.run(shutdown_clone.recv())))?;
+        }
 
         Ok(ChunkProvider {
             regions,
-            thread_pool: pool,
+            chunk_sender,
             chunk_receiver,
+            executor,
+            _shutdown_signal: shutdown_signal,
         })
     }
 
     pub fn request_load_full(&mut self, chunk_coords: ChunkCoordinatePair) {
-        self.thread_pool
-            .add_job(ProviderRequest::LoadFull(chunk_coords));
+        self.handle_request(ProviderRequest::LoadFull(chunk_coords));
     }
 
-    pub fn flush_queue(&mut self) -> Result<(), &'static str> {
-        let mut map_guard = self.regions.lock()?;
+    pub async fn flush_queue(&mut self) -> Result<(), &'static str> {
+        let mut map_guard = self.regions.lock().await;
 
         while let Ok(chunk) = self.chunk_receiver.try_recv() {
             match map_guard.loaded_region_at(chunk.chunk_coordinates() >> 5) {
@@ -73,23 +84,31 @@ impl<R: Registry> ChunkProvider<R> {
         Ok(())
     }
 
-    pub fn check_worker_load(&mut self) {
-        self.thread_pool.resize(
-            PROVIDER_POOL_LOAD_FACTOR,
-            PROVIDER_POOL_MIN_SIZE,
-            PROVIDER_POOL_MAX_SIZE,
-        );
+    fn handle_request(&self, request: ProviderRequest) {
+        let regions = self.regions.clone();
+        let chunk_sender = self.chunk_sender.clone();
+
+        self.executor
+            .spawn(async move {
+                let result =
+                    Self::handle_request_internal(request.clone(), regions, chunk_sender).await;
+
+                if let Err(e) = result {
+                    error!("Failed to process request {:?}: {}", request, e);
+                }
+            })
+            .detach();
     }
 
-    // TODO: Add coords to error messages and change error type
-    fn handle_request(
+    async fn handle_request_internal(
         request: ProviderRequest,
-        handle: &mut WorkerHandle<R>,
-    ) -> Result<(), Box<dyn Error>> {
+        regions: RegionMap<R>,
+        chunk_sender: Sender<Chunk<R>>,
+    ) -> io::Result<()> {
         match request {
             ProviderRequest::LoadFull(chunk_coords) => {
-                let mut map_guard = handle.regions.lock()?;
-                let region = map_guard.region_at(chunk_coords >> REGION_SCALE)?;
+                let mut map_guard = regions.lock().await;
+                let region = map_guard.region_at(chunk_coords >> REGION_SCALE).await?;
 
                 // The chunk data is still available, so we can just mark it as used and return early
                 if region.recover_cached_chunk(chunk_coords) {
@@ -98,7 +117,7 @@ impl<R: Registry> ChunkProvider<R> {
                 }
 
                 let mut buffer: Vec<u8> = Vec::new();
-                let saved_on_disk = region.load_chunk_nbt(chunk_coords, &mut buffer)?;
+                let saved_on_disk = region.load_chunk_nbt(chunk_coords, &mut buffer).await?;
 
                 drop(region);
                 drop(map_guard);
@@ -106,8 +125,8 @@ impl<R: Registry> ChunkProvider<R> {
                 if saved_on_disk {
                     let nbt = match buffer[0] {
                         // GZip compression (not used in practice)
-                        1 => read_nbt_gz_compressed(&mut Cursor::new(&buffer[1..]))?,
-                        2 => read_nbt_zlib_compressed(&mut Cursor::new(&buffer[1..]))?,
+                        1 => read_nbt_gz_compressed(&mut StdCursor::new(&buffer[1..]))?,
+                        2 => read_nbt_zlib_compressed(&mut StdCursor::new(&buffer[1..]))?,
                         _ => {
                             return Err(IoError::new(
                                 ErrorKind::InvalidData,
@@ -122,7 +141,12 @@ impl<R: Registry> ChunkProvider<R> {
 
                     let chunk = Chunk::from_nbt(&nbt.0);
                     match chunk {
-                        Some(chunk) => handle.chunk_channel.send(chunk)?,
+                        Some(chunk) => chunk_sender.send(chunk).await.map_err(|e| {
+                            io::Error::new(
+                                io::ErrorKind::BrokenPipe,
+                                "Failed to send chunk between threads",
+                            )
+                        })?,
                         None => {
                             return Err(IoError::new(
                                 ErrorKind::InvalidData,
@@ -139,7 +163,7 @@ impl<R: Registry> ChunkProvider<R> {
             ProviderRequest::Unload(chunk_coords) => {
                 let region_coords = chunk_coords >> REGION_SCALE;
 
-                let mut map_guard = handle.regions.lock()?;
+                let mut map_guard = regions.lock().await;
                 let region = match map_guard.loaded_region_at(region_coords) {
                     Some(region) => region,
                     None => return Ok(()),
@@ -183,6 +207,7 @@ impl<R: Registry> Clone for WorkerHandle<R> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum ProviderRequest {
     LoadFull(ChunkCoordinatePair),
     Unload(ChunkCoordinatePair),
@@ -202,11 +227,11 @@ impl<R: Registry> RegionMap<R> {
         }
     }
 
-    fn lock(&self) -> Result<MapGuard<'_, R>, &'static str> {
-        Ok(MapGuard {
-            guard: self.inner.lock().map_err(|_| "Region map mutex poisoned")?,
+    async fn lock(&self) -> MapGuard<'_, R> {
+        MapGuard {
+            guard: self.inner.lock().await,
             map: self,
-        })
+        }
     }
 }
 
@@ -225,11 +250,11 @@ struct MapGuard<'a, R: Registry> {
 }
 
 impl<'a, R: Registry> MapGuard<'a, R> {
-    fn region_at(&mut self, location: RegionCoordinatePair) -> io::Result<&mut Region<R>> {
+    async fn region_at(&mut self, location: RegionCoordinatePair) -> io::Result<&mut Region<R>> {
         Ok(self
             .guard
             .entry(location)
-            .or_insert(Region::new(&self.map.root_directory, location)?))
+            .or_insert(Region::new(&self.map.root_directory, location).await?))
     }
 
     fn loaded_region_at(&mut self, location: RegionCoordinatePair) -> Option<&mut Region<R>> {
@@ -249,7 +274,7 @@ struct Region<R: Registry> {
 }
 
 impl<R: Registry> Region<R> {
-    fn new(root_directory: &Path, location: RegionCoordinatePair) -> io::Result<Self> {
+    async fn new(root_directory: &Path, location: RegionCoordinatePair) -> io::Result<Self> {
         let file_path = root_directory.join(format!("r.{}.{}.mca", location.x, location.z));
 
         let mut chunk_info: Vec<ChunkDataInfo<R>> = Vec::with_capacity(1024);
@@ -257,17 +282,21 @@ impl<R: Registry> Region<R> {
 
         if file_path.exists() {
             let mut region = Region {
-                file: OpenOptions::new().read(true).write(true).open(file_path)?,
+                file: OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(file_path)
+                    .await?,
                 chunk_offset: location << REGION_SCALE,
                 chunk_info: chunk_info.into_boxed_slice(),
                 loaded_count: 0,
             };
-            region.read_file_header()?;
+            region.read_file_header().await?;
 
             Ok(region)
         } else {
             Ok(Region {
-                file: File::create(file_path)?,
+                file: File::create(file_path).await?,
                 chunk_offset: location << REGION_SCALE,
                 chunk_info: chunk_info.into_boxed_slice(),
                 loaded_count: 0,
@@ -275,7 +304,7 @@ impl<R: Registry> Region<R> {
         }
     }
 
-    fn read_file_header(&mut self) -> io::Result<()> {
+    async fn read_file_header(&mut self) -> io::Result<()> {
         if self.chunk_info.len() != 1024 {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
@@ -284,7 +313,7 @@ impl<R: Registry> Region<R> {
         }
 
         let mut buffer = [0_u8; 8192];
-        self.file.read_exact(&mut buffer)?;
+        self.file.read_exact(&mut buffer).await?;
 
         let mut j: usize;
         let mut chunk_info: &mut ChunkDataInfo<R>;
@@ -351,7 +380,7 @@ impl<R: Registry> Region<R> {
     /// Attempts to load the chunk from disk, returning the `Ok` variant when no IO errors occur. The boolean
     /// returned indicates whether or not the chunk was actually on disk, if false is returned then that
     /// indicates the chunk was never saved before. If `Ok(true)` is returned, then
-    fn load_chunk_nbt(
+    async fn load_chunk_nbt(
         &mut self,
         absolute_position: ChunkCoordinatePair,
         buffer: &mut Vec<u8>,
@@ -376,8 +405,9 @@ impl<R: Registry> Region<R> {
         buffer.resize(((chunk_info.sector_count as usize) * 4096).max(5), 0);
         // The sector offset accounts for the tables at the beginning
         self.file
-            .seek(SeekFrom::Start((chunk_info.sector_offset as u64) * 4096))?;
-        self.file.read_exact(buffer)?;
+            .seek(SeekFrom::Start((chunk_info.sector_offset as u64) * 4096))
+            .await?;
+        self.file.read_exact(buffer).await?;
 
         let length = (buffer[0] as usize) << 24
             | (buffer[1] as usize) << 16

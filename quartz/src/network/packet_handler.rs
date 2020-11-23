@@ -16,7 +16,8 @@ use serde::Deserialize;
 use serde_json::json;
 use std::str::FromStr;
 use std::sync::{mpsc::Sender, Arc};
-use util::{UnlocalizedName, Uuid};
+use util::UnlocalizedName;
+use uuid::Uuid;
 
 use super::AsyncWriteHandle;
 
