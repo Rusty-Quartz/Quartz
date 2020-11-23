@@ -1,7 +1,7 @@
 use std::mem;
+use std::ops::{Index, IndexMut};
 use std::slice::Iter;
 use std::slice::IterMut;
-use std::ops::{Index, IndexMut};
 
 /// Represents an object which has a usize as a modifiable ID.
 pub trait Identify {
@@ -16,7 +16,7 @@ pub trait Identify {
 /// and indexing so it is more efficient than a hash map.
 pub struct IdList<T: Identify> {
     inner: Vec<Option<T>>,
-    free_ids: Vec<usize>
+    free_ids: Vec<usize>,
 }
 
 impl<T: Identify> IdList<T> {
@@ -24,7 +24,7 @@ impl<T: Identify> IdList<T> {
     pub fn new() -> Self {
         IdList {
             inner: Vec::new(),
-            free_ids: Vec::new()
+            free_ids: Vec::new(),
         }
     }
 
@@ -32,21 +32,21 @@ impl<T: Identify> IdList<T> {
     pub fn with_capacity(capacity: usize) -> Self {
         IdList {
             inner: Vec::with_capacity(capacity),
-            free_ids: Vec::new()
+            free_ids: Vec::new(),
         }
     }
 
     /// Returns an iterator over shared references to the values in this ID list.
     pub fn iter(&self) -> IdListIterator<T, Iter<'_, Option<T>>> {
         IdListIterator {
-            inner: self.inner.iter()
+            inner: self.inner.iter(),
         }
     }
 
     /// Returns an iterator over mutable references to the values in this ID list.
     pub fn iter_mut(&mut self) -> IdListIteratorMut<T, IterMut<'_, Option<T>>> {
         IdListIteratorMut {
-            inner: self.inner.iter_mut()
+            inner: self.inner.iter_mut(),
         }
     }
 
@@ -108,10 +108,10 @@ macro_rules! id_list_iter {
         pub struct $name<'a, T: 'a, I: Iterator<Item = $wrapped_itype>> {
             inner: I
         }
-        
+
         impl<'a, T, I: Iterator<Item = $wrapped_itype>> Iterator for $name<'a, T, I> {
             type Item = $itype;
-        
+
             fn next(&mut self) -> Option<Self::Item> {
                 while let Some(value) = self.inner.next() {
                     match value {

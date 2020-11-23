@@ -9,12 +9,12 @@ mod tag;
 
 /// Contains utilities for reading NBT data.
 pub mod read;
-/// Contains utilities for writing NBT data.
-pub mod write;
 /// Provides support for SNBT parsing.
 pub mod snbt;
+/// Contains utilities for writing NBT data.
+pub mod write;
 
 pub use repr::NbtRepr;
-pub use tag::NbtTag;
 pub use tag::NbtCompound;
 pub use tag::NbtList;
+pub use tag::NbtTag;

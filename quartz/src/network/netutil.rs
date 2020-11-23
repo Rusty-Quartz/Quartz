@@ -1,11 +1,11 @@
-use std::str::{self, FromStr};
+use chat::Component;
+use nbt::NbtCompound;
 use std::fmt::{self, Display, Formatter};
 use std::ops::{Index, IndexMut};
 use std::ptr;
 use std::slice::SliceIndex;
-use chat::Component;
-use nbt::NbtCompound;
-use util::{Uuid, UnlocalizedName};
+use std::str::{self, FromStr};
+use util::{UnlocalizedName, Uuid};
 
 use crate::world::location::BlockPosition;
 
@@ -14,21 +14,21 @@ use super::{EntityMetadata, Particle, PlayerInfoAction};
 /// A wrapper around a vec used for reading/writing packet data efficiently.
 pub struct PacketBuffer {
     inner: Vec<u8>,
-    cursor: usize
+    cursor: usize,
 }
 
 impl From<&[u8]> for PacketBuffer {
     fn from(bytes: &[u8]) -> Self {
         PacketBuffer {
             inner: Vec::from(bytes),
-            cursor: 0
+            cursor: 0,
         }
     }
 }
 
 impl<Idx> Index<Idx> for PacketBuffer
 where
-    Idx: SliceIndex<[u8]>
+    Idx: SliceIndex<[u8]>,
 {
     type Output = Idx::Output;
 
@@ -39,7 +39,7 @@ where
 
 impl<Idx> IndexMut<Idx> for PacketBuffer
 where
-    Idx: SliceIndex<[u8]>
+    Idx: SliceIndex<[u8]>,
 {
     fn index_mut(&mut self, index: Idx) -> &mut Self::Output {
         &mut self.inner[index]
@@ -57,7 +57,7 @@ impl PacketBuffer {
     pub fn new(initial_size: usize) -> Self {
         PacketBuffer {
             inner: Vec::with_capacity(initial_size),
-            cursor: 0
+            cursor: 0,
         }
     }
 
@@ -231,8 +231,10 @@ impl PacketBuffer {
             return 0;
         }
 
-        let result = (self.inner[self.cursor] as i32) << 24 | (self.inner[self.cursor + 1] as i32) << 16 |
-                (self.inner[self.cursor + 2] as i32) << 8 | (self.inner[self.cursor + 3] as i32);
+        let result = (self.inner[self.cursor] as i32) << 24
+            | (self.inner[self.cursor + 1] as i32) << 16
+            | (self.inner[self.cursor + 2] as i32) << 8
+            | (self.inner[self.cursor + 3] as i32);
         self.cursor += 4;
         result
     }
@@ -244,10 +246,14 @@ impl PacketBuffer {
             return 0;
         }
 
-        let result = (self.inner[self.cursor] as i64) << 56 | (self.inner[self.cursor + 1] as i64) << 48 |
-                (self.inner[self.cursor + 2] as i64) << 40 | (self.inner[self.cursor + 3] as i64) << 32 |
-                (self.inner[self.cursor + 4] as i64) << 24 | (self.inner[self.cursor + 5] as i64) << 16 |
-                (self.inner[self.cursor + 6] as i64) << 8 | (self.inner[self.cursor + 7] as i64);
+        let result = (self.inner[self.cursor] as i64) << 56
+            | (self.inner[self.cursor + 1] as i64) << 48
+            | (self.inner[self.cursor + 2] as i64) << 40
+            | (self.inner[self.cursor + 3] as i64) << 32
+            | (self.inner[self.cursor + 4] as i64) << 24
+            | (self.inner[self.cursor + 5] as i64) << 16
+            | (self.inner[self.cursor + 6] as i64) << 8
+            | (self.inner[self.cursor + 7] as i64);
         self.cursor += 8;
         result
     }
@@ -259,14 +265,22 @@ impl PacketBuffer {
             return 0;
         }
 
-        let result = (self.inner[self.cursor] as u128) << 120 | (self.inner[self.cursor + 1] as u128) << 112 |
-                (self.inner[self.cursor + 2] as u128) << 104 | (self.inner[self.cursor + 3] as u128) << 96 |
-                (self.inner[self.cursor + 4] as u128) << 88 | (self.inner[self.cursor + 5] as u128) << 80 |
-                (self.inner[self.cursor + 6] as u128) << 72 | (self.inner[self.cursor + 7] as u128) << 64 |
-                (self.inner[self.cursor + 8] as u128) << 56 | (self.inner[self.cursor + 9] as u128) << 48 |
-                (self.inner[self.cursor + 10] as u128) << 40 | (self.inner[self.cursor + 11] as u128) << 32 |
-                (self.inner[self.cursor + 12] as u128) << 24 | (self.inner[self.cursor + 13] as u128) << 16 |
-                (self.inner[self.cursor + 14] as u128) << 8 | (self.inner[self.cursor + 15] as u128);
+        let result = (self.inner[self.cursor] as u128) << 120
+            | (self.inner[self.cursor + 1] as u128) << 112
+            | (self.inner[self.cursor + 2] as u128) << 104
+            | (self.inner[self.cursor + 3] as u128) << 96
+            | (self.inner[self.cursor + 4] as u128) << 88
+            | (self.inner[self.cursor + 5] as u128) << 80
+            | (self.inner[self.cursor + 6] as u128) << 72
+            | (self.inner[self.cursor + 7] as u128) << 64
+            | (self.inner[self.cursor + 8] as u128) << 56
+            | (self.inner[self.cursor + 9] as u128) << 48
+            | (self.inner[self.cursor + 10] as u128) << 40
+            | (self.inner[self.cursor + 11] as u128) << 32
+            | (self.inner[self.cursor + 12] as u128) << 24
+            | (self.inner[self.cursor + 13] as u128) << 16
+            | (self.inner[self.cursor + 14] as u128) << 8
+            | (self.inner[self.cursor + 15] as u128);
         self.cursor += 16;
         result
     }
@@ -321,7 +335,7 @@ impl PacketBuffer {
         self.read_bytes(&mut bytes);
         match str::from_utf8(&bytes) {
             Ok(string) => string.to_owned(),
-            Err(_reason) => String::new()
+            Err(_reason) => String::new(),
         }
     }
 
@@ -363,7 +377,7 @@ impl PacketBuffer {
         let y = (long & 0xFFF) as i16;
         let z = (long << 26 >> 38) as i32;
 
-        crate::world::location::BlockPosition {x,y,z}
+        crate::world::location::BlockPosition { x, y, z }
     }
 
     /// Reads a [`UUID`](util::Uuid) from a 16-byte integer in this buffer.
@@ -380,7 +394,9 @@ impl PacketBuffer {
     /// Reads a [`NbtCompound`](nbt::NbtCompound) from bytes stored in this buffer
     /// Does not expect compression
     pub fn read_nbt_tag(&mut self) -> NbtCompound {
-        nbt::read::read_nbt_uncompressed(&mut self.inner.as_slice()).expect("Error reading nbt compound").0
+        nbt::read::read_nbt_uncompressed(&mut self.inner.as_slice())
+            .expect("Error reading nbt compound")
+            .0
     }
 
     /// Never used and is unimplemented
@@ -537,7 +553,7 @@ impl PacketBuffer {
             128..=16383 => 2,
             16384..=2097151 => 3,
             2097152..=268435455 => 4,
-            _ => 5
+            _ => 5,
         }
     }
 
@@ -547,9 +563,9 @@ impl PacketBuffer {
             self.write(0);
             return;
         }
-    
+
         let mut next_byte: u8;
-    
+
         while value != 0 {
             next_byte = (value & 0x7F) as u8;
             value >>= 7;
@@ -566,9 +582,9 @@ impl PacketBuffer {
             self.write(0);
             return;
         }
-    
+
         let mut next_byte: u8;
-    
+
         while value != 0 {
             next_byte = (value & 0x7F) as u8;
             value >>= 7;
@@ -612,7 +628,11 @@ impl PacketBuffer {
 
     /// Writes all the elements in the array to the buffer using using the provided serializer method
     #[inline]
-    pub fn write_primative_array<T: Copy>(&mut self, value: &Vec<T>, serializer: fn(&mut Self, T) -> ()) {
+    pub fn write_primative_array<T: Copy>(
+        &mut self,
+        value: &Vec<T>,
+        serializer: fn(&mut Self, T) -> (),
+    ) {
         for &e in value {
             serializer(self, e);
         }
@@ -621,7 +641,11 @@ impl PacketBuffer {
     /// Converts a [`BlockPosition`](crate::world::location::BlockPosition) to an i64 and writes it to this buffer
     #[inline]
     pub fn write_position(&mut self, value: &BlockPosition) {
-        self.write_i64(((value.x as i64 & 0x3FFFFFF) << 38) | ((value.z as i64 & 0x3FFFFFF) << 12) | (value.y as i64 & 0xFFF));
+        self.write_i64(
+            ((value.x as i64 & 0x3FFFFFF) << 38)
+                | ((value.z as i64 & 0x3FFFFFF) << 12)
+                | (value.y as i64 & 0xFFF),
+        );
     }
 
     /// Converts an [`UnlocalizedName`](util::UnlocalizedName) to a string and writes it to this buffer
@@ -634,7 +658,8 @@ impl PacketBuffer {
     /// This does not apply compression
     #[inline]
     pub fn write_nbt_tag(&mut self, value: &nbt::NbtCompound) {
-        nbt::write::write_nbt_uncompressed(&mut self.inner, "root", value).expect("Error writing nbt compound")
+        nbt::write::write_nbt_uncompressed(&mut self.inner, "root", value)
+            .expect("Error writing nbt compound")
     }
 
     /// Writes a [`EntityMetadata`](super::network_handler::EntityMetadata) to this buffer
@@ -651,14 +676,14 @@ impl PacketBuffer {
                     Some(c) => self.write_chat(c),
                     None => {}
                 }
-            },
+            }
             EntityMetadata::Slot(v) => self.write_slot(v),
             EntityMetadata::Boolean(v) => self.write_bool(*v),
-            EntityMetadata::Rotation(x,y,z) => {
+            EntityMetadata::Rotation(x, y, z) => {
                 self.write_f32(*x);
                 self.write_f32(*y);
                 self.write_f32(*z);
-            },
+            }
             EntityMetadata::Position(v) => self.write_position(v),
             EntityMetadata::OptPosition(b, p) => {
                 self.write_bool(*b);
@@ -666,7 +691,7 @@ impl PacketBuffer {
                     Some(p) => self.write_position(p),
                     None => {}
                 }
-            },
+            }
             EntityMetadata::Direction(v) => self.write_varint(*v),
             EntityMetadata::OptUUID(b, u) => {
                 self.write_bool(*b);
@@ -674,17 +699,17 @@ impl PacketBuffer {
                     Some(u) => self.write_uuid(*u),
                     None => {}
                 }
-            },
+            }
             EntityMetadata::OptBlockId(v) => self.write_varint(*v),
             EntityMetadata::NBT(v) => self.write_nbt_tag(v),
             EntityMetadata::Particle(v) => self.write_wrapped_particle(v),
-            EntityMetadata::VillagerData(a,b,c) => {
+            EntityMetadata::VillagerData(a, b, c) => {
                 self.write_varint(*a);
                 self.write_varint(*b);
                 self.write_varint(*c);
-            },
+            }
             EntityMetadata::OptVarInt(v) => self.write_varint(*v),
-            EntityMetadata::Pose(v) => self.write_varint(*v)
+            EntityMetadata::Pose(v) => self.write_varint(*v),
         }
     }
 
@@ -692,12 +717,12 @@ impl PacketBuffer {
     pub fn write_particle(&mut self, value: &Particle) {
         match value {
             Particle::Block(v) => self.write_varint(*v),
-            Particle::Dust(x,y,z,s) => {
+            Particle::Dust(x, y, z, s) => {
                 self.write_f32(*x);
                 self.write_f32(*y);
                 self.write_f32(*z);
                 self.write_f32(*s);
-            },
+            }
             Particle::FallingDust(v) => self.write_varint(*v),
             Particle::Item(v) => self.write_slot(v),
             _ => {}
@@ -707,7 +732,15 @@ impl PacketBuffer {
     /// Writes a [`PlayerInfoAction`](super::packet_handler::PlayerInfoAction) to this buffer
     pub fn write_player_info_action(&mut self, value: &PlayerInfoAction) {
         match value {
-            PlayerInfoAction::AddPlayer {name, number_of_properties, properties, gamemode, ping, has_display_name, display_name} => {
+            PlayerInfoAction::AddPlayer {
+                name,
+                number_of_properties,
+                properties,
+                gamemode,
+                ping,
+                has_display_name,
+                display_name,
+            } => {
                 self.write_string(name);
                 self.write_varint(*number_of_properties);
                 self.write_array(properties, Self::write_player_property);
@@ -718,26 +751,31 @@ impl PacketBuffer {
                     Some(v) => self.write_chat(v),
                     None => {}
                 }
-            },
-            PlayerInfoAction::UpdateGamemode {gamemode} => {
+            }
+            PlayerInfoAction::UpdateGamemode { gamemode } => {
                 self.write_varint(*gamemode);
-            },
-            PlayerInfoAction::UpdateLatency {ping} => {
+            }
+            PlayerInfoAction::UpdateLatency { ping } => {
                 self.write_varint(*ping);
             }
-            PlayerInfoAction::UpdateDisplayName {has_display_name, display_name} => {
+            PlayerInfoAction::UpdateDisplayName {
+                has_display_name,
+                display_name,
+            } => {
                 self.write_bool(*has_display_name);
                 match display_name {
                     Some(v) => self.write_chat(v),
                     None => {}
                 }
-            },
+            }
             PlayerInfoAction::RemovePlayer => {}
         }
     }
 
     /// Converts a [`Component`](chat::Component) to a json string and writes it to this buffer
     pub fn write_chat(&mut self, value: &Component) {
-        self.write_string(&serde_json::to_string(value).expect("Error converting a Component to a string"));
+        self.write_string(
+            &serde_json::to_string(value).expect("Error converting a Component to a string"),
+        );
     }
 }

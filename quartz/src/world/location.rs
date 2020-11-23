@@ -5,13 +5,13 @@ use std::ops::{Shl, Shr};
 pub struct BlockPosition {
     pub x: i32,
     pub y: i16,
-    pub z: i32
+    pub z: i32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CoordinatePair {
     pub x: i32,
-    pub z: i32
+    pub z: i32,
 }
 
 /// Type alias for `CoordinatePair` to disambiguate between chunk coordinate pairs and region coordinate pairs.

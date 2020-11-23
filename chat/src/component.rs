@@ -1,7 +1,7 @@
 use std::fmt::{self, Display, Formatter};
 use std::str;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 #[cfg(unix)]
@@ -21,20 +21,18 @@ pub enum Component {
         /// The unlocalized translation ID to use for this component.
         translate: String,
         /// The components to insert into the translation.
-        with: Option<Vec<Component>>
+        with: Option<Vec<Component>>,
     },
     /// A component consisting of an entity selector, such as `@a` or `@e[distance=..3]`.
     Selector {
         /// The selector in string-form.
-        selector: String
+        selector: String,
     },
     /// Used to display the client's current keybind for the specified key.
     Keybind {
         /// They key whose binding should be specified.
-        keybind: String
-    }
-
-    // TODO: Add score components
+        keybind: String,
+    }, // TODO: Add score components
 }
 
 impl Component {
@@ -53,7 +51,7 @@ impl Component {
         match self {
             Component::Text(text_component) => text_component.as_plain_text(),
             // TODO: Implement this for other component types
-            _ => serde_json::to_string(self).unwrap_or("{}".to_owned())
+            _ => serde_json::to_string(self).unwrap_or("{}".to_owned()),
         }
     }
 }
@@ -79,8 +77,8 @@ impl Display for Component {
             // TODO: implement the translate component
             _ => match serde_json::to_string(self) {
                 Ok(string) => write!(f, "{}", string),
-                Err(_) => write!(f, "{{}}")
-            }
+                Err(_) => write!(f, "{{}}"),
+            },
         }
     }
 }
@@ -98,7 +96,8 @@ pub trait ToComponentParts {
 pub trait ToComponent: ToComponentParts {
     /// Creates a component representing the data in this object.
     fn to_component(&self) -> Component {
-        let mut text_component = TextComponent::new(String::new(), Some(PredefinedColor::White.into()));
+        let mut text_component =
+            TextComponent::new(String::new(), Some(PredefinedColor::White.into()));
         text_component.extra = Some(self.to_component_parts());
         Component::Text(text_component)
     }
@@ -130,7 +129,7 @@ pub struct TextComponent {
     /// The event to run when the player hovers over this component.
     pub hover_event: Option<Box<HoverEvent>>,
     /// The children of this component.
-    pub extra: Option<Vec<Component>>
+    pub extra: Option<Vec<Component>>,
 }
 
 impl TextComponent {
@@ -147,7 +146,7 @@ impl TextComponent {
             insertion: None,
             click_event: None,
             hover_event: None,
-            extra: None
+            extra: None,
         }
     }
 
@@ -164,7 +163,7 @@ impl TextComponent {
             insertion: None,
             click_event: None,
             hover_event: None,
-            extra: None
+            extra: None,
         }
     }
 
@@ -192,13 +191,16 @@ impl TextComponent {
     pub fn add_child(&mut self, component: Component) {
         match &mut self.extra {
             Some(children) => children.push(component),
-            None => self.extra = Some(vec![component])
+            None => self.extra = Some(vec![component]),
         }
     }
 
     /// Returns whether or not this component has children.
     pub fn has_children(&self) -> bool {
-        self.extra.as_ref().map(|extra| !extra.is_empty()).unwrap_or(false)
+        self.extra
+            .as_ref()
+            .map(|extra| !extra.is_empty())
+            .unwrap_or(false)
     }
 
     // Apply just the formatting of this component
@@ -274,13 +276,13 @@ impl Display for TextComponent {
 
     #[cfg(not(unix))]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-		write!(f, "{}", self.text)?;
-		if let Some(children) = &self.extra {
-			for child in children.iter() {
-	    		child.fmt(f)?;
-	  		}
-		}
-		Ok(())
+        write!(f, "{}", self.text)?;
+        if let Some(children) = &self.extra {
+            for child in children.iter() {
+                child.fmt(f)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -288,7 +290,7 @@ impl Display for TextComponent {
 #[derive(Serialize, Deserialize)]
 pub struct ClickEvent {
     action: ClickEventType,
-    value: EventArgument
+    value: EventArgument,
 }
 
 impl ClickEvent {
@@ -296,7 +298,7 @@ impl ClickEvent {
     pub fn open_url(url: String) -> Self {
         ClickEvent {
             action: ClickEventType::OpenUrl,
-            value: EventArgument::Text(url)
+            value: EventArgument::Text(url),
         }
     }
 
@@ -304,7 +306,7 @@ impl ClickEvent {
     pub fn run_command(command: String) -> Self {
         ClickEvent {
             action: ClickEventType::RunCommand,
-            value: EventArgument::Text(command)
+            value: EventArgument::Text(command),
         }
     }
 
@@ -312,7 +314,7 @@ impl ClickEvent {
     pub fn suggest_command(command: String) -> Self {
         ClickEvent {
             action: ClickEventType::SuggestCommand,
-            value: EventArgument::Text(command)
+            value: EventArgument::Text(command),
         }
     }
 
@@ -320,7 +322,7 @@ impl ClickEvent {
     pub fn change_page(index: u32) -> Self {
         ClickEvent {
             action: ClickEventType::ChangePage,
-            value: EventArgument::Index(index)
+            value: EventArgument::Index(index),
         }
     }
 }
@@ -331,7 +333,7 @@ enum ClickEventType {
     OpenUrl,
     RunCommand,
     SuggestCommand,
-    ChangePage
+    ChangePage,
 }
 
 /// Defines hover events for text components.
@@ -341,7 +343,7 @@ pub struct HoverEvent {
     action: HoverEventType,
     contents: Option<HoverContents>,
     // This is for legacy support
-    value: Option<EventArgument>
+    value: Option<EventArgument>,
 }
 
 impl HoverEvent {
@@ -350,7 +352,7 @@ impl HoverEvent {
         HoverEvent {
             action: HoverEventType::ShowText,
             contents: Some(HoverContents::Component(component)),
-            value: None
+            value: None,
         }
     }
 
@@ -359,7 +361,7 @@ impl HoverEvent {
         HoverEvent {
             action: HoverEventType::ShowItem,
             contents: Some(HoverContents::Item(item)),
-            value: None
+            value: None,
         }
     }
 
@@ -371,13 +373,13 @@ impl HoverEvent {
         let contents = match serde_json::from_str::<HoverItem>(json) {
             Ok(parsed) => HoverContents::Item(parsed),
             // Assume just the item ID was passed in
-            Err(_) => HoverContents::ItemId(json.to_owned())
+            Err(_) => HoverContents::ItemId(json.to_owned()),
         };
 
         HoverEvent {
             action: HoverEventType::ShowItem,
             contents: Some(contents),
-            value: None
+            value: None,
         }
     }
 
@@ -386,7 +388,7 @@ impl HoverEvent {
         HoverEvent {
             action: HoverEventType::ShowEntity,
             contents: Some(HoverContents::Entity(entity)),
-            value: None
+            value: None,
         }
     }
 
@@ -398,9 +400,9 @@ impl HoverEvent {
             Ok(parsed) => Some(HoverEvent {
                 action: HoverEventType::ShowEntity,
                 contents: Some(HoverContents::Entity(parsed)),
-                value: None
+                value: None,
             }),
-            Err(_) => None
+            Err(_) => None,
         }
     }
 }
@@ -410,7 +412,7 @@ impl HoverEvent {
 enum HoverEventType {
     ShowText,
     ShowItem,
-    ShowEntity
+    ShowEntity,
 }
 
 // The contents variable in the hover event
@@ -421,7 +423,7 @@ enum HoverContents {
     Component(Component),
     ItemId(String),
     Item(HoverItem),
-    Entity(HoverEntity)
+    Entity(HoverEntity),
 }
 
 /// Defines an item profile which can be displayed through hover events.
@@ -430,7 +432,7 @@ enum HoverContents {
 pub struct HoverItem {
     id: String,
     count: u8,
-    tag: Option<String>
+    tag: Option<String>,
 }
 
 /// Defines an entity profile which can be displayed through hover events.
@@ -440,7 +442,7 @@ pub struct HoverEntity {
     id: String,
     name: Option<Component>,
     #[serde(rename = "type")]
-    entity_type: Option<String>
+    entity_type: Option<String>,
 }
 
 // The generalized event argument
@@ -449,5 +451,5 @@ pub struct HoverEntity {
 enum EventArgument {
     Component(Component),
     Text(String),
-    Index(u32)
+    Index(u32),
 }

@@ -1,24 +1,27 @@
-use std::io::{Read, Result, Error, ErrorKind};
-use byteorder::ReadBytesExt;
-use byteorder::BigEndian;
-use flate2::read::{ZlibDecoder, GzDecoder};
 use crate::*;
+use byteorder::BigEndian;
+use byteorder::ReadBytesExt;
+use flate2::read::{GzDecoder, ZlibDecoder};
+use std::io::{Error, ErrorKind, Read, Result};
 
 /// Reads uncompressed binary NBT data from the given source.
 pub fn read_nbt_uncompressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
 where
-    R: Read
+    R: Read,
 {
     let root_id = source.read_u8()?;
     if root_id != 0xA {
-        return Err(Error::new(ErrorKind::InvalidData, "NBT data does not start with a compound type."));
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "NBT data does not start with a compound type.",
+        ));
     }
 
     let root_name = read_string(source)?;
     match read_tag_body(source, 0xA) {
         Ok(NbtTag::Compound(compound)) => Ok((compound, root_name)),
         Err(e) => Err(e),
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -26,7 +29,7 @@ where
 /// reader function.
 pub fn read_nbt_zlib_compressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
 where
-    R: Read
+    R: Read,
 {
     read_nbt_uncompressed(&mut ZlibDecoder::new(source))
 }
@@ -35,14 +38,14 @@ where
 /// reader function.
 pub fn read_nbt_gz_compressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
 where
-    R: Read
+    R: Read,
 {
     read_nbt_uncompressed(&mut GzDecoder::new(source))
 }
 
 fn read_tag_body<R>(source: &mut R, id: u8) -> Result<NbtTag>
 where
-    R: Read
+    R: Read,
 {
     let tag = match id {
         0x1 => NbtTag::Byte(source.read_i8()?),
@@ -60,7 +63,7 @@ where
             }
 
             NbtTag::ByteArray(array)
-        },
+        }
         0x8 => NbtTag::StringModUtf8(read_string(source)?),
         0x9 => {
             let type_id = source.read_u8()?;
@@ -68,7 +71,10 @@ where
 
             // Make sure we don't have a list of TAG_End unless it's empty or an invalid type
             if type_id > 0xC || (type_id == 0 && len > 0) {
-                return Err(Error::new(ErrorKind::InvalidData, "Invalid list type encountered."));
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Invalid list type encountered.",
+                ));
             }
 
             if len <= 0 {
@@ -81,7 +87,7 @@ where
             }
 
             NbtTag::List(list)
-        },
+        }
         0xA => {
             let mut compound = NbtCompound::new();
             let mut tag_id = source.read_u8()?;
@@ -95,7 +101,7 @@ where
             }
 
             NbtTag::Compound(compound)
-        },
+        }
         0xB => {
             let len = source.read_i32::<BigEndian>()? as usize;
             let mut array = vec![0_i32; len];
@@ -105,7 +111,7 @@ where
             }
 
             NbtTag::IntArray(array)
-        },
+        }
         0xC => {
             let len = source.read_i32::<BigEndian>()? as usize;
             let mut array = vec![0_i64; len];
@@ -115,8 +121,13 @@ where
             }
 
             NbtTag::LongArray(array)
-        },
-        _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid tag type encountered."))
+        }
+        _ => {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Invalid tag type encountered.",
+            ))
+        }
     };
 
     Ok(tag)
@@ -124,15 +135,20 @@ where
 
 fn read_string<R>(source: &mut R) -> Result<String>
 where
-    R: Read
+    R: Read,
 {
     let len = source.read_u16::<BigEndian>()? as usize;
     let mut bytes = vec![0; len];
     source.read_exact(&mut bytes)?;
-    
+
     let java_decoded = match cesu8::from_java_cesu8(&bytes) {
         Ok(string) => string,
-        Err(_) => return Err(Error::new(ErrorKind::InvalidData, "Invalid string encoding."))
+        Err(_) => {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Invalid string encoding.",
+            ))
+        }
     };
 
     Ok(java_decoded.into_owned())

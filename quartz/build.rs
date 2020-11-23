@@ -1,6 +1,6 @@
 mod buildscript;
 
-fn main() {  
+fn main() {
     buildscript::gen_packet_handlers();
     buildscript::gen_blockstates();
     buildscript::gen_packet_types();

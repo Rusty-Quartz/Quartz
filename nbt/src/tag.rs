@@ -1,17 +1,16 @@
+use crate::snbt::SnbtParser;
+use crate::NbtRepr;
+use chat::{
+    color::PredefinedColor,
+    component::{ToComponent, ToComponentParts},
+    Component, TextComponentBuilder,
+};
 use std::collections::HashMap;
 use std::convert::{AsMut, AsRef, TryFrom, TryInto};
 use std::fmt;
 use std::ops::{Index, IndexMut};
 use std::option::NoneError;
 use std::str::FromStr;
-use chat::{
-    Component,
-    TextComponentBuilder,
-    color::PredefinedColor,
-    component::{ToComponent, ToComponentParts}
-};
-use crate::NbtRepr;
-use crate::snbt::SnbtParser;
 
 /// The generic NBT tag type, containing all supported tag variants which wrap around a corresponding rust type.
 #[derive(Clone)]
@@ -39,19 +38,19 @@ pub enum NbtTag {
     /// An array (vec) of signed, four-byte integers.
     IntArray(Vec<i32>),
     /// An array (vec) of signed, eight-byte integers.
-    LongArray(Vec<i64>)
+    LongArray(Vec<i64>),
 }
 
 impl NbtTag {
     /// Returns the single character denoting this tag's type, or an empty string if this tag type has
     /// no type specifier.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// assert_eq!(NbtTag::Long(10).type_specifier(), "L");
     /// assert_eq!(NbtTag::StringModUtf8(String::new()).type_specifier(), "");
-    /// 
+    ///
     /// // Note that while integers do not require a type specifier, this method will still return "I"
     /// assert_eq!(NbtTag::Int(-10).type_specifier(), "I");
     /// ```
@@ -66,7 +65,7 @@ impl NbtTag {
             NbtTag::ByteArray(_) => "B",
             NbtTag::IntArray(_) => "I",
             NbtTag::LongArray(_) => "L",
-            _ => ""
+            _ => "",
         }
     }
 
@@ -84,24 +83,24 @@ impl NbtTag {
             NbtTag::IntArray(_) => "Int Array",
             NbtTag::LongArray(_) => "Long Array",
             NbtTag::Compound(_) => "Compound",
-            NbtTag::List(_) => "List"
+            NbtTag::List(_) => "List",
         }
     }
 
     /// Converts this NBT tag into a valid, parsable SNBT string with no extraneous spacing. This method should
     /// not be used to generate user-facing text, rather `to_component` should be used instead.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// Simple primitive conversion:
-    /// 
+    ///
     /// ```
     /// assert_eq!(NbtTag::Byte(5).to_snbt(), "5B");
     /// assert_eq!(NbtTag::StringModUtf8("\"Quoted text\""), "'\"Quoted text\"'");
     /// ```
-    /// 
+    ///
     /// More complex tag conversion:
-    /// 
+    ///
     /// ```
     /// let mut compound = NbtCompound::new();
     /// compound.set_long_array("foo".to_owned(), vec![-1_i64, -3_i64, -5_i64]);
@@ -110,8 +109,16 @@ impl NbtTag {
     pub fn to_snbt(&self) -> String {
         macro_rules! list_to_string {
             ($list:expr) => {
-                format!("[{};{}]", self.type_specifier(), $list.iter().map(ToString::to_string).collect::<Vec<String>>().join(","))
-            }
+                format!(
+                    "[{};{}]",
+                    self.type_specifier(),
+                    $list
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<String>>()
+                        .join(",")
+                )
+            };
         }
 
         match self {
@@ -126,15 +133,21 @@ impl NbtTag {
             NbtTag::List(value) => value.to_snbt(),
             NbtTag::Compound(value) => value.to_snbt(),
             NbtTag::IntArray(value) => list_to_string!(value),
-            NbtTag::LongArray(value) => list_to_string!(value)
+            NbtTag::LongArray(value) => list_to_string!(value),
         }
     }
 
-    /// Returns whether or not the given string needs to be quoted due to non-alphanumeric or otherwise 
+    /// Returns whether or not the given string needs to be quoted due to non-alphanumeric or otherwise
     /// non-standard characters.
     fn should_quote(string: &str) -> bool {
         for ch in string.chars() {
-            if (ch < '0' || ch > '9') && (ch < 'A' || ch > 'Z') && (ch < 'a' || ch > 'z') && ch != '_' && ch != '-' && ch != '.' {
+            if (ch < '0' || ch > '9')
+                && (ch < 'A' || ch > 'Z')
+                && (ch < 'a' || ch > 'z')
+                && ch != '_'
+                && ch != '-'
+                && ch != '.'
+            {
                 return true;
             }
         }
@@ -197,9 +210,9 @@ impl ToComponentParts for NbtTag {
                         .text(";]".to_owned())
                         .build_children();
                 }
-        
+
                 // 1+ elements
-        
+
                 let mut builder = TextComponentBuilder::empty()
                     .add()
                     .text("[".to_owned())
@@ -211,15 +224,16 @@ impl ToComponentParts for NbtTag {
                     .add()
                     .text(format!("{}", $list[0]))
                     .predef_color(PredefinedColor::Gold);
-                
+
                 for element in $list.iter().skip(1) {
-                    builder = builder.add()
+                    builder = builder
+                        .add()
                         .text(", ".to_owned())
                         .add()
                         .text(format!("{}", element))
                         .predef_color(PredefinedColor::Gold);
                 }
-        
+
                 builder.add().text("]".to_owned()).build_children()
             }};
         }
@@ -227,7 +241,10 @@ impl ToComponentParts for NbtTag {
         match self {
             NbtTag::Byte(value) => primitive_to_component!(value),
             NbtTag::Short(value) => primitive_to_component!(value),
-            NbtTag::Int(value) => vec![Component::colored(format!("{}", value), PredefinedColor::Gold)],
+            NbtTag::Int(value) => vec![Component::colored(
+                format!("{}", value),
+                PredefinedColor::Gold,
+            )],
             NbtTag::Long(value) => primitive_to_component!(value),
             NbtTag::Float(value) => primitive_to_component!(value),
             NbtTag::Double(value) => primitive_to_component!(value),
@@ -260,16 +277,16 @@ impl ToComponentParts for NbtTag {
                     .add()
                     .text(surrounding.to_string())
                     .build_children()
-            },
+            }
             NbtTag::List(value) => value.to_component_parts(),
             NbtTag::Compound(value) => value.to_component_parts(),
             NbtTag::IntArray(value) => list_to_component!(value),
-            NbtTag::LongArray(value) => list_to_component!(value)
+            NbtTag::LongArray(value) => list_to_component!(value),
         }
     }
 }
 
-impl ToComponent for NbtTag { }
+impl ToComponent for NbtTag {}
 
 // Display the tag in a user-friendly form
 impl fmt::Display for NbtTag {
@@ -361,7 +378,7 @@ impl TryFrom<&NbtTag> for bool {
             NbtTag::Short(value) => Ok(*value != 0),
             NbtTag::Int(value) => Ok(*value != 0),
             NbtTag::Long(value) => Ok(*value != 0),
-            _ => Err(NoneError)
+            _ => Err(NoneError),
         }
     }
 }
@@ -446,7 +463,7 @@ impl NbtList {
     pub fn clone_from<'a, T, L>(list: &'a L) -> Self
     where
         T: Clone + Into<NbtTag> + 'a,
-        &'a L: IntoIterator<Item = &'a T>
+        &'a L: IntoIterator<Item = &'a T>,
     {
         NbtList(list.into_iter().map(|x| x.clone().into()).collect())
     }
@@ -459,23 +476,27 @@ impl NbtList {
     pub fn clone_repr_from<'a, T, L>(list: &'a L) -> Self
     where
         T: NbtRepr + 'a,
-        &'a L: IntoIterator<Item = &'a T>
+        &'a L: IntoIterator<Item = &'a T>,
     {
         NbtList(list.into_iter().map(|x| x.to_nbt().into()).collect())
     }
 
-    pub fn iter_map<'a, E, T: TryFrom<&'a NbtTag, Error = E>>(&'a self) -> impl Iterator<Item = Result<T, E>> + 'a {
+    pub fn iter_map<'a, E, T: TryFrom<&'a NbtTag, Error = E>>(
+        &'a self,
+    ) -> impl Iterator<Item = Result<T, E>> + 'a {
         self.0.iter().map(|tag| T::try_from(tag))
     }
 
-    pub fn iter_mut_map<'a, E, T: TryFrom<&'a mut NbtTag, Error = E>>(&'a mut self) -> impl Iterator<Item = Result<T, E>> + 'a {
+    pub fn iter_mut_map<'a, E, T: TryFrom<&'a mut NbtTag, Error = E>>(
+        &'a mut self,
+    ) -> impl Iterator<Item = Result<T, E>> + 'a {
         self.0.iter_mut().map(|tag| T::try_from(tag))
     }
 
     pub fn iter_into_repr<T>(&self) -> impl Iterator<Item = Result<T, T::Error>> + '_
     where
         T: NbtRepr,
-        T::Error: From<NoneError>
+        T::Error: From<NoneError>,
     {
         self.0.iter().map(|tag| T::from_nbt(tag.try_into()?))
     }
@@ -484,16 +505,20 @@ impl NbtList {
     where
         T: Clone + 'a,
         &'a T: TryFrom<&'a NbtTag>,
-        L: Extend<T>
+        L: Extend<T>,
     {
-        list.extend(self.0.iter().flat_map(|tag| TryInto::<&T>::try_into(tag).ok().map(|x| x.clone())));
+        list.extend(
+            self.0
+                .iter()
+                .flat_map(|tag| TryInto::<&T>::try_into(tag).ok().map(|x| x.clone())),
+        );
     }
 
     pub fn clone_repr_into<'a, T, L>(&'a self, list: &mut L)
     where
         T: NbtRepr,
         T::Error: From<NoneError>,
-        L: Extend<T>
+        L: Extend<T>,
     {
         list.extend(self.0.iter().flat_map(|tag| T::from_nbt(tag.try_into()?)));
     }
@@ -502,7 +527,14 @@ impl NbtList {
     pub fn to_snbt(&self) -> String {
         let mut snbt_list = String::with_capacity(2 + 8 * self.len());
         snbt_list.push('[');
-        snbt_list.push_str(&self.as_ref().iter().map(|tag| tag.to_snbt()).collect::<Vec<String>>().join(","));
+        snbt_list.push_str(
+            &self
+                .as_ref()
+                .iter()
+                .map(|tag| tag.to_snbt())
+                .collect::<Vec<String>>()
+                .join(","),
+        );
         snbt_list.push(']');
         snbt_list
     }
@@ -577,7 +609,7 @@ impl ToComponentParts for NbtList {
     }
 }
 
-impl ToComponent for NbtList { }
+impl ToComponent for NbtList {}
 
 impl fmt::Display for NbtList {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -620,39 +652,51 @@ impl NbtCompound {
     where
         K: ToString + 'a,
         V: Clone + Into<NbtTag> + 'a,
-        &'a M: IntoIterator<Item = (&'a K, &'a V)>
+        &'a M: IntoIterator<Item = (&'a K, &'a V)>,
     {
-        NbtCompound(map.into_iter().map(|(key, value)| (key.to_string(), value.clone().into())).collect())
+        NbtCompound(
+            map.into_iter()
+                .map(|(key, value)| (key.to_string(), value.clone().into()))
+                .collect(),
+        )
     }
 
     pub fn clone_repr_from<'a, K, V, M>(map: &'a M) -> Self
     where
         K: ToString + 'a,
         V: NbtRepr + 'a,
-        &'a M: IntoIterator<Item = (&'a K, &'a V)>
+        &'a M: IntoIterator<Item = (&'a K, &'a V)>,
     {
-        NbtCompound(map.into_iter().map(|(key, value)| (key.to_string(), value.to_nbt().into())).collect())
+        NbtCompound(
+            map.into_iter()
+                .map(|(key, value)| (key.to_string(), value.to_nbt().into()))
+                .collect(),
+        )
     }
 
-    pub fn iter_map<'a, E, T: TryFrom<&'a NbtTag, Error = E>>(&'a self) -> impl Iterator<Item = (&'a String, Result<T, E>)> + 'a {
+    pub fn iter_map<'a, E, T: TryFrom<&'a NbtTag, Error = E>>(
+        &'a self,
+    ) -> impl Iterator<Item = (&'a String, Result<T, E>)> + 'a {
         self.0.iter().map(|(key, tag)| (key, T::try_from(tag)))
     }
 
-    pub fn iter_mut_map<'a, E, T: TryFrom<&'a mut NbtTag, Error = E>>(&'a mut self) -> impl Iterator<Item = (&'a String, Result<T, E>)> + 'a {
+    pub fn iter_mut_map<'a, E, T: TryFrom<&'a mut NbtTag, Error = E>>(
+        &'a mut self,
+    ) -> impl Iterator<Item = (&'a String, Result<T, E>)> + 'a {
         self.0.iter_mut().map(|(key, tag)| (key, T::try_from(tag)))
     }
 
     pub fn iter_into_repr<T>(&self) -> impl Iterator<Item = (&'_ String, Result<T, T::Error>)> + '_
     where
         T: NbtRepr,
-        T::Error: From<NoneError>
+        T::Error: From<NoneError>,
     {
-        self.0.iter().map(|(key, tag)| {
-            match TryInto::<&NbtCompound>::try_into(tag) {
+        self.0
+            .iter()
+            .map(|(key, tag)| match TryInto::<&NbtCompound>::try_into(tag) {
                 Ok(nbt) => (key, T::from_nbt(nbt)),
-                Err(_) => (key, Err(T::Error::from(NoneError)))
-            }
-        })
+                Err(_) => (key, Err(T::Error::from(NoneError))),
+            })
     }
 
     pub fn clone_into_map<'a, K, V, M>(&'a self, map: &mut M)
@@ -660,10 +704,13 @@ impl NbtCompound {
         K: FromStr,
         V: Clone + 'a,
         &'a V: TryFrom<&'a NbtTag>,
-        M: Extend<(K, V)>
+        M: Extend<(K, V)>,
     {
         map.extend(self.0.iter().flat_map(|(key, tag)| {
-            Some((K::from_str(key).ok()?, TryInto::<&V>::try_into(tag).ok()?.clone()))
+            Some((
+                K::from_str(key).ok()?,
+                TryInto::<&V>::try_into(tag).ok()?.clone(),
+            ))
         }));
     }
 
@@ -671,7 +718,7 @@ impl NbtCompound {
     where
         K: FromStr,
         V: NbtRepr,
-        M: Extend<(K, V)>
+        M: Extend<(K, V)>,
     {
         map.extend(self.0.iter().flat_map(|(key, tag)| {
             Some((K::from_str(key).ok()?, V::from_nbt(tag.try_into()?).ok()?))
@@ -688,7 +735,9 @@ impl NbtCompound {
         let mut snbt_compound = String::with_capacity(2 + 16 * self.len());
         snbt_compound.push('{');
         snbt_compound.push_str(
-            &self.as_ref().iter()
+            &self
+                .as_ref()
+                .iter()
                 .map(|(key, tag)| {
                     if NbtTag::should_quote(key) {
                         format!("{}:{}", NbtTag::string_to_snbt(key), tag.to_snbt())
@@ -697,7 +746,7 @@ impl NbtCompound {
                     }
                 })
                 .collect::<Vec<String>>()
-                .join(",")
+                .join(","),
         );
         snbt_compound.push('}');
         snbt_compound
@@ -791,7 +840,10 @@ impl ToComponentParts for NbtCompound {
                 if components.len() > 1 {
                     components.push(Component::text(format!(", {}", quote)));
                 }
-                components.push(Component::colored(snbt_key[1..snbt_key.len() - 1].to_owned(), PredefinedColor::Aqua));
+                components.push(Component::colored(
+                    snbt_key[1..snbt_key.len() - 1].to_owned(),
+                    PredefinedColor::Aqua,
+                ));
                 components.push(Component::text(format!("{}: ", quote)));
             }
             // They key can be pushed as-is
@@ -799,7 +851,10 @@ impl ToComponentParts for NbtCompound {
                 if components.len() > 1 {
                     components.push(Component::text(", ".to_owned()));
                 }
-                components.push(Component::colored(element.0.to_owned(), PredefinedColor::Aqua));
+                components.push(Component::colored(
+                    element.0.to_owned(),
+                    PredefinedColor::Aqua,
+                ));
                 components.push(Component::text(": ".to_owned()));
             }
 
@@ -812,7 +867,7 @@ impl ToComponentParts for NbtCompound {
     }
 }
 
-impl ToComponent for NbtCompound { }
+impl ToComponent for NbtCompound {}
 
 // Display the compound as valid SNBT format
 impl fmt::Display for NbtCompound {

@@ -1,7 +1,4 @@
-use crate::{
-    base::registry::*,
-    block::states::BlockStateData
-};
+use crate::{base::registry::*, block::states::BlockStateData};
 use std::fmt::{self, Debug, Display, Formatter};
 use tinyvec::ArrayVec;
 use util::UnlocalizedName;
@@ -12,7 +9,7 @@ pub struct Block<T> {
     pub name: UnlocalizedName,
     pub properties: ArrayVec<[(String, Vec<String>); 16]>,
     pub base_state: T,
-    pub default_state: T
+    pub default_state: T,
 }
 
 impl<T> Display for Block<T> {
@@ -25,7 +22,7 @@ impl<T> Display for Block<T> {
 impl<T> Debug for Block<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(self, f)
-    } 
+    }
 }
 
 pub trait BlockState<T>: Sized {
@@ -42,7 +39,7 @@ pub trait BlockState<T>: Sized {
 #[derive(Debug)]
 pub struct StaticBlockState {
     pub handle: &'static Block<StaticStateID>,
-    pub data: BlockStateData
+    pub data: BlockStateData,
 }
 
 impl BlockState<StaticStateID> for StaticBlockState {
@@ -57,14 +54,16 @@ impl BlockState<StaticStateID> for StaticBlockState {
     }
 
     fn builder(block_name: &UnlocalizedName) -> Option<Self::Builder> {
-        StaticRegistry::global().default_state(block_name).map(StaticStateBuilder::new)
+        StaticRegistry::global()
+            .default_state(block_name)
+            .map(StaticStateBuilder::new)
     }
 }
 
 #[derive(Clone)]
 pub struct DynamicBlockState {
     pub handle: &'static Block<DynamicStateID>,
-    pub properties: ArrayVec<[(String, String); 16]>
+    pub properties: ArrayVec<[(String, String); 16]>,
 }
 
 impl DynamicBlockState {
@@ -85,19 +84,30 @@ impl DynamicBlockState {
 
                 match self.handle.properties.iter().next() {
                     // The entry is in the form (property_name, all_property_values)
-                    Some(entry) => state_id + entry.1.iter().position(|value| value == state_property_value).unwrap_or(0) as DynamicStateID,
-                    None => state_id
+                    Some(entry) => {
+                        state_id
+                            + entry
+                                .1
+                                .iter()
+                                .position(|value| value == state_property_value)
+                                .unwrap_or(0) as DynamicStateID
+                    }
+                    None => state_id,
                 }
-            },
+            }
 
             _ => {
                 let mut multiplier: DynamicStateID = 1;
-        
-                for (state_property_index, num_property_values) in self.handle.properties.iter()
+
+                for (state_property_index, num_property_values) in self
+                    .handle
+                    .properties
+                    .iter()
                     // Map this state's property values to their index in the block's reference properties and pass along
                     // the total number of possible property values as well
                     .map(|(property_name, all_property_values)| {
-                        let state_property_value = self.properties
+                        let state_property_value = self
+                            .properties
                             .iter()
                             .find(|(key, _)| key == property_name)
                             .map(|(_, value)| value.as_str())
@@ -105,9 +115,12 @@ impl DynamicBlockState {
 
                         (
                             // Value index
-                            all_property_values.iter().position(|value| value == state_property_value).unwrap_or(0) as DynamicStateID,
+                            all_property_values
+                                .iter()
+                                .position(|value| value == state_property_value)
+                                .unwrap_or(0) as DynamicStateID,
                             // Total possible values
-                            all_property_values.len() as DynamicStateID
+                            all_property_values.len() as DynamicStateID,
                         )
                     })
                     // This lets us treat the property indices kind of like digits of a little endian integer
@@ -118,7 +131,7 @@ impl DynamicBlockState {
                     // Update the offset
                     multiplier *= num_property_values;
                 }
-        
+
                 state_id
             }
         }
@@ -130,9 +143,15 @@ impl Display for DynamicBlockState {
         write!(f, "{}", self.handle.name)?;
 
         if !self.properties.is_empty() {
-            write!(f, "[{}]", self.properties.iter()
-                .map(|(property, value)| format!("{}={}", property, value))
-                .collect::<Vec<String>>().join(","))?;
+            write!(
+                f,
+                "[{}]",
+                self.properties
+                    .iter()
+                    .map(|(property, value)| format!("{}={}", property, value))
+                    .collect::<Vec<String>>()
+                    .join(",")
+            )?;
         }
 
         Ok(())
@@ -145,27 +164,31 @@ pub trait StateBuilder<S>: Sized {
     fn with_property(self, name: &str, value: &str) -> Result<Self, (Self, String)>;
 
     fn with_property_unchecked(self, name: &str, value: &str) -> Self {
-        self.with_property(name, value).map_err(|(_, message)| message).unwrap()
+        self.with_property(name, value)
+            .map_err(|(_, message)| message)
+            .unwrap()
     }
 
     fn build(self) -> S;
 }
 
 pub struct StaticStateBuilder {
-    state: StaticBlockState
+    state: StaticBlockState,
 }
 
 impl StaticStateBuilder {
     pub fn new(base: StaticBlockState) -> Self {
-        StaticStateBuilder {
-            state: base
-        }
+        StaticStateBuilder { state: base }
     }
 }
 
 impl StateBuilder<StaticBlockState> for StaticStateBuilder {
     fn add_property(&mut self, name: &str, value: &str) -> Result<(), String> {
-        self.state.data = self.state.data.with_property(name, value).ok_or("Invalid name or property value.".to_owned())?;
+        self.state.data = self
+            .state
+            .data
+            .with_property(name, value)
+            .ok_or("Invalid name or property value.".to_owned())?;
         Ok(())
     }
 
@@ -174,15 +197,15 @@ impl StateBuilder<StaticBlockState> for StaticStateBuilder {
             Some(data) => {
                 self.state.data = data;
                 Ok(self)
-            },
-            None => Err((self, "Invalid name or property value.".to_owned()))
+            }
+            None => Err((self, "Invalid name or property value.".to_owned())),
         }
     }
 
     fn with_property_unchecked(mut self, name: &str, value: &str) -> Self {
         match self.state.data.with_property(name, value) {
             Some(data) => self.state.data = data,
-            None => unsafe { std::hint::unreachable_unchecked() }
+            None => unsafe { std::hint::unreachable_unchecked() },
         }
 
         self
@@ -194,18 +217,24 @@ impl StateBuilder<StaticBlockState> for StaticStateBuilder {
 }
 
 pub struct DynamicStateBuilder {
-    state: DynamicBlockState
+    state: DynamicBlockState,
 }
 
 impl DynamicStateBuilder {
     pub fn new(base: &DynamicBlockState) -> Self {
         DynamicStateBuilder {
-            state: base.clone()
+            state: base.clone(),
         }
     }
 
     pub fn add_property(&mut self, name: &str, value: &str) -> Result<(), String> {
-        match self.state.properties.iter_mut().enumerate().find(|(_, (key, _))| name == key) {
+        match self
+            .state
+            .properties
+            .iter_mut()
+            .enumerate()
+            .find(|(_, (key, _))| name == key)
+        {
             Some((index, (value_mut, _))) => {
                 match self.state.handle.properties.get(index) {
                     Some((_, accepted_values)) => {
@@ -216,27 +245,41 @@ impl DynamicStateBuilder {
                             *value_mut = owned_value;
                             Ok(())
                         } else {
-                            Err(format!("Invalid property value for {} in {}: {}", name, self.state.handle.name, value))
+                            Err(format!(
+                                "Invalid property value for {} in {}: {}",
+                                name, self.state.handle.name, value
+                            ))
                         }
-                    },
+                    }
 
-                    None => Err(format!("Encountered corrupted state while building {}", self.state.handle.name))
+                    None => Err(format!(
+                        "Encountered corrupted state while building {}",
+                        self.state.handle.name
+                    )),
                 }
-            },
+            }
 
-            None => Err(format!("Invalid property for {}: {}", self.state.handle.name, name))
+            None => Err(format!(
+                "Invalid property for {}: {}",
+                self.state.handle.name, name
+            )),
         }
     }
 
     pub fn with_property(mut self, name: &str, value: &str) -> Result<Self, (Self, String)> {
         match self.add_property(name, value) {
             Ok(()) => Ok(self),
-            Err(message) => Err((self, message))
+            Err(message) => Err((self, message)),
         }
     }
 
     pub fn with_property_unchecked(mut self, name: &str, value: &str) -> Self {
-        self.state.properties.iter_mut().find(|(key, v)| name == key).unwrap().1 = value.to_owned();
+        self.state
+            .properties
+            .iter_mut()
+            .find(|(key, v)| name == key)
+            .unwrap()
+            .1 = value.to_owned();
         self
     }
 

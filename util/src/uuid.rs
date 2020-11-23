@@ -1,11 +1,11 @@
-use std::u128;
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
+use std::u128;
 
 use rand::prelude::*;
 
 const VERSION_VARIANT_MASK: u128 = 0xFFFFFFFF_FFFF_0FFF_3FFF_FFFFFFFFFFFF;
-const VERSION_4_VARIANT_1: u128  = 0x00000000_0000_4000_8000_000000000000;
+const VERSION_4_VARIANT_1: u128 = 0x00000000_0000_4000_8000_000000000000;
 
 /// Represents a 128-bit (16-byte) universally unique identifier (UUID). This struct only
 /// supports version 4, variant 1 UUIDs (IE randomly generated UUIDs).
@@ -22,9 +22,9 @@ impl Uuid {
 
     /// Create a random UUID. Since the UUID must contain version and variant info, only 122
     /// out of the 128 bits are random.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use util::Uuid;
     /// println!("{}", Uuid::random());
@@ -36,13 +36,13 @@ impl Uuid {
 
     /// Converts the given bytes (big-endian) into a UUID and applies the correct version and variant information.
     /// This function will return an error if the given slice is not 16 bytes long.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the input slice is not 16 bytes long.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use util::Uuid;
     /// let uuid = Uuid::from_bytes_be(&[121, 25, 167, 155, 178, 86, 71, 130, 191, 54, 19, 153, 12, 166, 91, 183]);
@@ -63,13 +63,13 @@ impl Uuid {
 
     /// Converts the given bytes (little-endian) into a UUID and applies the correct version and variant information.
     /// This function will return an error if the given slice is not 16 bytes long.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the input slice is not 16 bytes long.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use util::Uuid;
     /// let uuid = Uuid::from_bytes_le(&[183, 91, 166, 12, 153, 19, 54, 191, 130, 71, 86, 178, 155, 167, 25, 121]);
@@ -89,9 +89,9 @@ impl Uuid {
     }
 
     /// Returns the most significant 64 bits of this UUID's 128-bit value.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use util::Uuid;
     /// let uuid = Uuid::from_str("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
@@ -102,9 +102,9 @@ impl Uuid {
     }
 
     /// Returns the least significant 64 bits of this UUID of this UUID's 128-bit value.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use util::Uuid;
     /// let uuid = Uuid::from_str("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
@@ -130,18 +130,18 @@ impl FromStr for Uuid {
     type Err = &'static str;
 
     /// Converts the given string into a UUID and applies the correct version and variant information.
-    /// 
+    ///
     /// This function will accept strings with or without dashes. If the string with dashes removed is not
     /// 32 hex characters long, then an error is returned. If the hex is invalid, then an error is also
     /// returned.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use util::Uuid;
     /// let uuid = Uuid::from_str("7919a79b-b256-4782-bf36-13990ca65bb7").unwrap();
     /// assert_eq!(uuid.as_u128(), 0x7919a79bb2564782bf3613990ca65bb7_u128);
-    /// 
+    ///
     /// assert!(Uuid::from_str("invalid").is_err());
     /// ```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -152,7 +152,7 @@ impl FromStr for Uuid {
 
         match u128::from_str_radix(&raw, 16) {
             Ok(inner) => Ok(Uuid(Self::correct_version(inner))),
-            Err(_) => Err("Invalid UUID string.")
+            Err(_) => Err("Invalid UUID string."),
         }
     }
 }

@@ -1,16 +1,16 @@
-use std::sync::Arc;
 use chat::component::Component;
-use linefeed::Interface;
 use linefeed::terminal::DefaultTerminal;
+use linefeed::Interface;
 use log::error;
+use std::sync::Arc;
 
 /// A command sender, can be command block, player, or the console.
 pub enum CommandSender {
     /// The console sender type.
     Console(
         /// A handle to log messages to console.
-        Arc<Interface<DefaultTerminal>>
-    )
+        Arc<Interface<DefaultTerminal>>,
+    ),
 }
 
 impl CommandSender {
@@ -22,9 +22,9 @@ impl CommandSender {
                     if let Err(e) = writeln!(writer, "{}", message) {
                         error!("Failed to send message to console: {}", e);
                     }
-                },
-                Err(e) => error!("Failed to lock console interface: {}", e)
-            }
+                }
+                Err(e) => error!("Failed to lock console interface: {}", e),
+            },
         }
     }
 }

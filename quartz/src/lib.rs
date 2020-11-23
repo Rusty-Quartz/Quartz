@@ -23,6 +23,6 @@ pub mod network;
 pub mod world;
 
 pub use base::*;
+pub use quartz_plugins::plugin::plugin_info::get_quartz_info;
 pub use quartz_plugins::Listeners;
 pub use quartz_plugins::PluginInfo;
-pub use quartz_plugins::plugin::plugin_info::get_quartz_info;

@@ -1,9 +1,9 @@
 use crate::block::entity::BlockEntity;
-use nbt::{NbtCompound};
-use util::UnlocalizedName;
-use crate::world::location::BlockPosition;
-use crate::item::{get_item, ItemStack};
 use crate::item::Inventory;
+use crate::item::{get_item, ItemStack};
+use crate::world::location::BlockPosition;
+use nbt::NbtCompound;
+use util::UnlocalizedName;
 
 // While this is somewhat accurate to how the Furnace BE will be implemented the tick method is no where near finished and some key fields are missing
 // Currently this is mostly for testing BEs
@@ -16,7 +16,7 @@ pub struct FurnaceBlockEntity {
     burn_time: i32,
     cook_time: i32,
     cook_time_total: i32,
-    active: bool
+    active: bool,
 }
 
 impl FurnaceBlockEntity {
@@ -25,14 +25,14 @@ impl FurnaceBlockEntity {
             pos,
             custom_name: match name {
                 Some(name) => name,
-                _ => "Furnace".to_owned()
+                _ => "Furnace".to_owned(),
             },
             lock: false,
             items: Inventory::new(3),
             burn_time: 0,
             cook_time: 0,
             cook_time_total: 0,
-            active: false
+            active: false,
         }
     }
 }
@@ -43,7 +43,7 @@ impl BlockEntity for FurnaceBlockEntity {
         self.cook_time = nbt.get("CookTime").unwrap_or(0);
         self.cook_time_total = nbt.get("CookTimeTotal").unwrap_or(0);
         self.items.from_tag(nbt);
-        
+
         if nbt.has("CustomName") {
             self.custom_name = nbt.get("CustomName").unwrap_or("Furnace").to_owned();
         }
@@ -67,16 +67,20 @@ impl BlockEntity for FurnaceBlockEntity {
         if self.active {
             self.cook_time += 1;
             if self.cook_time > self.cook_time_total {
-                self.items.insert(2, ItemStack::new( get_item(&UnlocalizedName::minecraft("stone")).unwrap()));
+                self.items.insert(
+                    2,
+                    ItemStack::new(get_item(&UnlocalizedName::minecraft("stone")).unwrap()),
+                );
             }
-		}
-		else {
-			if self.items.get(2).is_empty() {
-                self.items.insert(2, ItemStack::new(get_item(&UnlocalizedName::minecraft("stone")).unwrap()));
-            }
-            else {
+        } else {
+            if self.items.get(2).is_empty() {
+                self.items.insert(
+                    2,
+                    ItemStack::new(get_item(&UnlocalizedName::minecraft("stone")).unwrap()),
+                );
+            } else {
                 self.items.increment(2);
             }
-		}
+        }
     }
 }

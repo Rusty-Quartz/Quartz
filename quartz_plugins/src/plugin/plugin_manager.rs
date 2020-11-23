@@ -1,6 +1,6 @@
 use libloading::{Library, Symbol};
 use std::collections::HashMap;
-use std::fs::{read_dir, create_dir};
+use std::fs::{create_dir, read_dir};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ use log::*;
 use crate::plugin::plugin_info::{Listeners, PluginInfo};
 pub struct PluginManager {
     pub plugins: Vec<PluginInfo>,
-    listeners: HashMap<Listeners, Vec<Arc<Library>>>
+    listeners: HashMap<Listeners, Vec<Arc<Library>>>,
 }
 
 impl PluginManager {
@@ -43,10 +43,15 @@ impl PluginManager {
 
                 // This is increadibly horribly unsafe but we're going to assume plugins are fine because idk any way to make sure they're safe
                 unsafe {
-                    let func: Symbol<unsafe extern fn() -> PluginInfo> = match plugin.get(b"get_plugin_info") {
+                    let func: Symbol<unsafe extern "C" fn() -> PluginInfo> = match plugin
+                        .get(b"get_plugin_info")
+                    {
                         Ok(f) => f,
                         Err(_e) => {
-                            error!("plugin {:?} doesn't have a get_plugin_info function, skipping it", path);
+                            error!(
+                                "plugin {:?} doesn't have a get_plugin_info function, skipping it",
+                                path
+                            );
                             continue;
                         }
                     };
@@ -55,7 +60,7 @@ impl PluginManager {
                 }
 
                 info!("Loading plugin: {}", &plugin_info.name);
-                
+
                 for listener in &plugin_info.listeners {
                     if listeners.contains_key(listener) {
                         listeners.get_mut(listener).unwrap().push(plugin.clone());
@@ -67,10 +72,7 @@ impl PluginManager {
             }
         }
 
-        PluginManager {
-            plugins,
-            listeners
-        }
+        PluginManager { plugins, listeners }
     }
 
     pub fn get_listeners(&self, key: Listeners) -> Option<Vec<Arc<Library>>> {
@@ -84,12 +86,15 @@ impl PluginManager {
 
     pub fn run_listeners<T: Listenable>(&self, key: Listeners, start: T, method_name: String) -> T {
         let listeners = self.get_listeners(key);
-        if listeners.is_none() {return start}
-        
+        if listeners.is_none() {
+            return start;
+        }
+
         let mut this = start;
         for plugin in listeners.unwrap() {
             unsafe {
-                let func: Symbol<unsafe extern fn(input: T) -> T> = plugin.get(method_name.as_bytes()).unwrap();
+                let func: Symbol<unsafe extern "C" fn(input: T) -> T> =
+                    plugin.get(method_name.as_bytes()).unwrap();
                 this = func(this);
             }
         }

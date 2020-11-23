@@ -5,17 +5,17 @@ use std::ptr;
 
 pub struct SingleAccessor<T> {
     value: UnsafeCell<T>,
-    taken: Cell<bool>
+    taken: Cell<bool>,
 }
 
-unsafe impl<T: Send> Send for SingleAccessor<T> { }
+unsafe impl<T: Send> Send for SingleAccessor<T> {}
 
 impl<T> SingleAccessor<T> {
     #[inline]
     pub const fn new(value: T) -> Self {
         SingleAccessor {
             value: UnsafeCell::new(value),
-            taken: Cell::new(false)
+            taken: Cell::new(false),
         }
     }
 
@@ -27,14 +27,14 @@ impl<T> SingleAccessor<T> {
 
         Some(AccessGuard {
             value: &self.value,
-            flag: &self.taken
+            flag: &self.taken,
         })
     }
 }
 
 pub struct AccessGuard<'a, T> {
     value: &'a UnsafeCell<T>,
-    flag: &'a Cell<bool>
+    flag: &'a Cell<bool>,
 }
 
 impl<'a, T> Drop for AccessGuard<'a, T> {
@@ -59,29 +59,32 @@ impl<'a, T> DerefMut for AccessGuard<'a, T> {
 
 /// Acts the same as a box in terms of memory management and provides an interface allowing for interior
 /// mutability.
-/// 
+///
 /// This type, unlike [`RefCell`], only allows one reference to its data at a time, and that reference is
 /// always mutable. In fact, when [`take`] is called on a single access box, its internal pointer is set to
 /// null until the smart pointer is dropped, at which point it is replaced. For this reason, the smart
 /// pointer returned by [`take`] is called [`BoxAccessGuard`].
-/// 
+///
 /// [`BoxAccessGuard`]: crate::single_access::BoxAccessGuard
 /// [`RefCell`]: std::cell::RefCell
 /// [`take`]: crate::single_access::SingleAccessorBox::take
 // TODO: Delete if unused
 #[repr(transparent)]
 pub struct SingleAccessorBox<T: ?Sized> {
-    value: Cell<*mut T>
+    value: Cell<*mut T>,
 }
 
-unsafe impl<T: ?Sized + Send> Send for SingleAccessorBox<T> { }
-impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<SingleAccessorBox<U>> for SingleAccessorBox<T> { }
+unsafe impl<T: ?Sized + Send> Send for SingleAccessorBox<T> {}
+impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<SingleAccessorBox<U>>
+    for SingleAccessorBox<T>
+{
+}
 
 impl<T> SingleAccessorBox<T> {
     /// Allocates memory on the heap and places `x` into it. Allocation is skipped if `T` is a ZST.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use util::single_access::SingleAccessorBox;
     /// let pi = SingleAccessorBox::new(3.141592653_f32);
@@ -89,7 +92,7 @@ impl<T> SingleAccessorBox<T> {
     #[inline]
     pub fn new(x: T) -> Self {
         SingleAccessorBox {
-            value: Cell::new(Box::into_raw(Box::new(x)))
+            value: Cell::new(Box::into_raw(Box::new(x))),
         }
     }
 }
@@ -97,22 +100,22 @@ impl<T> SingleAccessorBox<T> {
 impl<T: ?Sized> SingleAccessorBox<T> {
     /// Attempts to take the value stored in this box, returning exclusive access to that value, or `None`
     /// if the value is already taken.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// # use util::single_access::SingleAccessorBox;
     /// let x = SingleAccessorBox::new(5_i32);
     /// let mut guard = x.take();
-    /// 
+    ///
     /// // We can take it once
     /// assert!(guard.is_some());
     /// // But not twice
     /// assert!(x.take().is_none());
-    /// 
+    ///
     /// // Modify the value and release our access
     /// *guard.unwrap() += 5;
-    /// 
+    ///
     /// assert_eq!(x.take().as_mut().map(|guard| **guard), Some(10_i32));
     /// ```
     #[inline]
@@ -123,26 +126,28 @@ impl<T: ?Sized> SingleAccessorBox<T> {
 
 impl<T: ?Sized> Drop for SingleAccessorBox<T> {
     fn drop(&mut self) {
-        unsafe { drop(Box::from_raw(self.value.get())); }
+        unsafe {
+            drop(Box::from_raw(self.value.get()));
+        }
     }
 }
 
 /// A smart pointer created by the [`take`] method of [`SingleAccessorBox`] to enforce its access constraints.
-/// 
+///
 /// The name of this smart pointer comes from the fact that it overwrites the source of its internal pointer
 /// after storing a copy, in a sense moving the value. When this pointer is dropped, the source value is
 /// restored.
-/// 
+///
 /// [`SingleAccessorBox`]: crate::single_access::SingleAccessorBox
 /// [`take`]: crate::single_access::SingleAccessorBox::take
 pub struct BoxAccessGuard<'a, T: ?Sized> {
     source: &'a Cell<*mut T>,
-    value: *mut T
+    value: *mut T,
 }
 
 impl<'a, T: ?Sized> BoxAccessGuard<'a, T> {
     /// Creates a new access-guard smart pointer with the given cell.
-    /// 
+    ///
     /// If the pointer in the cell is null, then `None` is returned, otherwise the data part of the pointer
     /// is set to null and the reference is constructed and returned.
     #[inline]
@@ -157,10 +162,7 @@ impl<'a, T: ?Sized> BoxAccessGuard<'a, T> {
         // Set the data part of the pointer in the cell to null
         source.set(value.set_ptr_value(ptr::null_mut()));
 
-        Some(BoxAccessGuard {
-            source,
-            value
-        })
+        Some(BoxAccessGuard { source, value })
     }
 }
 

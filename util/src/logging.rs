@@ -1,35 +1,30 @@
-use std::{error::Error, path::Path};
-use std::sync::{Arc, Mutex as StdMutex};
 use std::fmt;
-use std::fs::{File, read_dir, rename, remove_file};
-use std::thread;
+use std::fs::{read_dir, remove_file, rename, File};
 use std::io;
+use std::sync::{Arc, Mutex as StdMutex};
+use std::thread;
+use std::{error::Error, path::Path};
 
 use flate2::write::GzEncoder;
 use flate2::Compression;
 
 use log4rs::append::{
-    Append,
     rolling_file::{
-        LogFile,
-        RollingFileAppender,
-        policy::compound::{
-            CompoundPolicy,
-            roll::Roll,
-            trigger::Trigger
-        }
-    }
+        policy::compound::{roll::Roll, trigger::Trigger, CompoundPolicy},
+        LogFile, RollingFileAppender,
+    },
+    Append,
 };
-use log4rs::filter::{Filter, Response};
-use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Root};
+use log4rs::encode::pattern::PatternEncoder;
+use log4rs::filter::{Filter, Response};
 
 use log::*;
 
 use chrono::prelude::*;
 
-use linefeed::Interface;
 use linefeed::terminal::DefaultTerminal;
+use linefeed::Interface;
 
 #[cfg(unix)]
 use termion::color;
@@ -42,39 +37,53 @@ const LEVEL_FILTER: LevelFilter = LevelFilter::Debug;
 const LEVEL_FILTER: LevelFilter = LevelFilter::Info;
 
 /// Configures the log4rs crate to replicate the logging system for official minecraft servers.
-/// 
+///
 /// Console output is filtered so that only logs from the specified crate are accepted. Messages are
 /// in the form `[HH:MM:SS Level]: message`. Messages are automatically colored based on the log level
 /// and can be customly colored with the `termion` crate. If debug assertions are off, then logging events
 /// on the debug level are blocked.
-/// 
+///
 /// Logs will be recorded in a directory named `logs` in the form `yyyy-mm-dd-log#`. Logs are
 /// compressed using GZ encoding.
-pub fn init_logger(crate_filter: &str, console_interface: Arc<Interface<DefaultTerminal>>) -> Result<(), Box<dyn Error>> {
+pub fn init_logger(
+    crate_filter: &str,
+    console_interface: Arc<Interface<DefaultTerminal>>,
+) -> Result<(), Box<dyn Error>> {
     // Logs info to the console with colors and such
-    let console = CustomConsoleAppender {console_interface};
+    let console = CustomConsoleAppender { console_interface };
 
     // Logs to log files
     let logfile = RollingFileAppender::builder()
-            .encoder(Box::new(PatternEncoder::new("[{d(%H:%M:%S)} {l}]: {m}\n")))
-            .build("logs/latest.log", Box::new(CompoundPolicy::new(
+        .encoder(Box::new(PatternEncoder::new("[{d(%H:%M:%S)} {l}]: {m}\n")))
+        .build(
+            "logs/latest.log",
+            Box::new(CompoundPolicy::new(
                 Box::new(CustomLogTrigger::new(FILE_SIZE_LIMIT)),
-                Box::new(CustomLogRoller::new())
-            )))?;
-    
+                Box::new(CustomLogRoller::new()),
+            )),
+        )?;
+
     // Build the log4rs config
     let config = Config::builder()
-            .appender(Appender::builder().filter(Box::new(CrateFilter::new(crate_filter))).build("console", Box::new(console)))
-            .appender(Appender::builder().filter(Box::new(CrateFilter::new(crate_filter))).build("logfile", Box::new(logfile)))
-            .build(
-                Root::builder()
-                    .appender("console")
-                    .appender("logfile")
-                    .build(LEVEL_FILTER)
-            )?;
-    
+        .appender(
+            Appender::builder()
+                .filter(Box::new(CrateFilter::new(crate_filter)))
+                .build("console", Box::new(console)),
+        )
+        .appender(
+            Appender::builder()
+                .filter(Box::new(CrateFilter::new(crate_filter)))
+                .build("logfile", Box::new(logfile)),
+        )
+        .build(
+            Root::builder()
+                .appender("console")
+                .appender("logfile")
+                .build(LEVEL_FILTER),
+        )?;
+
     log4rs::init_config(config)?;
-    
+
     Ok(())
 }
 
@@ -88,7 +97,7 @@ pub fn cleanup() {
 // Only allow logging from out crate
 #[cfg(debug_assertions)]
 struct CrateFilter {
-    filter: String
+    filter: String,
 }
 
 #[cfg(not(debug_assertions))]
@@ -98,7 +107,7 @@ impl CrateFilter {
     #[cfg(debug_assertions)]
     pub fn new(filter: &str) -> Self {
         CrateFilter {
-            filter: filter.to_owned()
+            filter: filter.to_owned(),
         }
     }
 
@@ -122,8 +131,8 @@ impl Filter for CrateFilter {
                 } else {
                     Response::Reject
                 }
-            },
-            None => Response::Reject
+            }
+            None => Response::Reject,
         }
     }
 
@@ -141,7 +150,7 @@ impl fmt::Debug for CrateFilter {
 
 // Custom implementation for a console logger so that it doesn't mangle the user's commands
 struct CustomConsoleAppender {
-    console_interface: Arc<Interface<DefaultTerminal>>
+    console_interface: Arc<Interface<DefaultTerminal>>,
 }
 
 impl Append for CustomConsoleAppender {
@@ -154,18 +163,31 @@ impl Append for CustomConsoleAppender {
             Level::Debug => write!(writer, "{}", color::Fg(color::LightCyan))?,
             _ => write!(writer, "{}", color::Fg(color::Reset))?,
         }
-        writeln!(writer, "[{} {}]: {}{}", Local::now().format("%H:%M:%S"), record.metadata().level(), record.args(), color::Fg(color::Reset))?;
+        writeln!(
+            writer,
+            "[{} {}]: {}{}",
+            Local::now().format("%H:%M:%S"),
+            record.metadata().level(),
+            record.args(),
+            color::Fg(color::Reset)
+        )?;
         Ok(())
     }
 
     #[cfg(not(unix))]
     fn append(&self, record: &Record) -> Result<(), Box<dyn Error + Sync + Send>> {
         let mut writer = self.console_interface.lock_writer_erase()?;
-        writeln!(writer, "[{} {}]: {}", Local::now().format("%H:%M:%S"), record.metadata().level(), record.args())?;
+        writeln!(
+            writer,
+            "[{} {}]: {}",
+            Local::now().format("%H:%M:%S"),
+            record.metadata().level(),
+            record.args()
+        )?;
         Ok(())
     }
 
-    fn flush(&self) { }
+    fn flush(&self) {}
 }
 
 impl fmt::Debug for CustomConsoleAppender {
@@ -177,14 +199,14 @@ impl fmt::Debug for CustomConsoleAppender {
 // Custom implementation for the rollover trigger, activates when the log file gets too large or a new day starts
 struct CustomLogTrigger {
     last_day: StdMutex<u32>,
-    max_size: u64
+    max_size: u64,
 }
 
 impl CustomLogTrigger {
     pub fn new(max_size: u64) -> Self {
         CustomLogTrigger {
             last_day: StdMutex::new(Local::now().ordinal()),
-            max_size
+            max_size,
         }
     }
 }
@@ -210,18 +232,23 @@ impl Trigger for CustomLogTrigger {
 }
 
 struct CustomLogRoller {
-    name_info: StdMutex<(u32, u32)> // current day, log count for today
+    name_info: StdMutex<(u32, u32)>, // current day, log count for today
 }
 
 impl CustomLogRoller {
     pub fn new() -> Self {
         let mut max_index = 0;
-        
+
         if let Ok(paths) = read_dir("./logs/") {
             let today = format!("{}", Local::now().format("%Y-%m-%d"));
 
             // Find the logs that match today's date and determine the highest index ({date}-{index}.log).
-            for path in paths.flatten().map(|entry| entry.file_name().into_string()).flatten().filter(|name| name.starts_with(&today)) {
+            for path in paths
+                .flatten()
+                .map(|entry| entry.file_name().into_string())
+                .flatten()
+                .filter(|name| name.starts_with(&today))
+            {
                 if let Some(index) = Self::index_from_path(&path) {
                     if index > max_index {
                         max_index = index;
@@ -231,7 +258,7 @@ impl CustomLogRoller {
         }
 
         CustomLogRoller {
-            name_info: StdMutex::new((Local::now().ordinal(), max_index))
+            name_info: StdMutex::new((Local::now().ordinal(), max_index)),
         }
     }
 
@@ -245,12 +272,16 @@ impl CustomLogRoller {
         }
     }
 
-    pub fn roll_threaded(&self, file: &Path, threaded: bool) -> Result<(), Box<dyn Error + Sync + Send>> {
+    pub fn roll_threaded(
+        &self,
+        file: &Path,
+        threaded: bool,
+    ) -> Result<(), Box<dyn Error + Sync + Send>> {
         let mut guard = match self.name_info.lock() {
             Ok(g) => g,
-            
+
             // Since the mutex is privately managed and errors are handled correctly, this shouldn't be an issue
-            Err(_) => unreachable!("Logger mutex poisoned.")
+            Err(_) => unreachable!("Logger mutex poisoned."),
         };
 
         // Check to make sure the log name info is still accurate
@@ -266,7 +297,11 @@ impl CustomLogRoller {
         let log = "./logs/latest-tmp.log";
         rename(file, log)?;
 
-        let output = format!("./logs/{}-{}.log.gz", local_datetime.format("%Y-%m-%d"), guard.1);
+        let output = format!(
+            "./logs/{}-{}.log.gz",
+            local_datetime.format("%Y-%m-%d"),
+            guard.1
+        );
 
         if threaded {
             thread::spawn(move || {

@@ -1,20 +1,16 @@
-use crate::{
-    block::{
-        self,
-        Block,
-        BlockState,
-        StaticBlockState,
-        entity::{BlockEntity, StaticBlockEntity},
-        states::BLOCK_LOOKUP_BY_NAME
-    }
+use crate::block::{
+    self,
+    entity::{BlockEntity, StaticBlockEntity},
+    states::BLOCK_LOOKUP_BY_NAME,
+    Block, BlockState, StaticBlockState,
 };
 use log::info;
 use num_traits::Num;
 use once_cell::sync::OnceCell;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
-use std::fmt::{Display, Debug};
+use std::fmt::{Debug, Display};
 use util::UnlocalizedName;
 
 static GLOBAL_STATIC_REGISTRY: OnceCell<StaticRegistry> = OnceCell::new();
@@ -24,11 +20,7 @@ pub type DynamicStateID = u32;
 
 pub trait Registry
 where
-    Self:
-        BlockRegistry +
-        BlockEntityRegistry +
-        Sized +
-        'static
+    Self: BlockRegistry + BlockEntityRegistry + Sized + 'static,
 {
     fn new() -> Self;
 
@@ -42,7 +34,8 @@ pub trait BlockRegistry {
 
     type BlockState: BlockState<Self::StateID> + Sized;
 
-    fn default_state(self: &'static Self, block_name: &UnlocalizedName) -> Option<Self::BlockState>;
+    fn default_state(self: &'static Self, block_name: &UnlocalizedName)
+        -> Option<Self::BlockState>;
 }
 
 pub trait BlockEntityRegistry {
@@ -50,7 +43,7 @@ pub trait BlockEntityRegistry {
 }
 
 pub struct StaticRegistry {
-    blocks: &'static [Block<StaticStateID>]
+    blocks: &'static [Block<StaticStateID>],
 }
 
 impl BlockRegistry for StaticRegistry {
@@ -58,17 +51,19 @@ impl BlockRegistry for StaticRegistry {
 
     type BlockState = StaticBlockState;
 
-    fn default_state(self: &'static Self, block_name: &UnlocalizedName) -> Option<Self::BlockState> {
+    fn default_state(
+        self: &'static Self,
+        block_name: &UnlocalizedName,
+    ) -> Option<Self::BlockState> {
         if block_name.namespace != "minecraft" {
             return None;
         }
 
-        BLOCK_LOOKUP_BY_NAME.get(block_name.identifier.as_str())
-            .map(|meta| {
-                StaticBlockState {
-                    handle: &self.blocks[meta.internal_block_id],
-                    data: meta.default_state_data
-                }
+        BLOCK_LOOKUP_BY_NAME
+            .get(block_name.identifier.as_str())
+            .map(|meta| StaticBlockState {
+                handle: &self.blocks[meta.internal_block_id],
+                data: meta.default_state_data,
             })
     }
 }
@@ -81,7 +76,7 @@ impl Registry for StaticRegistry {
     #[inline]
     fn new() -> Self {
         StaticRegistry {
-            blocks: block::init::load_block_list::<StaticStateID>().leak()
+            blocks: block::init::load_block_list::<StaticStateID>().leak(),
         }
     }
 
@@ -89,14 +84,16 @@ impl Registry for StaticRegistry {
     fn global() -> &'static Self {
         #[cfg(debug_assertions)]
         {
-            GLOBAL_STATIC_REGISTRY.get().expect("Global static registry not initialized")
+            GLOBAL_STATIC_REGISTRY
+                .get()
+                .expect("Global static registry not initialized")
         }
 
         #[cfg(not(debug_assertions))]
         {
             match GLOBAL_STATIC_REGISTRY.get() {
                 Some(registry) => registry,
-                None => unsafe { std::hint::unreachable_unchecked() }
+                None => unsafe { std::hint::unreachable_unchecked() },
             }
         }
     }

@@ -1,6 +1,6 @@
 use std::fmt::{self, Formatter};
 
-use serde::{Serialize, Deserialize, Serializer, Deserializer, de};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(unix)]
 use termion::{color, style};
@@ -14,15 +14,18 @@ pub enum Color {
     Predefined(PredefinedColor),
 
     /// A custom RBG color.
-    #[serde(serialize_with = "Color::serialize_custom", deserialize_with="Color::deserialize_custom")]
+    #[serde(
+        serialize_with = "Color::serialize_custom",
+        deserialize_with = "Color::deserialize_custom"
+    )]
     Custom(
         /// The red value.
         u8,
         /// The green value.
         u8,
         /// The blue value.
-        u8
-    )
+        u8,
+    ),
 }
 
 impl Color {
@@ -32,7 +35,11 @@ impl Color {
         match self {
             Color::Predefined(color) => color.apply(f),
             // Dividing by 43 maps the color to the correct ANSI range of [0,5]
-            Color::Custom(r, g, b) => write!(f, "{}", color::Fg(color::AnsiValue::rgb(*r / 43, *g / 43, *b / 43)))
+            Color::Custom(r, g, b) => write!(
+                f,
+                "{}",
+                color::Fg(color::AnsiValue::rgb(*r / 43, *g / 43, *b / 43))
+            ),
         }
     }
 
@@ -40,29 +47,38 @@ impl Color {
 
     fn serialize_custom<S>(r: &u8, g: &u8, b: &u8, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer
+        S: Serializer,
     {
-        serializer.serialize_str(&format!("#{:06X}", (*r as u32) << 16 | (*g as u32) << 8 | (*b as u32)))
+        serializer.serialize_str(&format!(
+            "#{:06X}",
+            (*r as u32) << 16 | (*g as u32) << 8 | (*b as u32)
+        ))
     }
 
     fn deserialize_custom<'de, D>(deserializer: D) -> Result<(u8, u8, u8), D::Error>
     where
-        D: Deserializer<'de>
+        D: Deserializer<'de>,
     {
         let value: &'de str = Deserialize::deserialize(deserializer)?;
 
         if value.is_empty() {
-            return Err(de::Error::custom("Expected hex color, found an empty string."));
+            return Err(de::Error::custom(
+                "Expected hex color, found an empty string.",
+            ));
         }
 
         if value.len() != 7 {
-            return Err(de::Error::custom("Expected hex color in the form of '#RRGGBB'"));
+            return Err(de::Error::custom(
+                "Expected hex color in the form of '#RRGGBB'",
+            ));
         }
 
         if let Ok(rgb) = u32::from_str_radix(&value[1..], 16) {
             Ok(((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8))
         } else {
-            Err(de::Error::custom("Invalid hex color, expected 6 hexadecimal digits (0-F)."))
+            Err(de::Error::custom(
+                "Invalid hex color, expected 6 hexadecimal digits (0-F).",
+            ))
         }
     }
 }
@@ -94,7 +110,7 @@ pub enum PredefinedColor {
     LightPurple,
     Yellow,
     White,
-    Reset
+    Reset,
 }
 
 impl PredefinedColor {
@@ -118,7 +134,7 @@ impl PredefinedColor {
             PredefinedColor::LightPurple => write!(f, "{}", color::Fg(color::LightMagenta)),
             PredefinedColor::Yellow => write!(f, "{}", color::Fg(color::LightYellow)),
             PredefinedColor::White => write!(f, "{}", color::Fg(color::LightWhite)),
-            PredefinedColor::Reset => write!(f, "{}{}", color::Fg(color::Reset), style::Reset)
+            PredefinedColor::Reset => write!(f, "{}{}", color::Fg(color::Reset), style::Reset),
         }
     }
 }

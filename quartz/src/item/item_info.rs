@@ -19,7 +19,7 @@ pub enum ItemInfo {
         // TODO: Add status effects
         // status_effects: Vec<PotionEffect>
     },
-    
+
     /// The info needed for tools
     ToolInfo {
         /// The type of the tool
@@ -27,9 +27,8 @@ pub enum ItemInfo {
         /// The level of the tool
         level: ToolLevel,
         /// The damage done by the tool
-        attack_damage: f32
-        // TODO: implements enchantments
-        // possible_enchantments: Vec<Enchantments>
+        attack_damage: f32, // TODO: implements enchantments
+                            // possible_enchantments: Vec<Enchantments>
     },
 
     /// The info needed for armor items
@@ -47,12 +46,12 @@ pub enum ItemInfo {
         // possible_enchantments: Vec<Enchantments>
     },
 
-    /// Miscellaneous tools 
+    /// Miscellaneous tools
     UsableInfo {
         /// Which tool type the item is
         usable_type: UsableType,
         /// The durability of the item
-        max_durability: u32
+        max_durability: u32,
     },
 
     /// Ranged weapon info
@@ -62,7 +61,7 @@ pub enum ItemInfo {
         /// The max charge time
         max_charge_time: u32,
         /// The max durability
-        max_durability: u32
+        max_durability: u32,
     },
 }
 
@@ -70,11 +69,11 @@ impl ItemInfo {
     /// Gets the max durability of an item
     pub fn max_durability(&self) -> u32 {
         match self {
-            ItemInfo::FoodInfo {..} => 0,
-            ItemInfo::ArmorInfo {max_durability, ..} => *max_durability,
-            ItemInfo::UsableInfo {max_durability, ..} => *max_durability,
-            ItemInfo::RangedWeaponInfo {max_durability , ..} => *max_durability,
-            ItemInfo::ToolInfo {level, ..} => level.max_durability()
+            ItemInfo::FoodInfo { .. } => 0,
+            ItemInfo::ArmorInfo { max_durability, .. } => *max_durability,
+            ItemInfo::UsableInfo { max_durability, .. } => *max_durability,
+            ItemInfo::RangedWeaponInfo { max_durability, .. } => *max_durability,
+            ItemInfo::ToolInfo { level, .. } => level.max_durability(),
         }
     }
 }
@@ -87,7 +86,7 @@ pub enum ToolType {
     Pickaxe,
     Shovel,
     Axe,
-    Hoe
+    Hoe,
 }
 
 /// The possible levels for tools
@@ -99,7 +98,7 @@ pub enum ToolLevel {
     Iron,
     Gold,
     Diamond,
-    Netherite
+    Netherite,
 }
 
 impl ToolLevel {
@@ -111,7 +110,7 @@ impl ToolLevel {
             ToolLevel::Stone => 131,
             ToolLevel::Iron => 250,
             ToolLevel::Diamond => 1561,
-            ToolLevel::Netherite => 2031
+            ToolLevel::Netherite => 2031,
         }
     }
 }
@@ -123,7 +122,7 @@ pub enum ArmorType {
     Helmet,
     Chestplate,
     Leggings,
-    Boots
+    Boots,
 }
 
 /// The possible usable items
@@ -135,7 +134,7 @@ pub enum UsableType {
     FlintAndSteel,
     Shield,
     CarrotStick,
-    FungusStick
+    FungusStick,
 }
 
 /// The possible ranged weapons
@@ -144,5 +143,5 @@ pub enum UsableType {
 pub enum RangedWeapon {
     Bow,
     Crossbow,
-    Trident
+    Trident,
 }

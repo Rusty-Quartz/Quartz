@@ -1,12 +1,12 @@
-use nbt::{NbtCompound, NbtList};
 use crate::item::item::{ItemStack, OptionalItemStack};
+use nbt::{NbtCompound, NbtList};
 
 /// Represents a basic inventory
 pub struct Inventory {
     /// The size of the inventory
     pub size: usize,
     /// The items in the inventory
-    items: Box<[OptionalItemStack]>
+    items: Box<[OptionalItemStack]>,
 }
 
 impl Inventory {
@@ -14,7 +14,7 @@ impl Inventory {
     pub fn new(size: usize) -> Self {
         Inventory {
             size,
-            items: vec![OptionalItemStack::new(None); size].into_boxed_slice()
+            items: vec![OptionalItemStack::new(None); size].into_boxed_slice(),
         }
     }
 
@@ -43,13 +43,13 @@ impl Inventory {
         self.items.get(index).unwrap().clone()
     }
 
-    /// Tests if a slot can be inserted into 
+    /// Tests if a slot can be inserted into
     pub fn can_insert(&self, index: usize) -> bool {
         self.size > index && index > 0
     }
 
     /// Creates a new Inventory from a NbtCompound
-    /// 
+    ///
     /// # NBT Format
     /// ```
     /// {Items: [{
@@ -68,13 +68,14 @@ impl Inventory {
             let slot = compound.get("Slot").unwrap_or(0) as usize;
 
             if slot < self.size {
-                self.items[slot] = OptionalItemStack::new(Some(ItemStack::from_nbt(compound.clone())));
+                self.items[slot] =
+                    OptionalItemStack::new(Some(ItemStack::from_nbt(compound.clone())));
             }
         }
     }
 
     /// Writes the Inventory to a NbtCompound
-    /// 
+    ///
     /// # NBT Format
     /// ```
     /// {Items: [{
@@ -84,7 +85,7 @@ impl Inventory {
     ///     tag: Compound,
     /// }]}
     /// ```
-    pub fn write_tag(&self,  tag: &mut NbtCompound) {
+    pub fn write_tag(&self, tag: &mut NbtCompound) {
         let mut list = NbtList::new();
 
         for i in 0..self.size {

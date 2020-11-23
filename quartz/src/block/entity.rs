@@ -1,6 +1,6 @@
+use crate::block::entities::FurnaceBlockEntity;
 use enum_dispatch::enum_dispatch;
 use nbt::NbtCompound;
-use crate::block::entities::FurnaceBlockEntity;
 
 // All block entities must impl this
 /// Trait for block entities
@@ -16,5 +16,5 @@ pub trait BlockEntity {
 
 #[enum_dispatch(BlockEntity)]
 pub enum StaticBlockEntity {
-    FurnaceBlockEntity
+    FurnaceBlockEntity,
 }

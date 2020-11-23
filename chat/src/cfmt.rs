@@ -1,7 +1,7 @@
-use std::error::Error;
-use std::fmt::{self, Debug, Display, Formatter};
 use crate::color::Color;
 use crate::component::*;
+use std::error::Error;
+use std::fmt::{self, Debug, Display, Formatter};
 
 /// Wrapper for an error message related to CFMT parsing.
 pub struct CfmtError(String);
@@ -18,7 +18,7 @@ impl Debug for CfmtError {
     }
 }
 
-impl Error for CfmtError { }
+impl Error for CfmtError {}
 
 #[inline]
 fn try_unwrap<T>(x: Option<T>, message: &str) -> Result<T, CfmtError> {
@@ -135,7 +135,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
 
                         // Mark the start of the sequence
                         mark!();
-                    },
+                    }
 
                     '{' => {
                         // Manage depth
@@ -145,7 +145,10 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                         // component after this block
                         let next;
                         if *try_unwrap(has_children.last(), CHILD_STACK_ERROR)? {
-                            next = TextComponent::copy_formatting(String::new(), try_unwrap(stack.last(), COMPONENT_STACK_ERROR)?);
+                            next = TextComponent::copy_formatting(
+                                String::new(),
+                                try_unwrap(stack.last(), COMPONENT_STACK_ERROR)?,
+                            );
                         } else {
                             next = TextComponent::new(String::new(), None);
                         }
@@ -156,7 +159,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
 
                         // Used to identify unpaired curly braces
                         mark!();
-                    },
+                    }
 
                     '}' => {
                         // Somone has a random close curly bracket lying around
@@ -205,7 +208,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                         // Append this block
                         add_child(last, block)?;
                         stack.push(next);
-                    },
+                    }
 
                     '$' => {
                         // Don't allow nesting of events
@@ -219,7 +222,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
 
                         // Mark the start of the event sequence
                         mark!();
-                    },
+                    }
 
                     ')' => {
                         // This only happens for event components
@@ -231,18 +234,24 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
 
                             unmark!();
                         } else {
-                            try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?.text.push(ch);
+                            try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?
+                                .text
+                                .push(ch);
                         }
-                    },
+                    }
 
-                    _ => try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?.text.push(ch)
+                    _ => try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?
+                        .text
+                        .push(ch),
                 }
-            },
+            }
 
             FORCE_ADD => {
-                try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?.text.push(ch);
+                try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?
+                    .text
+                    .push(ch);
                 state = ADD_TEXT;
-            },
+            }
 
             COLOR_START => {
                 if ch == '(' {
@@ -254,7 +263,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                 } else {
                     error!("Expected open parenthesis after '&': \"{}...\"", 10);
                 }
-            },
+            }
 
             COLOR_BUILD_FIRST | COLOR_BUILD_EXTRA => {
                 match ch {
@@ -315,7 +324,11 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                                     else {
                                         error!(
                                             "Invalid color or formatting code: \"{}\"",
-                                            index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
+                                            index
+                                                - try_unwrap(
+                                                    index_stack.last(),
+                                                    INDEX_STACK_ERROR
+                                                )?
                                         );
                                     }
                                 }
@@ -339,7 +352,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
 
                             state = ADD_TEXT;
                         }
-                    },
+                    }
 
                     '!' => {
                         // Valid syntax, ex: !bold
@@ -357,11 +370,11 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                         else {
                             current_token!().push(ch);
                         }
-                    },
+                    }
 
-                    _ => current_token!().push(ch)
+                    _ => current_token!().push(ch),
                 }
-            },
+            }
 
             EVENT_START => {
                 // Enforce an open bracket at the start of the sequence
@@ -375,7 +388,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                 } else {
                     error!("Expected open parenthesis after '$': \"{}...\"", 10);
                 }
-            },
+            }
 
             EVENT_BUILD_TYPE => {
                 // Separate the event type from its name with a colon
@@ -403,14 +416,14 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                 else {
                     current_token!().push(ch);
                 }
-            },
+            }
 
             EVENT_BUILD_NAME => {
                 // Separate the event data from its argument witha comma
                 if ch == ',' {
                     let event_type: &str = token_stack[token_stack.len() - 2].as_ref();
                     let event_name: &str = try_unwrap(token_stack.last(), TOKEN_STACK_ERROR)?;
-                    
+
                     match event_type {
                         "hover" => {
                             // Argument handling depends on the event name
@@ -423,7 +436,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                                     stack.push(TextComponent::new(String::new(), None));
                                     has_children.push(false);
                                     continue;
-                                },
+                                }
 
                                 // Both of these are JSON, so a string
                                 "show_item" | "show_entity" => state = EVENT_BUILD_ARG,
@@ -436,12 +449,15 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                                     );
                                 }
                             }
-                        },
+                        }
 
                         "click" => {
                             // Valid click events
-                            if event_name == "open_url" || event_name == "run_command" ||
-                                    event_name == "suggest_command" || event_name == "change_page" {
+                            if event_name == "open_url"
+                                || event_name == "run_command"
+                                || event_name == "suggest_command"
+                                || event_name == "change_page"
+                            {
                                 state = EVENT_BUILD_ARG;
                             }
                             // Invalid click event
@@ -451,7 +467,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                                     index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
                                 );
                             }
-                        },
+                        }
 
                         // This is checked beforehand
                         _ => {}
@@ -466,7 +482,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                 else {
                     current_token!().push(ch);
                 }
-            },
+            }
 
             EVENT_BUILD_ARG => {
                 // Event sequence ends with a close parentehsis
@@ -479,7 +495,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                 } else {
                     current_token!().push(ch);
                 }
-            },
+            }
 
             _ => {}
         }
@@ -504,26 +520,37 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                 collapse!();
             }
 
-            return Ok(Component::Text(try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?))
-        },
+            return Ok(Component::Text(try_unwrap(
+                stack.pop(),
+                COMPONENT_STACK_ERROR,
+            )?));
+        }
 
         FORCE_ADD => {
             error!("Expected another character after the escape character at the end of the input string.");
-        },
+        }
 
         COLOR_START | COLOR_BUILD_FIRST | COLOR_BUILD_EXTRA => {
             error!("Incomplete color sequence at the end of the input string.");
-        },
+        }
 
         EVENT_START | EVENT_BUILD_NAME | EVENT_BUILD_TYPE | EVENT_BUILD_ARG => {
             error!("Incomplete event sequence at the end of the input string.");
         }
-        
-        _ => return Ok(Component::Text(try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?))
+
+        _ => {
+            return Ok(Component::Text(try_unwrap(
+                stack.pop(),
+                COMPONENT_STACK_ERROR,
+            )?))
+        }
     }
 }
 
-fn finish_component(stack: &mut Vec<TextComponent>, has_children: &mut Vec<bool>) -> Result<(), CfmtError> {
+fn finish_component(
+    stack: &mut Vec<TextComponent>,
+    has_children: &mut Vec<bool>,
+) -> Result<(), CfmtError> {
     if !try_unwrap(stack.last(), COMPONENT_STACK_ERROR)?.is_empty() {
         // Some children are already present
         if *try_unwrap(has_children.last(), CHILD_STACK_ERROR)? {
@@ -549,7 +576,7 @@ fn finish_event(
     stack: &mut Vec<TextComponent>,
     has_children: &mut Vec<bool>,
     token_stack: &mut Vec<String>,
-    has_component: bool
+    has_component: bool,
 ) -> Result<(), CfmtError> {
     // Handle stack operations and retrieve the component argument
     if has_component {
@@ -561,7 +588,8 @@ fn finish_event(
 
         // Apply the event (currently only the show_text event)
         let text = try_unwrap(stack.pop(), COMPONENT_STACK_ERROR)?;
-        try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?.hover_event = Some(Box::new(HoverEvent::show_text(text.into())));
+        try_unwrap(stack.last_mut(), COMPONENT_STACK_ERROR)?.hover_event =
+            Some(Box::new(HoverEvent::show_text(text.into())));
     }
     // Every other event type
     else {
@@ -573,15 +601,21 @@ fn finish_event(
         // Hover events
         if event_type == "hover" {
             match event_name.as_ref() {
-                "show_item" => component.hover_event = Some(Box::new(HoverEvent::show_item_json(&event_arg))),
+                "show_item" => {
+                    component.hover_event = Some(Box::new(HoverEvent::show_item_json(&event_arg)))
+                }
 
                 "show_entity" => {
                     // Make sure it parses the JSON correctly
                     match HoverEvent::show_entity_json(&event_arg) {
                         Some(event) => component.hover_event = Some(Box::new(event)),
-                        None => return Err(CfmtError("Invalid argument for hover event \"show_entity\"".to_owned()))
+                        None => {
+                            return Err(CfmtError(
+                                "Invalid argument for hover event \"show_entity\"".to_owned(),
+                            ))
+                        }
                     }
-                },
+                }
 
                 // Checks beforehand make this unreachable
                 _ => {}
@@ -590,16 +624,28 @@ fn finish_event(
         // Click events
         else {
             match event_name.as_ref() {
-                "open_url" => component.click_event = Some(Box::new(ClickEvent::open_url(event_arg))),
-                "run_command" => component.click_event = Some(Box::new(ClickEvent::run_command(event_arg))),
-                "suggest_command" => component.click_event = Some(Box::new(ClickEvent::suggest_command(event_arg))),
+                "open_url" => {
+                    component.click_event = Some(Box::new(ClickEvent::open_url(event_arg)))
+                }
+                "run_command" => {
+                    component.click_event = Some(Box::new(ClickEvent::run_command(event_arg)))
+                }
+                "suggest_command" => {
+                    component.click_event = Some(Box::new(ClickEvent::suggest_command(event_arg)))
+                }
                 "change_page" => {
                     // Parse the page index
                     match event_arg.parse::<u32>() {
-                        Ok(index) => component.click_event = Some(Box::new(ClickEvent::change_page(index))),
-                        Err(_) => return Err(CfmtError("Invalid page index for click event \"change_page\"".to_owned()))
+                        Ok(index) => {
+                            component.click_event = Some(Box::new(ClickEvent::change_page(index)))
+                        }
+                        Err(_) => {
+                            return Err(CfmtError(
+                                "Invalid page index for click event \"change_page\"".to_owned(),
+                            ))
+                        }
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -635,7 +681,7 @@ fn add_child(parent: &mut TextComponent, mut child: TextComponent) -> Result<(),
                 // Unreachable
                 _ => return Err(CfmtError("Internal parser error: invalid state reached while appending a child component.".to_owned()))
             }
-        },
+        }
 
         // No children present, nothing to check
         None => {}

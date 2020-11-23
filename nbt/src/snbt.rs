@@ -1,6 +1,6 @@
 use crate::*;
-use std::str::Chars;
 use std::iter::Peekable;
+use std::str::Chars;
 
 macro_rules! parse_nbt_array {
     ($enum_name: ident, $vec_type: ty, $output_type: ident, $self_val: ident) => {
@@ -13,28 +13,34 @@ macro_rules! parse_nbt_array {
                     match $self_val.parse_value() {
                         Ok(NbtTag::$enum_name(v)) => {
                             output.push(v);
-                        },
+                        }
                         Err(e) => return Err(e),
-                        Ok(v) => return Err(format!("Cannot insert {} into array of type {}", v.type_string(), stringify!($enum_name)))
+                        Ok(v) => {
+                            return Err(format!(
+                                "Cannot insert {} into array of type {}",
+                                v.type_string(),
+                                stringify!($enum_name)
+                            ))
+                        }
                     }
 
                     $self_val.handle_whitespace();
 
                     match $self_val.data.next() {
                         Some(']') => return Ok(NbtTag::$output_type(output)),
-                        Some(',') => {},
+                        Some(',') => {}
                         Some(_) => return Err("Expected ,".to_owned()),
-                        None => return Err("Unclosed array".to_owned())
+                        None => return Err("Unclosed array".to_owned()),
                     }
                 }
-            },
-            _ => return Err("stuff".to_owned())
+            }
+            _ => return Err("stuff".to_owned()),
         }
     };
 }
 
 /// Parses SNBT into NBT tags
-/// 
+///
 /// # Example
 /// ```
 /// let snbt_string = r#"{string:Stuff, list:[I;1,2,3,4,5]}"#.to_owned();
@@ -46,7 +52,7 @@ macro_rules! parse_nbt_array {
 pub struct SnbtParser<'sp> {
     data: Peekable<Chars<'sp>>,
     /// The current position the parser is at in the data.
-    pub cursor: usize
+    pub cursor: usize,
 }
 
 impl<'sp> SnbtParser<'sp> {
@@ -54,7 +60,7 @@ impl<'sp> SnbtParser<'sp> {
     pub fn new(data: &'sp str, offset: usize) -> Self {
         SnbtParser {
             data: data.chars().peekable(),
-            cursor: offset
+            cursor: offset,
         }
     }
 
@@ -73,25 +79,23 @@ impl<'sp> SnbtParser<'sp> {
                     None => return Err(format!("Expected '}}' at {}", self.cursor)),
                     _ => match self.parse_property() {
                         Ok(v) => tag.set(v.0, v.1),
-                        Err(e) => return Err(e) 
-                    }
+                        Err(e) => return Err(e),
+                    },
                 };
-            },
+            }
 
-            _ => return Err(format!("Expected '{{' at {}", self.cursor))
+            _ => return Err(format!("Expected '{{' at {}", self.cursor)),
         }
 
         loop {
             match self.data.next() {
-                Some(',') => {
-                    match self.parse_property() {
-                        Ok(v) => {tag.set(v.0, v.1)},
-                        Err(e) => return Err(e) 
-                    }
+                Some(',') => match self.parse_property() {
+                    Ok(v) => tag.set(v.0, v.1),
+                    Err(e) => return Err(e),
                 },
 
                 Some('}') => return Ok(tag),
-                _ => return Err(format!("Expected '}}' at {}", self.cursor))
+                _ => return Err(format!("Expected '}}' at {}", self.cursor)),
             }
         }
     }
@@ -99,41 +103,35 @@ impl<'sp> SnbtParser<'sp> {
     fn parse_property(&mut self) -> Result<(String, NbtTag), String> {
         self.handle_whitespace();
         match self.data.peek() {
-            Some('a'..='z') |
-            Some('A'..='Z') => {
-                match self.parse_string() {
-                    Ok(key) => {
-                        self.handle_whitespace();
-                        match self.data.next() {
-                            Some(':') => {
-                                self.handle_whitespace();
-                                match self.parse_value() {
-                                    Ok(tag) => Ok((key, tag)),
-                                    Err(e) => Err(e)
-                                }
-                            },
-                            _ => Err(format!("Expected : at {}", self.cursor))
+            Some('a'..='z') | Some('A'..='Z') => match self.parse_string() {
+                Ok(key) => {
+                    self.handle_whitespace();
+                    match self.data.next() {
+                        Some(':') => {
+                            self.handle_whitespace();
+                            match self.parse_value() {
+                                Ok(tag) => Ok((key, tag)),
+                                Err(e) => Err(e),
+                            }
                         }
-                    },
-                    Err(e) => Err(e)
+                        _ => Err(format!("Expected : at {}", self.cursor)),
+                    }
                 }
+                Err(e) => Err(e),
             },
 
-            _ => return Err(format!("Expected '}}' at {}", self.cursor))
+            _ => return Err(format!("Expected '}}' at {}", self.cursor)),
         }
     }
 
     fn parse_value(&mut self) -> Result<NbtTag, String> {
         match self.data.peek() {
-            Some('{') => {
-                match self.parse_compound_tag(NbtCompound::new()) {
-                    Ok(tag) => Ok(NbtTag::Compound(tag)),
-                    Err(e) => Err(e)
-                }
+            Some('{') => match self.parse_compound_tag(NbtCompound::new()) {
+                Ok(tag) => Ok(NbtTag::Compound(tag)),
+                Err(e) => Err(e),
             },
-            
-            Some('0'..='9') |
-            Some('.') => {
+
+            Some('0'..='9') | Some('.') => {
                 let index = self.data.clone();
                 match self.parse_num() {
                     Ok(tag) => return Ok(tag),
@@ -141,18 +139,16 @@ impl<'sp> SnbtParser<'sp> {
                         self.data = index;
                         match self.parse_string() {
                             Ok(string) => Ok(NbtTag::from(string)),
-                            Err(e) => return Err(e)
+                            Err(e) => return Err(e),
                         }
                     }
                 }
             }
 
-            Some('\'') |
-            Some('"') |
-            Some('a'..='z') |
-            Some('A'..='Z') => match self.parse_string() {
+            Some('\'') | Some('"') | Some('a'..='z') | Some('A'..='Z') => match self.parse_string()
+            {
                 Ok(str) => Ok(NbtTag::from(str)),
-                Err(e) => Err(e)
+                Err(e) => Err(e),
             },
 
             Some('[') => self.parse_list(),
@@ -174,12 +170,12 @@ impl<'sp> SnbtParser<'sp> {
                 self.cursor += 1;
                 self.data.next();
                 quotes = 1;
-            },
+            }
             Some('\'') => {
                 self.cursor += 1;
                 self.data.next();
                 quotes = 2;
-            },
+            }
             _ => {}
         };
 
@@ -188,21 +184,19 @@ impl<'sp> SnbtParser<'sp> {
         loop {
             self.cursor += 1;
             match self.data.peek() {
-                Some(c @'}') |
-                Some(c @':') |
-                Some(c @',') => match quotes {
-                        0 => break,
-                        _ => {
-                            output.push(*c);
-                            self.data.next();
-                        }
-                    },
+                Some(c @ '}') | Some(c @ ':') | Some(c @ ',') => match quotes {
+                    0 => break,
+                    _ => {
+                        output.push(*c);
+                        self.data.next();
+                    }
+                },
 
                 Some('"') => {
                     self.data.next();
                     match quotes {
                         2 => output.push('"'),
-                        _ => break
+                        _ => break,
                     }
                 }
 
@@ -221,26 +215,32 @@ impl<'sp> SnbtParser<'sp> {
                         Some('\'') => output.push('\''),
                         Some('"') => output.push('"'),
                         Some('\\') => output.push('\\'),
-                        Some(c @ _) => return Err(format!("Invalid escape character '\\{}'at {} ", c, self.cursor)),
-                        None => return match quotes {
-                            0 => break,
-                            1 => Err(format!("Unclosed double quote string at {}", self.cursor)),
-                            2 => Err(format!("Unclosed single quote string at {}", self.cursor)),
-                            _ => unreachable!()
+                        Some(c @ _) => {
+                            return Err(format!(
+                                "Invalid escape character '\\{}'at {} ",
+                                c, self.cursor
+                            ))
+                        }
+                        None => {
+                            return match quotes {
+                                0 => break,
+                                1 => {
+                                    Err(format!("Unclosed double quote string at {}", self.cursor))
+                                }
+                                2 => {
+                                    Err(format!("Unclosed single quote string at {}", self.cursor))
+                                }
+                                _ => unreachable!(),
+                            }
                         }
                     }
-                },
+                }
 
-                Some(c @ 'a'..='z') |
-                Some(c @ 'A'..='Z') |
-                Some(c @ '0'..='9') |
-                Some(c @ '+') |
-                Some(c @ '-') |
-                Some(c @ '_') |
-                Some(c @ '.') => {
+                Some(c @ 'a'..='z') | Some(c @ 'A'..='Z') | Some(c @ '0'..='9') | Some(c @ '+')
+                | Some(c @ '-') | Some(c @ '_') | Some(c @ '.') => {
                     output.push(*c);
                     self.data.next();
-                },
+                }
 
                 Some(c @ _) => match quotes {
                     0 => break,
@@ -248,14 +248,14 @@ impl<'sp> SnbtParser<'sp> {
                         output.push(*c);
                         self.data.next();
                     }
-                }
+                },
 
                 None => match quotes {
                     0 => break,
                     1 => return Err(format!("Unclosed double quote string at {}", self.cursor)),
                     2 => return Err(format!("Unclosed single quote string at {}", self.cursor)),
-                    _ => unreachable!()
-                }
+                    _ => unreachable!(),
+                },
             };
         }
         Ok(output)
@@ -268,150 +268,145 @@ impl<'sp> SnbtParser<'sp> {
         loop {
             self.cursor += 1;
             match self.data.peek() {
-                Some(c @ '0'..='9') |
-                Some(c @ '-') => {
+                Some(c @ '0'..='9') | Some(c @ '-') => {
                     num_string.push(*c);
                     self.data.next();
-                },
+                }
                 Some('.') => {
                     self.data.next();
-                    if decimal {return Err("Number has two decimal points".to_owned())}
+                    if decimal {
+                        return Err("Number has two decimal points".to_owned());
+                    }
                     decimal = true;
                     num_string.push('.')
-                },
+                }
 
-                Some('b') |
-                Some('B') => {
+                Some('b') | Some('B') => {
                     self.data.next();
-                    if decimal {return Err("Decimal in byte type".to_owned())}
-                    match self.data.peek() {
-                        Some('}') |
-                        Some(']') |
-                        Some(',') => {
-                            match num_string.parse::<i8>() {
-                                Ok(val) => return Ok(NbtTag::Byte(val)),
-                                Err(_) => return Err("Couldn't parse number string to a byte".to_owned())
-                            }
-                        },
-
-                        _ => return Err("Value is string, not number".to_owned())
+                    if decimal {
+                        return Err("Decimal in byte type".to_owned());
                     }
-                },
-                
-                Some('l') |
-                Some('L') => {
-                    self.data.next();
-                    if decimal {return Err("Decimal in long type".to_owned())}
                     match self.data.peek() {
-                        Some('}') |
-                        Some(']') |
-                        Some(',') => {
-                            match num_string.parse::<i64>() {
-                                Ok(val) => return Ok(NbtTag::Long(val)),
-                                Err(_) => return Err("Couldn't parse number string to a long".to_owned())
+                        Some('}') | Some(']') | Some(',') => match num_string.parse::<i8>() {
+                            Ok(val) => return Ok(NbtTag::Byte(val)),
+                            Err(_) => {
+                                return Err("Couldn't parse number string to a byte".to_owned())
                             }
                         },
 
-                        _ => return Err("Value is string, not number".to_owned())
-                    }
-                },
-
-                Some('s') |
-                Some('S') => {
-                    self.data.next();
-                    if decimal {return Err("Decimal in short type".to_owned())}
-                    match self.data.peek() {
-                        Some('}') |
-                        Some(']') |
-                        Some(',') => {
-                            match num_string.parse::<i16>() {
-                                Ok(val) => return Ok(NbtTag::Short(val)),
-                                Err(_) => return Err("Couldn't parse number string to a short".to_owned())
-                            }
-                        },
-
-                        _ => return Err("Value is string, not number".to_owned())
-                    }
-                },
-
-                Some('f') |
-                Some('F') => {
-                    self.data.next();
-                    if !decimal {return Err("No decimal in float type".to_owned())}
-                    match self.data.peek() {
-                        Some('}') |
-                        Some(']') |
-                        Some(',') => {
-                            match num_string.parse::<f32>() {
-                                Ok(val) => return Ok(NbtTag::Float(val)),
-                                Err(_) => return Err("Couldn't parse number string to a float".to_owned())
-                            }
-                        },
-
-                        _ => return Err("Value is string, not number".to_owned())
-                    }
-                },
-
-                Some('d') |
-                Some('D') => {
-                    self.data.next();
-                    if !decimal {return Err("No decimal in double type".to_owned())}
-                    match self.data.peek() {
-                        Some('}') |
-                        Some(']') |
-                        Some(',') => {
-                            match num_string.parse::<f64>() {
-                                Ok(val) => return Ok(NbtTag::Double(val)),
-                                Err(_) => return Err("Couldn't parse number string to a double".to_owned())
-                            }
-                        },
-
-                        _ => return Err("Value is string, not number".to_owned())
+                        _ => return Err("Value is string, not number".to_owned()),
                     }
                 }
 
-                Some('}') |
-                Some(']') |
-                Some(',') |
-                None => {
+                Some('l') | Some('L') => {
+                    self.data.next();
+                    if decimal {
+                        return Err("Decimal in long type".to_owned());
+                    }
+                    match self.data.peek() {
+                        Some('}') | Some(']') | Some(',') => match num_string.parse::<i64>() {
+                            Ok(val) => return Ok(NbtTag::Long(val)),
+                            Err(_) => {
+                                return Err("Couldn't parse number string to a long".to_owned())
+                            }
+                        },
+
+                        _ => return Err("Value is string, not number".to_owned()),
+                    }
+                }
+
+                Some('s') | Some('S') => {
+                    self.data.next();
+                    if decimal {
+                        return Err("Decimal in short type".to_owned());
+                    }
+                    match self.data.peek() {
+                        Some('}') | Some(']') | Some(',') => match num_string.parse::<i16>() {
+                            Ok(val) => return Ok(NbtTag::Short(val)),
+                            Err(_) => {
+                                return Err("Couldn't parse number string to a short".to_owned())
+                            }
+                        },
+
+                        _ => return Err("Value is string, not number".to_owned()),
+                    }
+                }
+
+                Some('f') | Some('F') => {
+                    self.data.next();
+                    if !decimal {
+                        return Err("No decimal in float type".to_owned());
+                    }
+                    match self.data.peek() {
+                        Some('}') | Some(']') | Some(',') => match num_string.parse::<f32>() {
+                            Ok(val) => return Ok(NbtTag::Float(val)),
+                            Err(_) => {
+                                return Err("Couldn't parse number string to a float".to_owned())
+                            }
+                        },
+
+                        _ => return Err("Value is string, not number".to_owned()),
+                    }
+                }
+
+                Some('d') | Some('D') => {
+                    self.data.next();
+                    if !decimal {
+                        return Err("No decimal in double type".to_owned());
+                    }
+                    match self.data.peek() {
+                        Some('}') | Some(']') | Some(',') => match num_string.parse::<f64>() {
+                            Ok(val) => return Ok(NbtTag::Double(val)),
+                            Err(_) => {
+                                return Err("Couldn't parse number string to a double".to_owned())
+                            }
+                        },
+
+                        _ => return Err("Value is string, not number".to_owned()),
+                    }
+                }
+
+                Some('}') | Some(']') | Some(',') | None => {
                     if decimal {
                         match num_string.parse::<f64>() {
                             Ok(val) => return Ok(NbtTag::Double(val)),
-                            Err(_) => return Err("Couldn't parse number string to a double".to_owned())
+                            Err(_) => {
+                                return Err("Couldn't parse number string to a double".to_owned())
+                            }
                         }
                     } else {
                         match num_string.parse::<i32>() {
                             Ok(val) => return Ok(NbtTag::Int(val)),
-                            Err(_) => return Err("Couldn't parse number string to an int".to_owned())
+                            Err(_) => {
+                                return Err("Couldn't parse number string to an int".to_owned())
+                            }
                         }
                     }
-                },
+                }
 
-                Some(_) => return Err("Value is string, not number".to_owned())
+                Some(_) => return Err("Value is string, not number".to_owned()),
             }
         }
     }
 
     fn parse_list(&mut self) -> Result<NbtTag, String> {
         match self.data.next() {
-            Some('[') => {},
-            _ => return Err("List doesn't start with [".to_owned())
+            Some('[') => {}
+            _ => return Err("List doesn't start with [".to_owned()),
         };
 
         self.handle_whitespace();
 
         match self.data.peek() {
-            Some('I') |
-            Some('B') |
-            Some('L') => {
+            Some('I') | Some('B') | Some('L') => {
                 let cache = self.data.clone();
                 self.data.next();
                 match self.data.next() {
                     Some(';') => {
                         self.data = cache;
-                        return self.parse_array()
-                    },
-                    _ => self.data = cache
+                        return self.parse_array();
+                    }
+                    _ => self.data = cache,
                 }
             }
             _ => {}
@@ -429,10 +424,14 @@ impl<'sp> SnbtParser<'sp> {
                         if variant_eq(&val, output.get(0).unwrap()) {
                             output.add(val);
                         } else {
-                            return Err(format!("Can't insert value of type {} into list of type {}", val.type_string(), output.get::<&NbtTag>(0).unwrap().type_string()))
+                            return Err(format!(
+                                "Can't insert value of type {} into list of type {}",
+                                val.type_string(),
+                                output.get::<&NbtTag>(0).unwrap().type_string()
+                            ));
                         }
                     }
-                },
+                }
                 Err(_) => {}
             }
 
@@ -440,9 +439,9 @@ impl<'sp> SnbtParser<'sp> {
 
             match self.data.next() {
                 Some(']') => return Ok(NbtTag::List(output)),
-                Some(',') => {},
+                Some(',') => {}
                 Some(_) => return Err("Expected ,".to_owned()),
-                None => return Err("Unclosed array".to_owned())
+                None => return Err("Unclosed array".to_owned()),
             }
         }
     }
@@ -453,7 +452,7 @@ impl<'sp> SnbtParser<'sp> {
             Some('B') => parse_nbt_array!(Byte, i8, ByteArray, self),
             Some('I') => parse_nbt_array!(Int, i32, IntArray, self),
             Some('L') => parse_nbt_array!(Long, i64, LongArray, self),
-            _ => Err("Not a typed array".to_owned())
+            _ => Err("Not a typed array".to_owned()),
         }
     }
 
@@ -461,7 +460,7 @@ impl<'sp> SnbtParser<'sp> {
         loop {
             match self.data.peek() {
                 Some(' ') => self.data.next(),
-                _ => break
+                _ => break,
             };
         }
     }

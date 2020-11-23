@@ -1,22 +1,22 @@
+use log::error;
 use std::error::Error;
 use std::fmt::Display;
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
-    mpsc::{self, Sender, SendError}
+    mpsc::{self, SendError, Sender},
+    Arc,
 };
 use std::thread::{self, JoinHandle};
-use log::error;
 
 /// A dynamically sized, load-spreading threadpool that executes a specific function.
-/// 
+///
 /// The function this pool's workers execute accepts an owned "job" and a mutable reference to an internal
 /// "state". This model was adopted as oppsed to closures to allow for workers to be spawned without the
 /// function/closure needing to be respecified. Because of this cloneability, dynamic threadpools have a
 /// [`resize`] method which only requires a min and max bound on the new size and a load scaling constant.
 /// The actual size this pool chooses within those bounds will be based on a measured load value which is
 /// recalculated every time the threadpool is resized.
-/// 
+///
 /// [`resize`]: crate::threadpool::DynamicThreadPool::resize
 pub struct DynamicThreadPool<J, S, E> {
     name: String,
@@ -24,7 +24,7 @@ pub struct DynamicThreadPool<J, S, E> {
     pool_cursor: usize,
     distribution_strategy: DistributionStrategy,
     executor: fn(J, &mut S) -> Result<(), E>,
-    initial_state: S
+    initial_state: S,
 }
 
 impl<J, S, E> DynamicThreadPool<J, S, E> {
@@ -40,23 +40,23 @@ impl<J, S, E> DynamicThreadPool<J, S, E>
 where
     J: Send + 'static,
     S: Send + Clone + 'static,
-    E: Into<Box<dyn Error>> + 'static
+    E: Into<Box<dyn Error>> + 'static,
 {
     /// Creates a new threadpool with the given name and initial size.
-    /// 
+    ///
     /// The initial state provided is the state in which all new worker threads will be spawned.
     /// This method spawns the given number of worker threads which immediately block while waiting
     /// for incoming jobs to complete.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `name` - The name of the thread pool
     /// * `initial_size` - The initial number of workers this pool is constructed with
     /// * `initial_state` - The initial state of all worker threads in this pool
     /// * `distribution_strategy` - The distribution strategy of this pool (see [`DistributionStrategy`]
     /// and [`add_job`] for more details)
     /// * `executor` - The job executor
-    /// 
+    ///
     /// [`DistributionStrategy`]: crate::threadpool::DistributionStrategy
     /// [`add_job`]: crate::threadpool::DynamicThreadPool::add_job
     pub fn open<N: Display>(
@@ -64,7 +64,7 @@ where
         initial_size: usize,
         initial_state: S,
         distribution_strategy: DistributionStrategy,
-        executor: fn(J, &mut S) -> Result<(), E>
+        executor: fn(J, &mut S) -> Result<(), E>,
     ) -> Self {
         let mut pool = DynamicThreadPool {
             name: name.to_string(),
@@ -72,7 +72,7 @@ where
             pool_cursor: 0,
             distribution_strategy,
             executor,
-            initial_state
+            initial_state,
         };
 
         for i in 0..pool.pool.capacity() {
@@ -84,16 +84,21 @@ where
 
     /// Adds a worker to this pool with the given number.
     fn add_worker(&mut self, number: usize) {
-        self.pool.push(Worker::spawn(self.name.clone(), number, self.initial_state.clone(), self.executor));
+        self.pool.push(Worker::spawn(
+            self.name.clone(),
+            number,
+            self.initial_state.clone(),
+            self.executor,
+        ));
     }
 
     /// Adds a job for the pool to complete.
-    /// 
+    ///
     /// The pool will select a worker based on the distribution strategy this pool was opened with. If
     /// the [`EqualLoad`] strategy was used, then the worker with the minimum number of pending jobs will
     /// be selected. If the [`Fast`] strategy was used, then the pool will assign one job to every worker
     /// in the pool before the same worker is given a second job.
-    /// 
+    ///
     /// [`EqualLoad`]: crate::threadpool::DistributionStrategy::EqualLoad
     /// [`Fast`]: crate::threadpool::DistributionStrategy::Fast
     pub fn add_job(&mut self, job: J) {
@@ -116,7 +121,7 @@ where
                         available_worker = Some(worker);
                     }
                 }
-            },
+            }
 
             DistributionStrategy::Fast => {
                 if self.pool_cursor >= self.pool.len() {
@@ -138,7 +143,11 @@ where
     /// Resizes this threadpool based on the calculated load and the given bounds. The load is calculated as
     /// the total number of pending jobs among all workers in this pool.
     pub fn resize(&mut self, load_factor: usize, mut min: usize, max: usize) {
-        let load: usize = self.pool.iter().map(|worker| worker.pending_job_count()).sum();
+        let load: usize = self
+            .pool
+            .iter()
+            .map(|worker| worker.pending_job_count())
+            .sum();
         // Enforce min > 0 and max >= min, and then enforce min <= size <= max
         min = min.max(1);
         let new_size = (load / load_factor).max(min).min(max.max(min));
@@ -175,14 +184,14 @@ pub enum DistributionStrategy {
     EqualLoad,
     /// Does not guarantee that workers will have an equal load, however jobs will be given out as
     /// evenly as possible without sacrificing efficiency.
-    Fast
+    Fast,
 }
 
 /// A worker for a dynamic threadpool. Workers keep track of their pending job count autonomously.
 struct Worker<J> {
     job_sender: Sender<Option<J>>,
     pending_job_count: Arc<AtomicUsize>,
-    handle: JoinHandle<()>
+    handle: JoinHandle<()>,
 }
 
 impl<J> Worker<J> {
@@ -205,11 +214,11 @@ impl<J: Send + 'static> Worker<J> {
         pool_name: String,
         number: usize,
         mut state: S,
-        executor: fn(J, &mut S) -> Result<(), E>
+        executor: fn(J, &mut S) -> Result<(), E>,
     ) -> Worker<J>
     where
         S: Send + 'static,
-        E: Into<Box<dyn Error>> + 'static
+        E: Into<Box<dyn Error>> + 'static,
     {
         // Initialize thread variables
         let (job_sender, job_receiver) = mpsc::channel::<Option<J>>();
@@ -220,7 +229,12 @@ impl<J: Send + 'static> Worker<J> {
         let handle = thread::spawn(move || {
             while let Ok(Some(job)) = job_receiver.recv() {
                 if let Err(e) = executor(job, &mut state) {
-                    error!("Error handling job in {}/Worker#{}: {}", pool_name, number, e.into());
+                    error!(
+                        "Error handling job in {}/Worker#{}: {}",
+                        pool_name,
+                        number,
+                        e.into()
+                    );
                 }
 
                 // We completed a job :D
@@ -231,7 +245,7 @@ impl<J: Send + 'static> Worker<J> {
         Worker {
             pending_job_count,
             job_sender,
-            handle
+            handle,
         }
     }
 

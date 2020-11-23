@@ -1,6 +1,6 @@
 extern crate proc_macro;
-use syn::{parse_macro_input, DeriveInput, Data, Ident};
-use quote::{quote};
+use quote::quote;
+use syn::{parse_macro_input, Data, DeriveInput, Ident};
 
 use proc_macro2::TokenStream;
 
@@ -10,7 +10,6 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let name = ast.ident;
 
     let enum_match = run_listeners_enum(&name, &ast.data);
-
 
     // Assembles and returns the method
     // TODO: add support for generics and where clauses possibly?
@@ -33,7 +32,7 @@ fn to_snake_case(input: String) -> String {
             output.push('_');
         }
         output.push(char.to_lowercase().next().unwrap())
-    };
+    }
     output
 }
 
@@ -43,7 +42,7 @@ fn run_listeners_enum(enum_name: &Ident, data: &Data) -> TokenStream {
         Data::Enum(ref data) => {
             let branch_names = data.variants.iter().map(|variant| {
                 let variant_name = &variant.ident;
-                quote!{
+                quote! {
                     #enum_name::#variant_name{..}
                 }
             });
@@ -57,12 +56,12 @@ fn run_listeners_enum(enum_name: &Ident, data: &Data) -> TokenStream {
                 }
 
             });
-            
+
             // Loops over the branch names and the branches to construct the entire match body
-            quote!{
+            quote! {
                 #(#branch_names => #branches),*
             }
         }
-        _ => unimplemented!("Currently only enums can derive Listener")
+        _ => unimplemented!("Currently only enums can derive Listener"),
     }
 }

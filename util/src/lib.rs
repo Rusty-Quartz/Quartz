@@ -27,19 +27,16 @@ mod tests {
     use test::Bencher;
 
     use super::*;
-    use map::{Identify, IdList};
+    use map::{IdList, Identify};
 
     struct Identifiable {
         id: usize,
-        value: i32
+        value: i32,
     }
 
     impl Identifiable {
         fn new(value: i32) -> Self {
-            Identifiable {
-                id: 0,
-                value
-            }
+            Identifiable { id: 0, value }
         }
     }
 
@@ -65,13 +62,27 @@ mod tests {
         assert_eq!(id_list.add(value3), 2, "Incorrect ID assigned (value 3).");
         assert!(id_list.get(1).is_some(), "ID lookup failed.");
         let value2 = id_list.remove(1);
-        assert!(value2.is_some(), "Element removal failed: no value returned.");
-        assert!(id_list.get(1).is_none(), "Element removal failed: value remained in list.");
+        assert!(
+            value2.is_some(),
+            "Element removal failed: no value returned."
+        );
+        assert!(
+            id_list.get(1).is_none(),
+            "Element removal failed: value remained in list."
+        );
 
         let value4 = Identifiable::new(4);
 
-        assert_eq!(id_list.add(value2.unwrap()), 1, "Incorrect ID assigned after element removal.");
-        assert_eq!(id_list.add(value4), 3, "Incorrect ID assigned after element removal and readdition.");
+        assert_eq!(
+            id_list.add(value2.unwrap()),
+            1,
+            "Incorrect ID assigned after element removal."
+        );
+        assert_eq!(
+            id_list.add(value4),
+            3,
+            "Incorrect ID assigned after element removal and readdition."
+        );
 
         id_list.remove(0);
         id_list.remove(2);
@@ -79,20 +90,33 @@ mod tests {
         let mut count: usize = 0;
 
         for element in id_list.iter() {
-            assert_eq!(count, (element.id() - 1) / 2, "Element ID mismatch in Iter.");
+            assert_eq!(
+                count,
+                (element.id() - 1) / 2,
+                "Element ID mismatch in Iter."
+            );
             count += 1;
         }
 
-        assert_eq!(count, 2, "IdList iterator did not cover the correct number of elements.");
+        assert_eq!(
+            count, 2,
+            "IdList iterator did not cover the correct number of elements."
+        );
 
         count = 0;
         for element in id_list.iter_mut() {
             element.value /= 4;
-            assert_eq!(element.value as usize, count, "Element order incorrect in IterMut.");
+            assert_eq!(
+                element.value as usize, count,
+                "Element order incorrect in IterMut."
+            );
             count += 1;
         }
 
-        assert_eq!(count, 2, "IdList iterator mut did not cover the correct number of elements.");
+        assert_eq!(
+            count, 2,
+            "IdList iterator mut did not cover the correct number of elements."
+        );
     }
 
     #[bench]

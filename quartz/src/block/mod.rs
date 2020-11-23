@@ -1,7 +1,7 @@
-pub(crate) mod init;
-mod state;
 #[allow(missing_docs)]
 pub mod entity;
+pub(crate) mod init;
+mod state;
 
 #[allow(missing_docs)]
 pub mod entities {
@@ -15,14 +15,14 @@ pub mod states {
 
     pub(crate) struct BlockStateMetadata {
         pub default_state_data: BlockStateData,
-        pub internal_block_id: usize
+        pub internal_block_id: usize,
     }
-    
+
     impl BlockStateMetadata {
         const fn new(default_state_data: BlockStateData, internal_block_id: usize) -> Self {
             BlockStateMetadata {
                 default_state_data,
-                internal_block_id
+                internal_block_id,
             }
         }
     }

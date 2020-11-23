@@ -1,11 +1,6 @@
-use doc_comment::doc_comment;
 use crate::color::{Color, PredefinedColor};
-use crate::component::{
-    ClickEvent,
-    Component,
-    HoverEvent,
-    TextComponent
-};
+use crate::component::{ClickEvent, Component, HoverEvent, TextComponent};
+use doc_comment::doc_comment;
 
 /// Utility struct for building text components. Components can have children, and those children
 /// can have children, etc., however this utility only allows for a base component with a list of
@@ -14,7 +9,7 @@ use crate::component::{
 /// component.
 pub struct TextComponentBuilder {
     component: TextComponent,
-    current_empty: bool
+    current_empty: bool,
 }
 
 macro_rules! component_format {
@@ -34,7 +29,7 @@ impl TextComponentBuilder {
     pub fn empty() -> Self {
         TextComponentBuilder {
             component: TextComponent::new(String::new(), None),
-            current_empty: false
+            current_empty: false,
         }
     }
 
@@ -42,7 +37,7 @@ impl TextComponentBuilder {
     pub fn new(text: String) -> Self {
         TextComponentBuilder {
             component: TextComponent::new(text.to_owned(), None),
-            current_empty: false
+            current_empty: false,
         }
     }
 
@@ -55,7 +50,7 @@ impl TextComponentBuilder {
             match self.component.extra.as_mut().unwrap().last_mut() {
                 Some(Component::Text(component)) => component,
                 // TODO: replace with &mut self.component when the borrow checker allows it in the future
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         } else {
             &mut self.component
@@ -65,7 +60,8 @@ impl TextComponentBuilder {
     /// Finish the current component and prep a new component which can have different color, formatting, etc.
     pub fn add(mut self) -> Self {
         if !self.current_empty {
-            self.component.add_child(Component::Text(TextComponent::new(String::new(), None)));
+            self.component
+                .add_child(Component::Text(TextComponent::new(String::new(), None)));
             self.current_empty = true;
         }
 
@@ -90,7 +86,7 @@ impl TextComponentBuilder {
 
         match self.component.extra {
             Some(children) => children,
-            None => Vec::new()
+            None => Vec::new(),
         }
     }
 
@@ -111,7 +107,7 @@ impl TextComponentBuilder {
         self.current().color = Some(Color::Custom(red, green, blue));
         self
     }
-    
+
     component_format!(obfuscated, "obfuscated (quickly chaning, fixed-width text)");
     component_format!(bold, "bolded");
     component_format!(strikethrough, "struck-through");

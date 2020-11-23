@@ -1,9 +1,9 @@
-use std::io::{Write, Result, Error, ErrorKind};
-use byteorder::WriteBytesExt;
-use byteorder::BigEndian;
-use flate2::write::{ZlibEncoder, GzEncoder};
-use flate2::Compression;
 use crate::*;
+use byteorder::BigEndian;
+use byteorder::WriteBytesExt;
+use flate2::write::{GzEncoder, ZlibEncoder};
+use flate2::Compression;
+use std::io::{Error, ErrorKind, Result, Write};
 
 impl NbtTag {
     fn id(&self) -> u8 {
@@ -19,7 +19,7 @@ impl NbtTag {
             NbtTag::List(_) => 0x9,
             NbtTag::Compound(_) => 0xA,
             NbtTag::IntArray(_) => 0xB,
-            NbtTag::LongArray(_) => 0xC
+            NbtTag::LongArray(_) => 0xC,
         }
     }
 }
@@ -28,7 +28,7 @@ impl NbtTag {
 /// NBT data without any compression.
 pub fn write_nbt_uncompressed<W>(writer: &mut W, root_name: &str, root: &NbtCompound) -> Result<()>
 where
-    W: Write
+    W: Write,
 {
     // Compound ID
     writer.write_u8(0xA)?;
@@ -41,12 +41,16 @@ pub fn write_nbt_zlib_compressed<W>(
     writer: &mut W,
     compression_level: Compression,
     root_name: &str,
-    root: &NbtCompound
+    root: &NbtCompound,
 ) -> Result<()>
 where
-    W: Write
+    W: Write,
 {
-    write_nbt_uncompressed(&mut ZlibEncoder::new(writer, compression_level), root_name, root)
+    write_nbt_uncompressed(
+        &mut ZlibEncoder::new(writer, compression_level),
+        root_name,
+        root,
+    )
 }
 
 /// Wraps the given writer in a gz encoder and then passes it to the uncompressed writer function.
@@ -54,17 +58,21 @@ pub fn write_nbt_gz_compressed<W>(
     writer: &mut W,
     compression_level: Compression,
     root_name: &str,
-    root: &NbtCompound
+    root: &NbtCompound,
 ) -> Result<()>
 where
-    W: Write
+    W: Write,
 {
-    write_nbt_uncompressed(&mut GzEncoder::new(writer, compression_level), root_name, root)
+    write_nbt_uncompressed(
+        &mut GzEncoder::new(writer, compression_level),
+        root_name,
+        root,
+    )
 }
 
 fn write_compound<W>(writer: &mut W, compound: &NbtCompound) -> Result<()>
 where
-    W: Write
+    W: Write,
 {
     for (name, tag) in compound.as_ref().iter() {
         writer.write_u8(tag.id())?;
@@ -78,7 +86,7 @@ where
 
 fn write_tag_body<W>(writer: &mut W, tag: &NbtTag) -> Result<()>
 where
-    W: Write
+    W: Write,
 {
     match tag {
         NbtTag::Byte(value) => writer.write_i8(*value),
@@ -95,7 +103,7 @@ where
             }
 
             Ok(())
-        },
+        }
         NbtTag::StringModUtf8(value) => write_string(writer, value),
         NbtTag::List(value) => {
             if value.is_empty() {
@@ -108,7 +116,10 @@ where
 
                 for sub_tag in value.as_ref().iter() {
                     if sub_tag.id() != type_id {
-                        return Err(Error::new(ErrorKind::InvalidInput, "Attempted to write NBT list with a non-homogenous type."));
+                        return Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            "Attempted to write NBT list with a non-homogenous type.",
+                        ));
                     }
 
                     write_tag_body(writer, sub_tag)?;
@@ -116,7 +127,7 @@ where
 
                 Ok(())
             }
-        },
+        }
         NbtTag::Compound(value) => write_compound(writer, value),
         NbtTag::IntArray(value) => {
             writer.write_i32::<BigEndian>(value.len() as i32)?;
@@ -126,7 +137,7 @@ where
             }
 
             Ok(())
-        },
+        }
         NbtTag::LongArray(value) => {
             writer.write_i32::<BigEndian>(value.len() as i32)?;
 
@@ -141,7 +152,7 @@ where
 
 fn write_string<W>(writer: &mut W, string: &str) -> Result<()>
 where
-    W: Write
+    W: Write,
 {
     writer.write_u16::<BigEndian>(string.len() as u16)?;
     writer.write_all(&cesu8::to_java_cesu8(string))

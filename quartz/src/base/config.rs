@@ -1,10 +1,10 @@
-use std::fs::{File, OpenOptions};
-use std::io::{self, prelude::*, Read, Write, SeekFrom};
-use std::path::Path;
-use chat::Component;
 use chat::cfmt::parse_cfmt;
+use chat::Component;
 use log::*;
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fs::{File, OpenOptions};
+use std::io::{self, prelude::*, Read, SeekFrom, Write};
+use std::path::Path;
 
 /// The main server configuration.
 #[derive(Serialize, Deserialize)]
@@ -16,22 +16,25 @@ pub struct Config {
     /// The server port, defaults to 25565.
     pub port: u16,
     /// The server's message of the day, written using CFMT format (see `chat::cfmt::parse_cfmt`).
-    #[serde(serialize_with = "Config::serialize_motd", deserialize_with = "Config::deserialize_motd")]
-    pub motd: Component
+    #[serde(
+        serialize_with = "Config::serialize_motd",
+        deserialize_with = "Config::deserialize_motd"
+    )]
+    pub motd: Component,
 }
 
 // Custom ser/de functions
 impl Config {
     fn serialize_motd<S>(_component: &Component, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer
+        S: Serializer,
     {
         serializer.serialize_str("A Minecraft Server")
     }
 
     fn deserialize_motd<'de, D>(deserializer: D) -> Result<Component, D::Error>
     where
-        D: Deserializer<'de>
+        D: Deserializer<'de>,
     {
         let cfmt: &'de str = Deserialize::deserialize(deserializer)?;
 
@@ -53,7 +56,7 @@ impl Default for Config {
             max_players: 50,
             server_ip: "127.0.0.1".to_owned(),
             port: 25565,
-            motd: Component::text("A Minecraft Server".to_owned())
+            motd: Component::text("A Minecraft Server".to_owned()),
         }
     }
 }
@@ -65,11 +68,11 @@ pub fn load_config(path: &Path) -> io::Result<Config> {
     if std_path.exists() {
         // Try to open the file
         let mut file = OpenOptions::new().read(true).write(true).open(std_path)?;
-    
+
         // Read the file to a string
         let mut json = String::new();
         file.read_to_string(&mut json)?;
-        
+
         // Parse the json
         let config: Config;
         match serde_json::from_str(&json) {
@@ -79,7 +82,7 @@ pub fn load_config(path: &Path) -> io::Result<Config> {
                 return use_default(&mut file);
             }
         }
-    
+
         Ok(config)
     } else {
         info!("Config file not found, creating file");

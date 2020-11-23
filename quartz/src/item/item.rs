@@ -1,8 +1,8 @@
-use std::str::FromStr;
-use util::UnlocalizedName;
-use nbt::NbtCompound;
 use crate::item::get_item;
 use crate::item::ItemInfo;
+use nbt::NbtCompound;
+use std::str::FromStr;
+use util::UnlocalizedName;
 
 /// Represents a minecraft item
 #[derive(Debug)]
@@ -14,7 +14,7 @@ pub struct Item {
     /// The rarity of the item
     pub rarity: u8,
     /// Holds extra info about the item
-    pub item_info: Option<ItemInfo>
+    pub item_info: Option<ItemInfo>,
 }
 
 /// Represents a stack of items
@@ -27,18 +27,17 @@ pub struct ItemStack {
     /// The damage of the itemstack
     pub damage: u32,
     /// Extra nbt info about the stack
-    pub nbt: NbtCompound
+    pub nbt: NbtCompound,
 }
 
 impl ItemStack {
-
     /// Represents a empty item stack
     pub fn empty() -> Self {
         ItemStack {
             item: get_item(&UnlocalizedName::minecraft("air")).expect("Item list not initialized"),
             count: 0,
             damage: 0,
-            nbt: NbtCompound::new()
+            nbt: NbtCompound::new(),
         }
     }
 
@@ -49,13 +48,15 @@ impl ItemStack {
             count: 1,
             damage: if item.item_info.is_some() {
                 item.item_info.as_ref().unwrap().max_durability()
-            } else { 0 },
-            nbt: NbtCompound::new()
+            } else {
+                0
+            },
+            nbt: NbtCompound::new(),
         }
     }
 
     /// Write the stack to nbt tag
-    /// 
+    ///
     /// # NBT Format
     /// ```
     /// {
@@ -73,7 +74,7 @@ impl ItemStack {
     }
 
     /// Create an ItemStack from a nbt tag
-    /// 
+    ///
     /// # NBT Format
     /// ```
     /// {
@@ -87,18 +88,25 @@ impl ItemStack {
         let tag = match tag.has("tag") {
             true => match tag.get::<&NbtCompound>("tag") {
                 Some(tag) => tag.clone().to_owned(),
-                _ => NbtCompound::new()
+                _ => NbtCompound::new(),
             },
-            _ => NbtCompound::new()
+            _ => NbtCompound::new(),
         };
 
-        let damage = if tag.has("Damage") { tag.get::<i32>("Damage").unwrap_or(0) } else { 0 } as u32;
+        let damage = if tag.has("Damage") {
+            tag.get::<i32>("Damage").unwrap_or(0)
+        } else {
+            0
+        } as u32;
 
         ItemStack {
-            item: get_item(&UnlocalizedName::from_str(tag.get("id").unwrap_or("minecraft:air")).unwrap()).unwrap(),
+            item: get_item(
+                &UnlocalizedName::from_str(tag.get("id").unwrap_or("minecraft:air")).unwrap(),
+            )
+            .unwrap(),
             count: tag.get("Count").unwrap_or(0) as u8,
             damage,
-            nbt: tag
+            nbt: tag,
         }
     }
 
@@ -118,7 +126,7 @@ impl OptionalItemStack {
     /// Creates a new OptionalItemStack
     pub fn new(stack: Option<ItemStack>) -> Self {
         if stack.is_none() {
-            return OptionalItemStack(None)
+            return OptionalItemStack(None);
         }
         OptionalItemStack(Some(Box::new(stack.unwrap())))
     }
@@ -133,7 +141,7 @@ impl OptionalItemStack {
     pub fn write_nbt(&self, tag: &mut NbtCompound) {
         if !self.0.is_none() {
             self.0.clone().unwrap().write_nbt(tag)
-        }    
+        }
     }
 
     /// Creates a new OptionalItemStack from a nbt tag

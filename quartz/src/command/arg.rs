@@ -1,5 +1,5 @@
-use crate::Registry;
 use crate::command::executor::{CommandContext, ExecutableCommand};
+use crate::Registry;
 use lazy_static::lazy_static;
 use regex::Regex;
 
@@ -8,17 +8,21 @@ pub struct ArgumentTraverser<'cmd> {
     command: &'cmd str,
     anchor: usize,
     index: usize,
-    paused: bool
+    paused: bool,
 }
 
 impl<'cmd> ArgumentTraverser<'cmd> {
     /// Creates a traverser over the given command, stripping off the initial '/' if it exists.
     pub fn new(command: &'cmd str) -> Self {
         ArgumentTraverser {
-            command: if command.starts_with('/') { &command[1..] } else { command },
+            command: if command.starts_with('/') {
+                &command[1..]
+            } else {
+                command
+            },
             anchor: 0,
             index: 0,
-            paused: false
+            paused: false,
         }
     }
 
@@ -80,7 +84,8 @@ impl<'cmd> ArgumentTraverser<'cmd> {
 
         while self.index < self.command.len() && (in_quotes || bytes[self.index] != ' ' as u8) {
             // Manage strings
-            if (bytes[self.index] == '\'' as u8 || bytes[self.index] == '\"' as u8) && !ignore_quote {
+            if (bytes[self.index] == '\'' as u8 || bytes[self.index] == '\"' as u8) && !ignore_quote
+            {
                 if in_quotes {
                     if bytes[self.index] == quote_type {
                         in_quotes = false;
@@ -114,23 +119,23 @@ pub enum Argument<'cmd> {
     /// A signed integer argument, parsed as an `i64`.
     Integer(
         /// The argument value.
-        i64
+        i64,
     ),
     /// A floating point argument, parsed as an `f64`.
     FloatingPoint(
         /// The argument value.
-        f64
+        f64,
     ),
     /// A string argument in the form of a slice of the full command string.
     String(
         /// The argument value.
-        &'cmd str
+        &'cmd str,
     ),
     /// An executable sub-command argument, which is a wrapper around a slice of the original command.
     Command(
         /// The argument value.
-        ExecutableCommand<'cmd>
-    )
+        ExecutableCommand<'cmd>,
+    ),
 }
 
 impl<'cmd> Argument<'cmd> {
@@ -145,7 +150,7 @@ impl<'cmd> Argument<'cmd> {
             Argument::Integer(_value) => INT.is_match(argument),
             Argument::FloatingPoint(_value) => FLOAT.is_match(argument),
             Argument::String(_value) => true,
-            Argument::Command(_) => false
+            Argument::Command(_) => false,
         }
     }
 
@@ -157,32 +162,43 @@ impl<'cmd> Argument<'cmd> {
 
     /// Attempts to parse the given argument according to this argument's type. If the parse is successful, an argument
     /// of the same type is added to the context with the given name with the parsed value of the given string argument.
-    pub fn apply<'ctx, R: Registry>(&self, context: &mut CommandContext<'ctx, R>, name: &'static str, argument: &'ctx str) -> Result<(), String> {
+    pub fn apply<'ctx, R: Registry>(
+        &self,
+        context: &mut CommandContext<'ctx, R>,
+        name: &'static str,
+        argument: &'ctx str,
+    ) -> Result<(), String> {
         match self {
             Argument::Integer(_value) => {
                 let parsed = argument.parse::<i64>();
-                if parsed.is_err() {Err("Invalid Integer".to_owned())}
-                else {
-                    context.arguments.insert(name, Argument::Integer(parsed.unwrap()));
+                if parsed.is_err() {
+                    Err("Invalid Integer".to_owned())
+                } else {
+                    context
+                        .arguments
+                        .insert(name, Argument::Integer(parsed.unwrap()));
                     Ok(())
                 }
-            },
+            }
 
             Argument::FloatingPoint(_value) => {
                 let parsed = argument.parse::<f64>();
-                if parsed.is_err() {Err("Invalid Integer".to_owned())}
-                else {
-                    context.arguments.insert(name, Argument::FloatingPoint(parsed.unwrap()));
+                if parsed.is_err() {
+                    Err("Invalid Integer".to_owned())
+                } else {
+                    context
+                        .arguments
+                        .insert(name, Argument::FloatingPoint(parsed.unwrap()));
                     Ok(())
                 }
-            },
+            }
 
             Argument::String(_value) => {
                 context.arguments.insert(name, Argument::String(argument));
                 Ok(())
-            },
-            
-            Argument::Command(_) => Ok(())
+            }
+
+            Argument::Command(_) => Ok(()),
         }
     }
 }

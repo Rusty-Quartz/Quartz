@@ -1,9 +1,9 @@
+use crate::NbtCompound;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
 use std::hash::Hash;
 use std::option::NoneError;
 use std::str::FromStr;
-use crate::NbtCompound;
 
 /// Defines a type which has a full representation as a [`NbtCompound`].
 ///
@@ -55,14 +55,17 @@ pub trait NbtRepr: Sized {
 impl<K, V> NbtRepr for BTreeMap<K, V>
 where
     K: ToString + FromStr + Ord,
-    V: NbtRepr
+    V: NbtRepr,
 {
     type Error = NoneError;
 
     fn from_nbt(nbt: &NbtCompound) -> Result<Self, Self::Error> {
         let mut map: BTreeMap<K, V> = BTreeMap::new();
         for (key, tag) in nbt.as_ref().iter() {
-            map.insert(K::from_str(key).ok()?, V::from_nbt(tag.try_into().ok()?).map_err(|_| NoneError)?);
+            map.insert(
+                K::from_str(key).ok()?,
+                V::from_nbt(tag.try_into().ok()?).map_err(|_| NoneError)?,
+            );
         }
         Ok(map)
     }
@@ -84,14 +87,17 @@ where
 impl<K, V> NbtRepr for HashMap<K, V>
 where
     K: ToString + FromStr + Eq + Hash,
-    V: NbtRepr
+    V: NbtRepr,
 {
     type Error = NoneError;
 
     fn from_nbt(nbt: &NbtCompound) -> Result<Self, Self::Error> {
         let mut map: HashMap<K, V> = HashMap::new();
         for (key, tag) in nbt.as_ref().iter() {
-            map.insert(K::from_str(key).ok()?, V::from_nbt(tag.try_into().ok()?).map_err(|_| NoneError)?);
+            map.insert(
+                K::from_str(key).ok()?,
+                V::from_nbt(tag.try_into().ok()?).map_err(|_| NoneError)?,
+            );
         }
         Ok(map)
     }
