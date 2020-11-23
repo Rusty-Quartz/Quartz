@@ -1,8 +1,5 @@
-use crate::network::packet_handler::*;
-use crate::network::PacketBuffer;
-use flate2::read::ZlibDecoder;
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
+use crate::network::{packet_handler::*, PacketBuffer};
+use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use futures_lite::*;
 use log::*;
 use openssl::{
@@ -14,9 +11,11 @@ use smol::{
     lock::Mutex,
     net::TcpStream,
 };
-use std::io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result, Write};
-use std::net::Shutdown;
-use std::sync::{mpsc::Sender as StdSender, Arc};
+use std::{
+    io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result, Write},
+    net::Shutdown,
+    sync::{mpsc::Sender as StdSender, Arc},
+};
 
 /// All possible states of a client's connection to the server.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -62,7 +61,8 @@ impl IOHandle {
         source: &mut PacketBuffer,
         temp: &mut PacketBuffer,
         stream: &mut TcpStream,
-    ) -> Result<()> {
+    ) -> Result<()>
+    {
         if let Some(encrypter) = encrypter {
             temp.resize(source.len());
             encrypter.update(&source[..], &mut temp[..])?;
@@ -79,9 +79,9 @@ impl IOHandle {
             let len = buffer.len() - offset;
             self.operation_buffer.reset_cursor();
             self.operation_buffer.resize(len);
-            self.operation_buffer.write_bytes(&buffer[offset..]);
+            self.operation_buffer.write_bytes(&buffer[offset ..]);
 
-            if let Err(e) = decrypter.update(&self.operation_buffer[..], &mut buffer[offset..]) {
+            if let Err(e) = decrypter.update(&self.operation_buffer[..], &mut buffer[offset ..]) {
                 error!("Failed to decrypt packet data: {}", e);
             }
         }
@@ -91,7 +91,8 @@ impl IOHandle {
     pub fn enable_encryption(
         &mut self,
         shared_secret: &[u8],
-    ) -> std::result::Result<(), ErrorStack> {
+    ) -> std::result::Result<(), ErrorStack>
+    {
         self.encrypter = Some(Crypter::new(
             Cipher::aes_128_cfb8(),
             Mode::Encrypt,
@@ -117,7 +118,8 @@ impl IOHandle {
         &mut self,
         packet_data: &mut PacketBuffer,
         stream: &mut TcpStream,
-    ) -> Result<()> {
+    ) -> Result<()>
+    {
         // Prepare the operation buffer
         self.operation_buffer.clear();
         let result: Result<()>;
@@ -197,7 +199,8 @@ impl IOHandle {
         packet_buffer: &mut PacketBuffer,
         stream: &mut TcpStream,
         decrypt: bool,
-    ) -> Result<usize> {
+    ) -> Result<usize>
+    {
         if decrypt {
             self.decrypt_buffer(&mut *packet_buffer, 0);
         }
@@ -235,7 +238,7 @@ impl IOHandle {
         if raw_len > packet_buffer.len() {
             let end = packet_buffer.len();
             packet_buffer.resize(raw_len);
-            match stream.read_exact(&mut packet_buffer[end..]).await {
+            match stream.read_exact(&mut packet_buffer[end ..]).await {
                 Ok(_) => self.decrypt_buffer(&mut *packet_buffer, end),
                 Err(e) => return Err(e),
             }
@@ -246,32 +249,31 @@ impl IOHandle {
             self.operation_buffer.clear();
             // Write all bytes including any potential bytes that are part of another packet
             self.operation_buffer
-                .write_bytes(&packet_buffer[packet_buffer.cursor()..]);
+                .write_bytes(&packet_buffer[packet_buffer.cursor() ..]);
 
             // Only decompress to the end of this packet
             let compressed_end = raw_len - packet_buffer.cursor();
-            let mut decoder = ZlibDecoder::new(&self.operation_buffer[..compressed_end]);
+            let mut decoder = ZlibDecoder::new(&self.operation_buffer[.. compressed_end]);
 
             // Prepare the packet buffer for decompression
             packet_buffer.resize(data_len);
             packet_buffer.reset_cursor();
 
             match decoder.read(&mut packet_buffer[..]) {
-                Ok(read) => {
+                Ok(read) =>
                     if read != data_len {
                         return Err(IoError::new(
                             IoErrorKind::InvalidData,
                             "Failed to decompress packet",
                         ));
-                    }
-                }
+                    },
                 Err(e) => return Err(e),
             };
 
             // Copy any bytes at the end of the buffer that were not part of this packet
             if self.operation_buffer.len() > compressed_end {
                 packet_buffer.set_cursor(packet_buffer.len());
-                packet_buffer.write_bytes(&self.operation_buffer[compressed_end..]);
+                packet_buffer.write_bytes(&self.operation_buffer[compressed_end ..]);
                 packet_buffer.reset_cursor();
             }
         }
@@ -337,7 +339,8 @@ impl AsyncClientConnection {
         id: usize,
         stream: TcpStream,
         sync_packet_sender: StdSender<WrappedServerBoundPacket>,
-    ) -> Self {
+    ) -> Self
+    {
         AsyncClientConnection {
             id,
             stream,
@@ -428,7 +431,8 @@ impl AsyncClientConnection {
     pub async fn initiate_encryption(
         &mut self,
         shared_secret: &[u8],
-    ) -> std::result::Result<(), ErrorStack> {
+    ) -> std::result::Result<(), ErrorStack>
+    {
         self.io_handle.lock().await.enable_encryption(shared_secret)
     }
 

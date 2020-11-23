@@ -1,6 +1,4 @@
-use crate::command::executor::*;
-use crate::server::RUNNING;
-use crate::Registry;
+use crate::{command::executor::*, server::RUNNING, Registry};
 use chat::{color::PredefinedColor, Component, TextComponentBuilder};
 use log::info;
 use std::sync::atomic::Ordering;

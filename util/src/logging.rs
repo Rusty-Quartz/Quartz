@@ -1,30 +1,34 @@
-use std::fmt;
-use std::fs::{read_dir, remove_file, rename, File};
-use std::io;
-use std::sync::{Arc, Mutex as StdMutex};
-use std::thread;
-use std::{error::Error, path::Path};
-
-use flate2::write::GzEncoder;
-use flate2::Compression;
-
-use log4rs::append::{
-    rolling_file::{
-        policy::compound::{roll::Roll, trigger::Trigger, CompoundPolicy},
-        LogFile, RollingFileAppender,
-    },
-    Append,
+use std::{
+    error::Error,
+    fmt,
+    fs::{read_dir, remove_file, rename, File},
+    io,
+    path::Path,
+    sync::{Arc, Mutex as StdMutex},
+    thread,
 };
-use log4rs::config::{Appender, Config, Root};
-use log4rs::encode::pattern::PatternEncoder;
-use log4rs::filter::{Filter, Response};
+
+use flate2::{write::GzEncoder, Compression};
+
+use log4rs::{
+    append::{
+        rolling_file::{
+            policy::compound::{roll::Roll, trigger::Trigger, CompoundPolicy},
+            LogFile,
+            RollingFileAppender,
+        },
+        Append,
+    },
+    config::{Appender, Config, Root},
+    encode::pattern::PatternEncoder,
+    filter::{Filter, Response},
+};
 
 use log::*;
 
 use chrono::prelude::*;
 
-use linefeed::terminal::DefaultTerminal;
-use linefeed::Interface;
+use linefeed::{terminal::DefaultTerminal, Interface};
 
 #[cfg(unix)]
 use termion::color;
@@ -48,7 +52,8 @@ const LEVEL_FILTER: LevelFilter = LevelFilter::Info;
 pub fn init_logger(
     crate_filter: &str,
     console_interface: Arc<Interface<DefaultTerminal>>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>>
+{
     // Logs info to the console with colors and such
     let console = CustomConsoleAppender { console_interface };
 
@@ -125,13 +130,12 @@ impl Filter for CrateFilter {
         }
 
         match record.module_path() {
-            Some(path) => {
+            Some(path) =>
                 if path.starts_with(&self.filter) {
                     Response::Accept
                 } else {
                     Response::Reject
-                }
-            }
+                },
             None => Response::Reject,
         }
     }
@@ -266,7 +270,7 @@ impl CustomLogRoller {
         let dash_index = path.rfind("-")?;
         let dot_index = path.find(".")?;
         if dash_index + 1 < dot_index {
-            path[dash_index + 1..dot_index].parse::<u32>().ok()
+            path[dash_index + 1 .. dot_index].parse::<u32>().ok()
         } else {
             None
         }
@@ -276,7 +280,8 @@ impl CustomLogRoller {
         &self,
         file: &Path,
         threaded: bool,
-    ) -> Result<(), Box<dyn Error + Sync + Send>> {
+    ) -> Result<(), Box<dyn Error + Sync + Send>>
+    {
         let mut guard = match self.name_info.lock() {
             Ok(g) => g,
 

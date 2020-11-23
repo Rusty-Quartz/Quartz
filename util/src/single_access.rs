@@ -1,7 +1,9 @@
-use std::cell::{Cell, UnsafeCell};
-use std::marker::Unsize;
-use std::ops::{CoerceUnsized, Deref, DerefMut};
-use std::ptr;
+use std::{
+    cell::{Cell, UnsafeCell},
+    marker::Unsize,
+    ops::{CoerceUnsized, Deref, DerefMut},
+    ptr,
+};
 
 pub struct SingleAccessor<T> {
     value: UnsafeCell<T>,

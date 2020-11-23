@@ -1,7 +1,8 @@
-use std::mem;
-use std::ops::{Index, IndexMut};
-use std::slice::Iter;
-use std::slice::IterMut;
+use std::{
+    mem,
+    ops::{Index, IndexMut},
+    slice::{Iter, IterMut},
+};
 
 /// Represents an object which has a usize as a modifiable ID.
 pub trait Identify {
@@ -104,9 +105,10 @@ impl<T: Identify> IndexMut<usize> for IdList<T> {
 // Creates an iterator that essentially performs the flatten operation on another iterator
 macro_rules! id_list_iter {
     ($name:ident, $itype:ty, $wrapped_itype:ty) => {
-        #[doc = "A custom iterator over an ID list which skips over empty elements in the ID list's internal vec."]
+        #[doc = "A custom iterator over an ID list which skips over empty elements in the ID \
+         list's internal vec."]
         pub struct $name<'a, T: 'a, I: Iterator<Item = $wrapped_itype>> {
-            inner: I
+            inner: I,
         }
 
         impl<'a, T, I: Iterator<Item = $wrapped_itype>> Iterator for $name<'a, T, I> {
@@ -116,7 +118,7 @@ macro_rules! id_list_iter {
                 while let Some(value) = self.inner.next() {
                     match value {
                         Some(item) => return Some(item),
-                        None => continue
+                        None => continue,
                     }
                 }
 

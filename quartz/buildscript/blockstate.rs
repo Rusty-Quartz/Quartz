@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
-use std::env;
-use std::fs;
-use std::path::Path;
+use std::{
+    collections::{BTreeMap, HashMap},
+    env,
+    fs,
+    path::Path,
+};
 
 pub fn gen_blockstates() {
     // set the output file
@@ -40,9 +42,9 @@ fn find_shared_properties(data: &HashMap<String, RawBlockInfo>) -> Vec<PropertyD
         for (property_name, _) in state_info.properties.iter() {
             let mut name_split = property_name.split('_');
             let mut cased_name = String::new();
-            for i in 0..name_split.clone().count() {
+            for i in 0 .. name_split.clone().count() {
                 let mut second_word = name_split.next().unwrap().to_owned();
-                second_word[..1].make_ascii_uppercase();
+                second_word[.. 1].make_ascii_uppercase();
                 if property_name == "has_book" {
                     println!("{}{}", if i > 0 { "_" } else { "" }, second_word)
                 }
@@ -98,14 +100,14 @@ fn find_shared_properties(data: &HashMap<String, RawBlockInfo>) -> Vec<PropertyD
                             let differences = get_differences(&property_values, block_properties);
 
                             let mut ending: String =
-                                differences.iter().map(|v| v[..1].to_owned()).collect();
+                                differences.iter().map(|v| v[.. 1].to_owned()).collect();
                             ending.make_ascii_uppercase();
 
                             if ending.len() == 0 {
                                 let differences =
                                     get_differences(block_properties, &property_values);
                                 let mut ending: String =
-                                    differences.iter().map(|v| v[..1].to_owned()).collect();
+                                    differences.iter().map(|v| v[.. 1].to_owned()).collect();
                                 ending.make_ascii_uppercase();
                                 enum_name.push_str(&ending);
                             }
@@ -188,7 +190,7 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
                 ))
             } else if is_bool {
                 let mut var_name = value.clone();
-                var_name[..1].make_ascii_uppercase();
+                var_name[.. 1].make_ascii_uppercase();
                 curr_enum.push_str(&format!("\n\t{},", snake_to_camel(&var_name)))
             } else {
                 curr_enum.push_str(&format!("\n\t{},", snake_to_camel(&value.clone())));
@@ -229,7 +231,7 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
                 format!("{}{}", snake_to_camel(&original_name), value.clone())
             } else if value.parse::<bool>().is_ok() {
                 let mut var_name = value.clone();
-                var_name[..1].make_ascii_uppercase();
+                var_name[.. 1].make_ascii_uppercase();
                 snake_to_camel(&var_name)
             } else {
                 snake_to_camel(&value.clone())
@@ -249,7 +251,8 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
 fn update_block_property_names(
     block_data: &mut HashMap<String, RawBlockInfo>,
     property_data: &Vec<PropertyData>,
-) {
+)
+{
     for property in property_data {
         // replace the original name with the enum name
         let og_name = get_original_property_name(property);
@@ -272,7 +275,8 @@ fn update_block_property_names(
 fn gen_default_states(
     block_data: &mut HashMap<String, RawBlockInfo>,
     property_data: &Vec<PropertyData>,
-) {
+)
+{
     for (block_name, block_info) in block_data.iter_mut() {
         let default_state_raw = block_info
             .states
@@ -296,7 +300,7 @@ fn gen_default_states(
                 format!("{}{}", snake_to_camel(&prop_name), value.clone())
             } else if value.parse::<bool>().is_ok() {
                 let mut var_name = value.clone();
-                var_name[..1].make_ascii_uppercase();
+                var_name[.. 1].make_ascii_uppercase();
                 snake_to_camel(&var_name)
             } else {
                 snake_to_camel(&value.clone())
@@ -384,7 +388,10 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> String {
         ));
 
         // Property value update
-        block_struct.push_str("pub(crate) fn with_property(mut self, name: &str, value: &str) -> Option<Self> { match name {");
+        block_struct.push_str(
+            "pub(crate) fn with_property(mut self, name: &str, value: &str) -> Option<Self> { \
+             match name {",
+        );
         block_struct.push_str(&with_property);
         block_struct.push_str("_ => return None } Some(self) }");
 
@@ -441,7 +448,10 @@ fn gen_struct_enum(block_data: &HashMap<String, RawBlockInfo>) -> String {
 fn gen_name_lookup(block_data: &HashMap<String, RawBlockInfo>) -> String {
     let mut lookup = String::new();
 
-    lookup.push_str("pub(crate) static BLOCK_LOOKUP_BY_NAME: phf::Map<&'static str, BlockStateMetadata> = phf_map! {");
+    lookup.push_str(
+        "pub(crate) static BLOCK_LOOKUP_BY_NAME: phf::Map<&'static str, BlockStateMetadata> = \
+         phf_map! {",
+    );
     for (name, info) in block_data.iter() {
         let snake_name = get_block_name(name);
         let camel_name = snake_to_camel(&snake_name);
@@ -466,7 +476,7 @@ fn vec_match(first: &Vec<String>, second: &Vec<String>) -> bool {
     if first.len() != second.len() {
         false
     } else {
-        for i in 0..first.len() {
+        for i in 0 .. first.len() {
             if first.get(i) != second.get(i) {
                 return false;
             }
@@ -490,7 +500,7 @@ fn snake_to_camel(str: &str) -> String {
         if part == "" {
             continue;
         }
-        word[..1].make_ascii_uppercase();
+        word[.. 1].make_ascii_uppercase();
         output.push_str(&word);
     }
     output
@@ -505,7 +515,7 @@ fn get_original_property_name(property: &PropertyData) -> String {
         split_name.clone().collect::<String>(),
         property.name
     );
-    for i in 0..split_name.clone().count() - offset {
+    for i in 0 .. split_name.clone().count() - offset {
         lowercase_name.push_str(&format!(
             "{}{}",
             if i > 0 { "_" } else { "" },

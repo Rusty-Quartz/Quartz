@@ -1,7 +1,8 @@
-use crate::command::arg::*;
-use crate::command::CommandSender;
-use crate::QuartzServer;
-use crate::Registry;
+use crate::{
+    command::{arg::*, CommandSender},
+    QuartzServer,
+    Registry,
+};
 use chat::{color::PredefinedColor, Component};
 use std::collections::HashMap;
 
@@ -127,13 +128,12 @@ impl<R: Registry> CommandExecutor<R> {
                         argument,
                         default,
                         ..
-                    } => {
+                    } =>
                         if *default {
                             state.current_node = child;
                             context.arguments.insert(base.name, argument.clone());
                             continue 'default_loop;
-                        }
-                    }
+                        },
                     _ => continue,
                 }
             }
@@ -172,7 +172,8 @@ impl<R: Registry> CommandExecutor<R> {
         command: &str,
         server: &mut QuartzServer<R>,
         sender: CommandSender,
-    ) -> Vec<String> {
+    ) -> Vec<String>
+    {
         let mut context = CommandContext::new(server, self, sender);
         let mut raw_args = ArgumentTraverser::new(command);
 
@@ -367,7 +368,8 @@ impl<'cmd, R: Registry> CommandContext<'cmd, R> {
         server: &'cmd mut QuartzServer<R>,
         executor: &'cmd CommandExecutor<R>,
         sender: CommandSender,
-    ) -> Self {
+    ) -> Self
+    {
         CommandContext {
             server,
             executor,
@@ -489,7 +491,8 @@ impl<R: Registry> CommandNode<R> {
     fn redirection(
         name: &'static str,
         selector: for<'cmd> fn(&ParserState<'cmd, R>) -> ParserRedirection<'cmd, R>,
-    ) -> Self {
+    ) -> Self
+    {
         CommandNode::Redirection {
             base: NodeBase::new(name),
             selector,
@@ -560,7 +563,8 @@ impl<R: Registry> CommandNode<R> {
         state: &mut ParserState<'cmd, R>,
         context: &mut CommandContext<'cmd, R>,
         arg: &'cmd str,
-    ) -> Result<(), Component> {
+    ) -> Result<(), Component>
+    {
         match self {
             CommandNode::Argument { base, argument, .. } => {
                 argument.apply(context, base.name, arg).map_err(|e| {
@@ -658,7 +662,8 @@ impl<R: Registry> CommandNode<R> {
         context: &CommandContext<'_, R>,
         arg: &str,
         suggestions: &mut Vec<String>,
-    ) {
+    )
+    {
         match self {
             CommandNode::Literal { base, .. } => suggestions.push(base.name.to_owned()),
             CommandNode::Argument { suggester, .. } => match suggester {

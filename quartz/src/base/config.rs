@@ -1,10 +1,11 @@
-use chat::cfmt::parse_cfmt;
-use chat::Component;
+use chat::{cfmt::parse_cfmt, Component};
 use log::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fs::{File, OpenOptions};
-use std::io::{self, prelude::*, Read, SeekFrom, Write};
-use std::path::Path;
+use std::{
+    fs::{File, OpenOptions},
+    io::{self, prelude::*, Read, SeekFrom, Write},
+    path::Path,
+};
 
 /// The main server configuration.
 #[derive(Serialize, Deserialize)]
@@ -26,16 +27,12 @@ pub struct Config {
 // Custom ser/de functions
 impl Config {
     fn serialize_motd<S>(_component: &Component, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    where S: Serializer {
         serializer.serialize_str("A Minecraft Server")
     }
 
     fn deserialize_motd<'de, D>(deserializer: D) -> Result<Component, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    where D: Deserializer<'de> {
         let cfmt: &'de str = Deserialize::deserialize(deserializer)?;
 
         match parse_cfmt(cfmt) {

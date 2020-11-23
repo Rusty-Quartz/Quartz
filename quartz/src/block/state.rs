@@ -84,14 +84,13 @@ impl DynamicBlockState {
 
                 match self.handle.properties.iter().next() {
                     // The entry is in the form (property_name, all_property_values)
-                    Some(entry) => {
+                    Some(entry) =>
                         state_id
                             + entry
                                 .1
                                 .iter()
                                 .position(|value| value == state_property_value)
-                                .unwrap_or(0) as DynamicStateID
-                    }
+                                .unwrap_or(0) as DynamicStateID,
                     None => state_id,
                 }
             }

@@ -1,31 +1,32 @@
-use crate::command::*;
-use crate::item::init_items;
-use crate::network::*;
-use crate::Config;
-use crate::Registry;
+use crate::{command::*, item::init_items, network::*, Config, Registry};
 use futures_lite::future;
 use linefeed::{
     complete::{Completer, Completion, Suffix},
     prompter::Prompter,
-    DefaultTerminal, Interface, ReadResult,
+    DefaultTerminal,
+    Interface,
+    ReadResult,
 };
 use log::*;
 use openssl::rsa::Rsa;
 use quartz_plugins::PluginManager;
 use smol::{net::TcpListener, LocalExecutor, Timer};
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::error::Error;
-use std::net::TcpStream as StdTcpStream;
-use std::path::Path;
-use std::rc::Rc;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    mpsc::{self, Receiver, Sender},
-    Arc, Mutex,
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    error::Error,
+    net::TcpStream as StdTcpStream,
+    path::Path,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, Sender},
+        Arc,
+        Mutex,
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, SystemTime},
 };
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime};
 
 /// The string form of the minecraft version quartz currently supports.
 pub const VERSION: &str = "1.16.1";
@@ -100,7 +101,10 @@ impl<R: Registry> QuartzServer<R> {
         match self.command_executor.try_borrow_mut() {
             Ok(mut executor) => init_commands(&mut *executor),
             Err(_) => {
-                error!("Internal error: could not borrow command_executor as mutable during initialization.");
+                error!(
+                    "Internal error: could not borrow command_executor as mutable during \
+                     initialization."
+                );
                 return false;
             }
         }
@@ -147,7 +151,8 @@ impl<R: Registry> QuartzServer<R> {
                 prompter: &Prompter<'_, '_, DefaultTerminal>,
                 _start: usize,
                 _end: usize,
-            ) -> Option<Vec<Completion>> {
+            ) -> Option<Vec<Completion>>
+            {
                 // Retrieve the packet pipe
                 let pipe = match self.packet_pipe.lock() {
                     Ok(pipe) => pipe,
@@ -162,7 +167,7 @@ impl<R: Registry> QuartzServer<R> {
                     0,
                     ServerBoundPacket::HandleConsoleCompletion {
                         // Take the slice of the command up to the cursor
-                        command: prompter.buffer()[..prompter.cursor()].to_owned(),
+                        command: prompter.buffer()[.. prompter.cursor()].to_owned(),
                         response: sender,
                     },
                 ))
@@ -193,28 +198,37 @@ impl<R: Registry> QuartzServer<R> {
 
         // Drive the command reader
         let packet_pipe = self.sync_packet_sender.clone();
-        self.add_join_handle("Console Command Reader", thread::spawn(move || {
-            while RUNNING.load(Ordering::Relaxed) {
-                // Check for a new command every 50ms
-                match interface.read_line_step(Some(Duration::from_millis(50))) {
-                    Ok(result) => match result {
-                        Some(ReadResult::Input(command)) => {
-                            interface.add_history_unique(command.clone());
+        self.add_join_handle(
+            "Console Command Reader",
+            thread::spawn(move || {
+                while RUNNING.load(Ordering::Relaxed) {
+                    // Check for a new command every 50ms
+                    match interface.read_line_step(Some(Duration::from_millis(50))) {
+                        Ok(result) => match result {
+                            Some(ReadResult::Input(command)) => {
+                                interface.add_history_unique(command.clone());
 
-                            // Forward the command to the server thread
-                            let packet = WrappedServerBoundPacket::new(0, ServerBoundPacket::HandleConsoleCommand {
-                                command: command.trim().to_owned()
-                            });
-                            if let Err(e) = packet_pipe.send(packet) {
-                                error!("Failed to forward console command to server thread: {}", e);
+                                // Forward the command to the server thread
+                                let packet = WrappedServerBoundPacket::new(
+                                    0,
+                                    ServerBoundPacket::HandleConsoleCommand {
+                                        command: command.trim().to_owned(),
+                                    },
+                                );
+                                if let Err(e) = packet_pipe.send(packet) {
+                                    error!(
+                                        "Failed to forward console command to server thread: {}",
+                                        e
+                                    );
+                                }
                             }
+                            _ => {}
                         },
-                        _ => {}
-                    },
-                    Err(e) => error!("Failed to read console input: {}", e)
+                        Err(e) => error!("Failed to read console input: {}", e),
+                    }
                 }
-            }
-        }));
+            }),
+        );
     }
 }
 
@@ -241,7 +255,8 @@ impl<R: Registry> QuartzServer<R> {
     async fn tcp_server(
         listener: TcpListener,
         sync_packet_sender: Sender<WrappedServerBoundPacket>,
-    ) {
+    )
+    {
         let mut next_connection_id: usize = 0;
 
         info!("Started TCP Server Thread");
@@ -320,9 +335,8 @@ impl<R: Registry> QuartzServer<R> {
     async fn handle_packets(&mut self) {
         while let Ok(wrapped_packet) = self.sync_packet_receiver.try_recv() {
             match wrapped_packet.packet {
-                ServerBoundPacket::ClientConnected { id, write_handle } => {
-                    self.client_list.add_client(id, write_handle)
-                }
+                ServerBoundPacket::ClientConnected { id, write_handle } =>
+                    self.client_list.add_client(id, write_handle),
                 ServerBoundPacket::ClientDisconnected { id } => self.client_list.remove_client(id),
                 _ => dispatch_sync_packet(&wrapped_packet, self).await,
             }

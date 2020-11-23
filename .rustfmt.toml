@@ -5,3 +5,20 @@ use_try_shorthand = true
 max_width = 100
 use_small_heuristics = "Default"
 fn_args_layout = "Tall"
+
+unstable_features = true
+
+blank_lines_upper_bound = 2
+brace_style = "PreferSameLine"
+condense_wildcard_suffixes = true
+control_brace_style = "AlwaysSameLine"
+format_strings = true
+imports_layout = "HorizontalVertical"
+match_arm_blocks = false
+merge_imports = true
+overflow_delimited_expr = true
+reorder_impl_items = true
+space_after_colon = true
+spaces_around_ranges = true
+trailing_semicolon = true
+where_single_line = true

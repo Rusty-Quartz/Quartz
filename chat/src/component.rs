@@ -1,5 +1,7 @@
-use std::fmt::{self, Display, Formatter};
-use std::str;
+use std::{
+    fmt::{self, Display, Formatter},
+    str,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;

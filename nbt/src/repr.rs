@@ -1,9 +1,11 @@
 use crate::NbtCompound;
-use std::collections::{BTreeMap, HashMap};
-use std::convert::TryInto;
-use std::hash::Hash;
-use std::option::NoneError;
-use std::str::FromStr;
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+    hash::Hash,
+    option::NoneError,
+    str::FromStr,
+};
 
 /// Defines a type which has a full representation as a [`NbtCompound`].
 ///

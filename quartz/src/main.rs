@@ -1,9 +1,7 @@
 use linefeed::Interface;
 use log::error;
 use quartz::{config::load_config, registry::StaticRegistry, util::logging, Config, QuartzServer};
-use std::error::Error;
-use std::path::Path;
-use std::sync::Arc;
+use std::{error::Error, path::Path, sync::Arc};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let console_interface = Arc::new(Interface::new("quartz-server")?);
@@ -24,8 +22,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     server.init();
 
-    use quartz::world::chunk::ChunkProvider;
-    use quartz::world::location::CoordinatePair;
+    use quartz::world::{chunk::ChunkProvider, location::CoordinatePair};
     let mut provider: ChunkProvider<StaticRegistry> = ChunkProvider::new(
         "world",
         Path::new("/hd-pa/projects/FarLands2/run/world/region"),

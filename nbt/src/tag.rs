@@ -1,16 +1,18 @@
-use crate::snbt::SnbtParser;
-use crate::NbtRepr;
+use crate::{snbt::SnbtParser, NbtRepr};
 use chat::{
     color::PredefinedColor,
     component::{ToComponent, ToComponentParts},
-    Component, TextComponentBuilder,
+    Component,
+    TextComponentBuilder,
 };
-use std::collections::HashMap;
-use std::convert::{AsMut, AsRef, TryFrom, TryInto};
-use std::fmt;
-use std::ops::{Index, IndexMut};
-use std::option::NoneError;
-use std::str::FromStr;
+use std::{
+    collections::HashMap,
+    convert::{AsMut, AsRef, TryFrom, TryInto},
+    fmt,
+    ops::{Index, IndexMut},
+    option::NoneError,
+    str::FromStr,
+};
 
 /// The generic NBT tag type, containing all supported tag variants which wrap around a corresponding rust type.
 #[derive(Clone)]
@@ -463,8 +465,7 @@ impl NbtList {
     pub fn clone_from<'a, T, L>(list: &'a L) -> Self
     where
         T: Clone + Into<NbtTag> + 'a,
-        &'a L: IntoIterator<Item = &'a T>,
-    {
+        &'a L: IntoIterator<Item = &'a T>, {
         NbtList(list.into_iter().map(|x| x.clone().into()).collect())
     }
 
@@ -476,8 +477,7 @@ impl NbtList {
     pub fn clone_repr_from<'a, T, L>(list: &'a L) -> Self
     where
         T: NbtRepr + 'a,
-        &'a L: IntoIterator<Item = &'a T>,
-    {
+        &'a L: IntoIterator<Item = &'a T>, {
         NbtList(list.into_iter().map(|x| x.to_nbt().into()).collect())
     }
 
@@ -496,8 +496,7 @@ impl NbtList {
     pub fn iter_into_repr<T>(&self) -> impl Iterator<Item = Result<T, T::Error>> + '_
     where
         T: NbtRepr,
-        T::Error: From<NoneError>,
-    {
+        T::Error: From<NoneError>, {
         self.0.iter().map(|tag| T::from_nbt(tag.try_into()?))
     }
 
@@ -505,8 +504,7 @@ impl NbtList {
     where
         T: Clone + 'a,
         &'a T: TryFrom<&'a NbtTag>,
-        L: Extend<T>,
-    {
+        L: Extend<T>, {
         list.extend(
             self.0
                 .iter()
@@ -518,8 +516,7 @@ impl NbtList {
     where
         T: NbtRepr,
         T::Error: From<NoneError>,
-        L: Extend<T>,
-    {
+        L: Extend<T>, {
         list.extend(self.0.iter().flat_map(|tag| T::from_nbt(tag.try_into()?)));
     }
 
@@ -652,8 +649,7 @@ impl NbtCompound {
     where
         K: ToString + 'a,
         V: Clone + Into<NbtTag> + 'a,
-        &'a M: IntoIterator<Item = (&'a K, &'a V)>,
-    {
+        &'a M: IntoIterator<Item = (&'a K, &'a V)>, {
         NbtCompound(
             map.into_iter()
                 .map(|(key, value)| (key.to_string(), value.clone().into()))
@@ -665,8 +661,7 @@ impl NbtCompound {
     where
         K: ToString + 'a,
         V: NbtRepr + 'a,
-        &'a M: IntoIterator<Item = (&'a K, &'a V)>,
-    {
+        &'a M: IntoIterator<Item = (&'a K, &'a V)>, {
         NbtCompound(
             map.into_iter()
                 .map(|(key, value)| (key.to_string(), value.to_nbt().into()))
@@ -686,11 +681,12 @@ impl NbtCompound {
         self.0.iter_mut().map(|(key, tag)| (key, T::try_from(tag)))
     }
 
-    pub fn iter_into_repr<T>(&self) -> impl Iterator<Item = (&'_ String, Result<T, T::Error>)> + '_
+    pub fn iter_into_repr<T>(
+        &self,
+    ) -> impl Iterator<Item = (&'_ String, Result<T, T::Error>)> + '_
     where
         T: NbtRepr,
-        T::Error: From<NoneError>,
-    {
+        T::Error: From<NoneError>, {
         self.0
             .iter()
             .map(|(key, tag)| match TryInto::<&NbtCompound>::try_into(tag) {
@@ -704,8 +700,7 @@ impl NbtCompound {
         K: FromStr,
         V: Clone + 'a,
         &'a V: TryFrom<&'a NbtTag>,
-        M: Extend<(K, V)>,
-    {
+        M: Extend<(K, V)>, {
         map.extend(self.0.iter().flat_map(|(key, tag)| {
             Some((
                 K::from_str(key).ok()?,
@@ -718,8 +713,7 @@ impl NbtCompound {
     where
         K: FromStr,
         V: NbtRepr,
-        M: Extend<(K, V)>,
-    {
+        M: Extend<(K, V)>, {
         map.extend(self.0.iter().flat_map(|(key, tag)| {
             Some((K::from_str(key).ok()?, V::from_nbt(tag.try_into()?).ok()?))
         }));
@@ -841,7 +835,7 @@ impl ToComponentParts for NbtCompound {
                     components.push(Component::text(format!(", {}", quote)));
                 }
                 components.push(Component::colored(
-                    snbt_key[1..snbt_key.len() - 1].to_owned(),
+                    snbt_key[1 .. snbt_key.len() - 1].to_owned(),
                     PredefinedColor::Aqua,
                 ));
                 components.push(Component::text(format!("{}: ", quote)));

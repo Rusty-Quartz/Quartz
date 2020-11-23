@@ -62,7 +62,7 @@ impl Inventory {
     pub fn from_tag(&mut self, nbt: &NbtCompound) {
         let list = nbt.get::<&NbtList>("Items").unwrap();
 
-        for i in 0..list.len() {
+        for i in 0 .. list.len() {
             // List has to have a element at every index because even slots without items need to have an empty stack
             let compound = list.get::<&NbtCompound>(i).unwrap();
             let slot = compound.get("Slot").unwrap_or(0) as usize;
@@ -88,7 +88,7 @@ impl Inventory {
     pub fn write_tag(&self, tag: &mut NbtCompound) {
         let mut list = NbtList::new();
 
-        for i in 0..self.size {
+        for i in 0 .. self.size {
             let mut slot_tag = NbtCompound::new();
 
             slot_tag.set("Slot".to_owned(), i as i8);

@@ -6,8 +6,7 @@ use log::info;
 use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use serde_json::from_str;
-use std::collections::HashMap;
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 use util::UnlocalizedName;
 
 static ITEM_LIST: OnceCell<HashMap<UnlocalizedName, Item>> = OnceCell::new();
@@ -44,15 +43,12 @@ pub fn init_items() {
             name
         );
 
-        item_list.insert(
-            uln.clone(),
-            Item {
-                id: uln,
-                stack_size: raw_data.stack_size,
-                rarity: raw_data.rarity,
-                item_info: raw_data.info,
-            },
-        );
+        item_list.insert(uln.clone(), Item {
+            id: uln,
+            stack_size: raw_data.stack_size,
+            rarity: raw_data.rarity,
+            item_info: raw_data.info,
+        });
     }
 
     match ITEM_LIST.set(item_list) {

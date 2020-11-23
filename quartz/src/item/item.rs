@@ -1,5 +1,4 @@
-use crate::item::get_item;
-use crate::item::ItemInfo;
+use crate::item::{get_item, ItemInfo};
 use nbt::NbtCompound;
 use std::str::FromStr;
 use util::UnlocalizedName;

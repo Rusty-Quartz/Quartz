@@ -15,6 +15,4 @@ pub mod snbt;
 pub mod write;
 
 pub use repr::NbtRepr;
-pub use tag::NbtCompound;
-pub use tag::NbtList;
-pub use tag::NbtTag;
+pub use tag::{NbtCompound, NbtList, NbtTag};

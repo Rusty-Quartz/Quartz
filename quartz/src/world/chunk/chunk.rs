@@ -1,12 +1,13 @@
-use crate::block::{BlockState, StateBuilder};
-use crate::world::location::{BlockPosition, ChunkCoordinatePair, CoordinatePair};
-use crate::Registry;
+use crate::{
+    block::{BlockState, StateBuilder},
+    world::location::{BlockPosition, ChunkCoordinatePair, CoordinatePair},
+    Registry,
+};
 use array_init::array_init;
 use log::{error, warn};
 use nbt::{NbtCompound, NbtList};
 use num_traits::Zero;
-use std::collections::HashMap;
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 use util::{
     single_access::{AccessGuard, SingleAccessor},
     UnlocalizedName,
@@ -104,7 +105,8 @@ impl<R: Registry> Chunk<R> {
     pub fn block_entity_at(
         &self,
         absolute_position: BlockPosition,
-    ) -> Option<AccessGuard<'_, R::BlockEntity>> {
+    ) -> Option<AccessGuard<'_, R::BlockEntity>>
+    {
         self.block_entities.get(&absolute_position)?.take()
     }
 }

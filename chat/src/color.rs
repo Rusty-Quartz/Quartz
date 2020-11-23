@@ -46,9 +46,7 @@ impl Color {
     // Serde support functions for the custom color type
 
     fn serialize_custom<S>(r: &u8, g: &u8, b: &u8, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    where S: Serializer {
         serializer.serialize_str(&format!(
             "#{:06X}",
             (*r as u32) << 16 | (*g as u32) << 8 | (*b as u32)
@@ -56,9 +54,7 @@ impl Color {
     }
 
     fn deserialize_custom<'de, D>(deserializer: D) -> Result<(u8, u8, u8), D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    where D: Deserializer<'de> {
         let value: &'de str = Deserialize::deserialize(deserializer)?;
 
         if value.is_empty() {
@@ -73,7 +69,7 @@ impl Color {
             ));
         }
 
-        if let Ok(rgb) = u32::from_str_radix(&value[1..], 16) {
+        if let Ok(rgb) = u32::from_str_radix(&value[1 ..], 16) {
             Ok(((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8))
         } else {
             Err(de::Error::custom(

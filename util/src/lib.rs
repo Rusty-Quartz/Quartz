@@ -123,7 +123,7 @@ mod tests {
         let cell2 = RefCell::new(0_i32);
 
         bencher.iter(move || {
-            for _ in 0..1000 {
+            for _ in 0 .. 1000 {
                 let mut ref1 = cell1.borrow_mut();
                 *ref1 += 1;
                 assert!(cell1.try_borrow_mut().is_err());
@@ -142,7 +142,7 @@ mod tests {
         let sa2 = SingleAccessor::new(0_i32);
 
         bencher.iter(move || {
-            for _ in 0..1000 {
+            for _ in 0 .. 1000 {
                 let mut locmov1 = sa1.take().unwrap();
                 *locmov1 += 1;
                 assert!(sa1.take().is_none());

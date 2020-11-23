@@ -1,9 +1,6 @@
 use serde::Deserialize;
 use serde_json;
-use std::collections::HashMap;
-use std::env;
-use std::fs;
-use std::path::Path;
+use std::{collections::HashMap, env, fs, path::Path};
 
 const INVALID_MACRO: &str = r#"macro_rules! invalid_packet {
     ($id:expr, $len:expr) => {
@@ -248,10 +245,15 @@ fn gen_serializers(client_bound: &Vec<Packet>, mappings: &Mappings) -> String {
         for field in &packet.fields {
             if field.option {
                 packet_str.push_str(&format!(
-                    "\n\t\t\tmatch {} {{\n\t\t\t\tSome({}) => {{{}}},\n\t\t\t\tNone => {{}}\n\t\t\t}}",
+                    "\n\t\t\tmatch {} {{\n\t\t\t\tSome({}) => {{{}}},\n\t\t\t\tNone => \
+                     {{}}\n\t\t\t}}",
                     field.name,
                     field.name,
-                    if field.array {array_serializer(field, mappings)} else {serializer(field, mappings)}
+                    if field.array {
+                        array_serializer(field, mappings)
+                    } else {
+                        serializer(field, mappings)
+                    }
                 ))
             } else {
                 packet_str.push_str(&if field.array {
@@ -353,7 +355,7 @@ fn parse_type(field: &str, mappings: &HashMap<String, String>) -> String {
 
 fn snake_to_camel(str: &str) -> String {
     str.split("_").fold(String::new(), |mut i, s| {
-        i.push_str(&(s[..1].to_ascii_uppercase() + &s[1..].to_owned()));
+        i.push_str(&(s[.. 1].to_ascii_uppercase() + &s[1 ..].to_owned()));
         i
     })
 }
@@ -407,7 +409,7 @@ impl Packet {
         output
             .chars()
             .next()
-            .map(|c| &output[c.len_utf8()..])
+            .map(|c| &output[c.len_utf8() ..])
             .unwrap()
             .to_owned()
     }

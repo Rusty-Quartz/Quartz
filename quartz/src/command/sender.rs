@@ -1,6 +1,5 @@
 use chat::component::Component;
-use linefeed::terminal::DefaultTerminal;
-use linefeed::Interface;
+use linefeed::{terminal::DefaultTerminal, Interface};
 use log::error;
 use std::sync::Arc;
 
@@ -18,11 +17,10 @@ impl CommandSender {
     pub fn send_message(&self, message: Component) {
         match self {
             CommandSender::Console(interface) => match interface.lock_writer_erase() {
-                Ok(mut writer) => {
+                Ok(mut writer) =>
                     if let Err(e) = writeln!(writer, "{}", message) {
                         error!("Failed to send message to console: {}", e);
-                    }
-                }
+                    },
                 Err(e) => error!("Failed to lock console interface: {}", e),
             },
         }

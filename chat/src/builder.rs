@@ -1,5 +1,7 @@
-use crate::color::{Color, PredefinedColor};
-use crate::component::{ClickEvent, Component, HoverEvent, TextComponent};
+use crate::{
+    color::{Color, PredefinedColor},
+    component::{ClickEvent, Component, HoverEvent, TextComponent},
+};
 use doc_comment::doc_comment;
 
 /// Utility struct for building text components. Components can have children, and those children
@@ -25,6 +27,16 @@ macro_rules! component_format {
 }
 
 impl TextComponentBuilder {
+    component_format!(obfuscated, "obfuscated (quickly chaning, fixed-width text)");
+
+    component_format!(bold, "bolded");
+
+    component_format!(strikethrough, "struck-through");
+
+    component_format!(underline, "underlined");
+
+    component_format!(italic, "italicized");
+
     /// Creates a builder whose base component has no color and an empty text field.
     pub fn empty() -> Self {
         TextComponentBuilder {
@@ -107,12 +119,6 @@ impl TextComponentBuilder {
         self.current().color = Some(Color::Custom(red, green, blue));
         self
     }
-
-    component_format!(obfuscated, "obfuscated (quickly chaning, fixed-width text)");
-    component_format!(bold, "bolded");
-    component_format!(strikethrough, "struck-through");
-    component_format!(underline, "underlined");
-    component_format!(italic, "italicized");
 
     /// Set the insertion text of this component (the text inserted into a player's chat when
     /// they shift-click this component).

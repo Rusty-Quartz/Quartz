@@ -1,10 +1,12 @@
 use chat::Component;
 use nbt::NbtCompound;
-use std::fmt::{self, Display, Formatter};
-use std::ops::{Index, IndexMut};
-use std::ptr;
-use std::slice::SliceIndex;
-use std::str::{self, FromStr};
+use std::{
+    fmt::{self, Display, Formatter},
+    ops::{Index, IndexMut},
+    ptr,
+    slice::SliceIndex,
+    str::{self, FromStr},
+};
 use util::UnlocalizedName;
 use uuid::Uuid;
 
@@ -28,8 +30,7 @@ impl From<&[u8]> for PacketBuffer {
 }
 
 impl<Idx> Index<Idx> for PacketBuffer
-where
-    Idx: SliceIndex<[u8]>,
+where Idx: SliceIndex<[u8]>
 {
     type Output = Idx::Output;
 
@@ -39,8 +40,7 @@ where
 }
 
 impl<Idx> IndexMut<Idx> for PacketBuffer
-where
-    Idx: SliceIndex<[u8]>,
+where Idx: SliceIndex<[u8]>
 {
     fn index_mut(&mut self, index: Idx) -> &mut Self::Output {
         &mut self.inner[index]
@@ -185,7 +185,7 @@ impl PacketBuffer {
     #[inline]
     fn read_bytes(&mut self, dest: &mut Vec<u8>) {
         let len = dest.len();
-        dest.copy_from_slice(&self.inner[self.cursor..self.cursor + len]);
+        dest.copy_from_slice(&self.inner[self.cursor .. self.cursor + len]);
         self.cursor += len;
     }
 
@@ -441,7 +441,7 @@ impl PacketBuffer {
     /// Writes the given bytes to this buffer without performing size checks.
     #[inline]
     fn write_bytes_unchecked(&mut self, blob: &[u8]) {
-        (self.inner[self.cursor..self.cursor + blob.len()]).copy_from_slice(blob);
+        (self.inner[self.cursor .. self.cursor + blob.len()]).copy_from_slice(blob);
         self.cursor += blob.len();
     }
 
@@ -550,10 +550,10 @@ impl PacketBuffer {
     #[inline]
     pub fn varint_size(value: i32) -> usize {
         match value {
-            0..=127 => 1,
-            128..=16383 => 2,
-            16384..=2097151 => 3,
-            2097152..=268435455 => 4,
+            0 ..= 127 => 1,
+            128 ..= 16383 => 2,
+            16384 ..= 2097151 => 3,
+            2097152 ..= 268435455 => 4,
             _ => 5,
         }
     }
@@ -633,7 +633,8 @@ impl PacketBuffer {
         &mut self,
         value: &Vec<T>,
         serializer: fn(&mut Self, T) -> (),
-    ) {
+    )
+    {
         for &e in value {
             serializer(self, e);
         }

@@ -11,8 +11,10 @@ use log::info;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::collections::{BTreeMap, HashMap};
-use std::str::FromStr;
+use std::{
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+};
 use tinyvec::ArrayVec;
 use util::UnlocalizedName;
 
@@ -121,19 +123,16 @@ pub fn init_blocks() {
             panic!("Invalid block encountered: {}, no states found.", name);
         }
 
-        block_list.insert(
-            uln.clone(),
-            Block {
-                name: uln,
-                properties: block_info
-                    .properties
-                    .clone()
-                    .into_iter()
-                    .collect::<ArrayVec<_>>(),
-                base_state: block_info.states[0].id,
-                default_state: block_info.default,
-            },
-        );
+        block_list.insert(uln.clone(), Block {
+            name: uln,
+            properties: block_info
+                .properties
+                .clone()
+                .into_iter()
+                .collect::<ArrayVec<_>>(),
+            base_state: block_info.states[0].id,
+            default_state: block_info.default,
+        });
 
         // Use this to determine the size of the global palette
         let id = block_info.states.last().unwrap().id as usize;

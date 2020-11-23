@@ -1,14 +1,11 @@
 use crate::*;
-use byteorder::BigEndian;
-use byteorder::ReadBytesExt;
+use byteorder::{BigEndian, ReadBytesExt};
 use flate2::read::{GzDecoder, ZlibDecoder};
 use std::io::{Error, ErrorKind, Read, Result};
 
 /// Reads uncompressed binary NBT data from the given source.
 pub fn read_nbt_uncompressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
-where
-    R: Read,
-{
+where R: Read {
     let root_id = source.read_u8()?;
     if root_id != 0xA {
         return Err(Error::new(
@@ -28,25 +25,19 @@ where
 /// Wraps the given source in a zlib decoder, then passes the wrapped source to the uncompressed
 /// reader function.
 pub fn read_nbt_zlib_compressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
-where
-    R: Read,
-{
+where R: Read {
     read_nbt_uncompressed(&mut ZlibDecoder::new(source))
 }
 
 /// Wraps the given source in a gz decoder, then passes the wrapped source to the uncompressed
 /// reader function.
 pub fn read_nbt_gz_compressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
-where
-    R: Read,
-{
+where R: Read {
     read_nbt_uncompressed(&mut GzDecoder::new(source))
 }
 
 fn read_tag_body<R>(source: &mut R, id: u8) -> Result<NbtTag>
-where
-    R: Read,
-{
+where R: Read {
     let tag = match id {
         0x1 => NbtTag::Byte(source.read_i8()?),
         0x2 => NbtTag::Short(source.read_i16::<BigEndian>()?),
@@ -58,7 +49,7 @@ where
             let len = source.read_i32::<BigEndian>()? as usize;
             let mut array = vec![0_i8; len];
 
-            for i in 0..len {
+            for i in 0 .. len {
                 array[i] = source.read_i8()?;
             }
 
@@ -82,7 +73,7 @@ where
             }
 
             let mut list = NbtList::with_capacity(len);
-            for _ in 0..len {
+            for _ in 0 .. len {
                 list.add(read_tag_body(source, type_id)?);
             }
 
@@ -106,7 +97,7 @@ where
             let len = source.read_i32::<BigEndian>()? as usize;
             let mut array = vec![0_i32; len];
 
-            for i in 0..len {
+            for i in 0 .. len {
                 array[i] = source.read_i32::<BigEndian>()?;
             }
 
@@ -116,39 +107,35 @@ where
             let len = source.read_i32::<BigEndian>()? as usize;
             let mut array = vec![0_i64; len];
 
-            for i in 0..len {
+            for i in 0 .. len {
                 array[i] = source.read_i64::<BigEndian>()?;
             }
 
             NbtTag::LongArray(array)
         }
-        _ => {
+        _ =>
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 "Invalid tag type encountered.",
-            ))
-        }
+            )),
     };
 
     Ok(tag)
 }
 
 fn read_string<R>(source: &mut R) -> Result<String>
-where
-    R: Read,
-{
+where R: Read {
     let len = source.read_u16::<BigEndian>()? as usize;
     let mut bytes = vec![0; len];
     source.read_exact(&mut bytes)?;
 
     let java_decoded = match cesu8::from_java_cesu8(&bytes) {
         Ok(string) => string,
-        Err(_) => {
+        Err(_) =>
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 "Invalid string encoding.",
-            ))
-        }
+            )),
     };
 
     Ok(java_decoded.into_owned())

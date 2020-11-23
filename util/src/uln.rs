@@ -1,5 +1,7 @@
-use std::fmt::{self, Debug, Display, Formatter};
-use std::str::FromStr;
+use std::{
+    fmt::{self, Debug, Display, Formatter},
+    str::FromStr,
+};
 
 /// An unlocalized name is a two-part identifier composed of a namespace and identifier separated
 /// by a colon.
@@ -70,8 +72,8 @@ impl FromStr for UnlocalizedName {
             Err("Expected two strings separated by a colon.")
         } else {
             Ok(UnlocalizedName {
-                namespace: s[0..index].to_owned(),
-                identifier: s[index + 1..].to_owned(),
+                namespace: s[0 .. index].to_owned(),
+                identifier: s[index + 1 ..].to_owned(),
             })
         }
     }

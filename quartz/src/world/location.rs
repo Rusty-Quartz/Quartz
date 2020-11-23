@@ -1,5 +1,7 @@
-use std::fmt::{self, Debug, Display, Formatter};
-use std::ops::{Shl, Shr};
+use std::{
+    fmt::{self, Debug, Display, Formatter},
+    ops::{Shl, Shr},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockPosition {

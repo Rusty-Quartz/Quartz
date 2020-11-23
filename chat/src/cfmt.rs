@@ -1,7 +1,8 @@
-use crate::color::Color;
-use crate::component::*;
-use std::error::Error;
-use std::fmt::{self, Debug, Display, Formatter};
+use crate::{color::Color, component::*};
+use std::{
+    error::Error,
+    fmt::{self, Debug, Display, Formatter},
+};
 
 /// Wrapper for an error message related to CFMT parsing.
 pub struct CfmtError(String);
@@ -81,7 +82,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                 right = cfmt.len();
             }
 
-            return Err(CfmtError(format!($format, &cfmt[idx..right])));
+            return Err(CfmtError(format!($format, &cfmt[idx .. right])));
         }};
         ($msg:expr) => {{
             return Err(CfmtError($msg.to_owned()));
@@ -289,7 +290,8 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                             if let Ok(color) = serde_json::from_str::<Color>(&token) {
                                 if !apply_format {
                                     error!(
-                                        "Negation character not allowed in front of a color code: \"{}\"",
+                                        "Negation character not allowed in front of a color code: \
+                                         \"{}\"",
                                         index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
                                     );
                                 }
@@ -316,8 +318,13 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                                         unmark!();
 
                                         error!(
-                                            "Excpected color or \"reset\" as first argument of color sequence: \"{}...\"",
-                                            index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)?
+                                            "Excpected color or \"reset\" as first argument of \
+                                             color sequence: \"{}...\"",
+                                            index
+                                                - try_unwrap(
+                                                    index_stack.last(),
+                                                    INDEX_STACK_ERROR
+                                                )?
                                         );
                                     }
                                     // The format or color name was incorrect
@@ -362,7 +369,8 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
                         // One exclamation in the middle of the word, probably a typo
                         else if apply_format {
                             error!(
-                                "Expected negation character ('!') to be at the beginning of a formatting code: \"{}...\"",
+                                "Expected negation character ('!') to be at the beginning of a \
+                                 formatting code: \"{}...\"",
                                 index - try_unwrap(index_stack.last(), INDEX_STACK_ERROR)? + 3
                             );
                         }
@@ -527,7 +535,10 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
         }
 
         FORCE_ADD => {
-            error!("Expected another character after the escape character at the end of the input string.");
+            error!(
+                "Expected another character after the escape character at the end of the input \
+                 string."
+            );
         }
 
         COLOR_START | COLOR_BUILD_FIRST | COLOR_BUILD_EXTRA => {
@@ -538,19 +549,19 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
             error!("Incomplete event sequence at the end of the input string.");
         }
 
-        _ => {
+        _ =>
             return Ok(Component::Text(try_unwrap(
                 stack.pop(),
                 COMPONENT_STACK_ERROR,
-            )?))
-        }
+            )?)),
     }
 }
 
 fn finish_component(
     stack: &mut Vec<TextComponent>,
     has_children: &mut Vec<bool>,
-) -> Result<(), CfmtError> {
+) -> Result<(), CfmtError>
+{
     if !try_unwrap(stack.last(), COMPONENT_STACK_ERROR)?.is_empty() {
         // Some children are already present
         if *try_unwrap(has_children.last(), CHILD_STACK_ERROR)? {
@@ -577,7 +588,8 @@ fn finish_event(
     has_children: &mut Vec<bool>,
     token_stack: &mut Vec<String>,
     has_component: bool,
-) -> Result<(), CfmtError> {
+) -> Result<(), CfmtError>
+{
     // Handle stack operations and retrieve the component argument
     if has_component {
         // Add any remaining child
@@ -601,19 +613,17 @@ fn finish_event(
         // Hover events
         if event_type == "hover" {
             match event_name.as_ref() {
-                "show_item" => {
-                    component.hover_event = Some(Box::new(HoverEvent::show_item_json(&event_arg)))
-                }
+                "show_item" =>
+                    component.hover_event = Some(Box::new(HoverEvent::show_item_json(&event_arg))),
 
                 "show_entity" => {
                     // Make sure it parses the JSON correctly
                     match HoverEvent::show_entity_json(&event_arg) {
                         Some(event) => component.hover_event = Some(Box::new(event)),
-                        None => {
+                        None =>
                             return Err(CfmtError(
                                 "Invalid argument for hover event \"show_entity\"".to_owned(),
-                            ))
-                        }
+                            )),
                     }
                 }
 
@@ -624,26 +634,21 @@ fn finish_event(
         // Click events
         else {
             match event_name.as_ref() {
-                "open_url" => {
-                    component.click_event = Some(Box::new(ClickEvent::open_url(event_arg)))
-                }
-                "run_command" => {
-                    component.click_event = Some(Box::new(ClickEvent::run_command(event_arg)))
-                }
-                "suggest_command" => {
-                    component.click_event = Some(Box::new(ClickEvent::suggest_command(event_arg)))
-                }
+                "open_url" =>
+                    component.click_event = Some(Box::new(ClickEvent::open_url(event_arg))),
+                "run_command" =>
+                    component.click_event = Some(Box::new(ClickEvent::run_command(event_arg))),
+                "suggest_command" =>
+                    component.click_event = Some(Box::new(ClickEvent::suggest_command(event_arg))),
                 "change_page" => {
                     // Parse the page index
                     match event_arg.parse::<u32>() {
-                        Ok(index) => {
-                            component.click_event = Some(Box::new(ClickEvent::change_page(index)))
-                        }
-                        Err(_) => {
+                        Ok(index) =>
+                            component.click_event = Some(Box::new(ClickEvent::change_page(index))),
+                        Err(_) =>
                             return Err(CfmtError(
                                 "Invalid page index for click event \"change_page\"".to_owned(),
-                            ))
-                        }
+                            )),
                     }
                 }
                 _ => {}
@@ -665,9 +670,10 @@ fn add_child(parent: &mut TextComponent, mut child: TextComponent) -> Result<(),
                 // Unpack text component
                 Some(Component::Text(prev_child)) => {
                     // Is the previous child just whitespace without any formatting that could be displayed
-                    if prev_child.text.trim().is_empty() &&
-                            !prev_child.underline.unwrap_or(false) &&
-                            !prev_child.strikethrough.unwrap_or(false) {
+                    if prev_child.text.trim().is_empty()
+                        && !prev_child.underline.unwrap_or(false)
+                        && !prev_child.strikethrough.unwrap_or(false)
+                    {
                         // Combine the text of the two components
                         let mut text = prev_child.text.to_owned();
                         text.push_str(&child.text);
@@ -676,10 +682,15 @@ fn add_child(parent: &mut TextComponent, mut child: TextComponent) -> Result<(),
                         // The whitespace child component is no longer needed
                         children.pop();
                     }
-                },
+                }
 
                 // Unreachable
-                _ => return Err(CfmtError("Internal parser error: invalid state reached while appending a child component.".to_owned()))
+                _ =>
+                    return Err(CfmtError(
+                        "Internal parser error: invalid state reached while appending a child \
+                         component."
+                            .to_owned(),
+                    )),
             }
         }
 

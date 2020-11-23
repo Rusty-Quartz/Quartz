@@ -1,8 +1,10 @@
-use crate::world::{
-    chunk::Chunk,
-    location::{ChunkCoordinatePair, RegionCoordinatePair},
+use crate::{
+    world::{
+        chunk::Chunk,
+        location::{ChunkCoordinatePair, RegionCoordinatePair},
+    },
+    Registry,
 };
-use crate::Registry;
 use futures_lite::{
     future,
     io::{AsyncReadExt, AsyncSeekExt},
@@ -16,11 +18,13 @@ use smol::{
     lock::{Mutex, MutexGuard},
     Executor,
 };
-use std::collections::HashMap;
-use std::io::Cursor as StdCursor;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::thread;
+use std::{
+    collections::HashMap,
+    io::Cursor as StdCursor,
+    path::{Path, PathBuf},
+    sync::Arc,
+    thread,
+};
 
 /// The scaling between chunk coords and region coords in terms of bit shifts. The actual scale
 /// factor is two to the power of this constant.
@@ -39,7 +43,8 @@ impl<R: Registry> ChunkProvider<R> {
         world_name: &str,
         root_directory: P,
         thread_count: usize,
-    ) -> io::Result<Self> {
+    ) -> io::Result<Self>
+    {
         // Ensure the root directory exists
         std::fs::create_dir_all(root_directory.as_ref())?;
 
@@ -48,7 +53,7 @@ impl<R: Registry> ChunkProvider<R> {
         let (shutdown_signal, shutdown) = channel::unbounded::<()>();
 
         let executor = Arc::new(Executor::new());
-        for i in 1..=usize::max(thread_count, 1) {
+        for i in 1 ..= usize::max(thread_count, 1) {
             let shutdown_clone = shutdown.clone();
             let executor_clone = executor.clone();
 
@@ -104,7 +109,8 @@ impl<R: Registry> ChunkProvider<R> {
         request: ProviderRequest,
         regions: RegionMap<R>,
         chunk_sender: Sender<Chunk<R>>,
-    ) -> io::Result<()> {
+    ) -> io::Result<()>
+    {
         match request {
             ProviderRequest::LoadFull(chunk_coords) => {
                 let mut map_guard = regions.lock().await;
@@ -125,9 +131,9 @@ impl<R: Registry> ChunkProvider<R> {
                 if saved_on_disk {
                     let nbt = match buffer[0] {
                         // GZip compression (not used in practice)
-                        1 => read_nbt_gz_compressed(&mut StdCursor::new(&buffer[1..]))?,
-                        2 => read_nbt_zlib_compressed(&mut StdCursor::new(&buffer[1..]))?,
-                        _ => {
+                        1 => read_nbt_gz_compressed(&mut StdCursor::new(&buffer[1 ..]))?,
+                        2 => read_nbt_zlib_compressed(&mut StdCursor::new(&buffer[1 ..]))?,
+                        _ =>
                             return Err(IoError::new(
                                 ErrorKind::InvalidData,
                                 format!(
@@ -135,8 +141,7 @@ impl<R: Registry> ChunkProvider<R> {
                                     buffer[0], chunk_coords
                                 ),
                             )
-                            .into())
-                        }
+                            .into()),
                     };
 
                     let chunk = Chunk::from_nbt(&nbt.0);
@@ -147,13 +152,12 @@ impl<R: Registry> ChunkProvider<R> {
                                 "Failed to send chunk between threads",
                             )
                         })?,
-                        None => {
+                        None =>
                             return Err(IoError::new(
                                 ErrorKind::InvalidData,
                                 format!("Encountered invalid NBT for chunk at {}", chunk_coords),
                             )
-                            .into())
-                        }
+                            .into()),
                     }
                 } else {
                     log::warn!("Chunk generation not supported yet.");
@@ -317,7 +321,7 @@ impl<R: Registry> Region<R> {
 
         let mut j: usize;
         let mut chunk_info: &mut ChunkDataInfo<R>;
-        for i in 0..1024 {
+        for i in 0 .. 1024 {
             j = i * 4;
 
             // Unwrap is safe because we do a length check at the beginning of this function
@@ -384,18 +388,18 @@ impl<R: Registry> Region<R> {
         &mut self,
         absolute_position: ChunkCoordinatePair,
         buffer: &mut Vec<u8>,
-    ) -> io::Result<bool> {
+    ) -> io::Result<bool>
+    {
         let chunk_info = match self
             .chunk_info
             .get_mut(self.index_absolute(absolute_position))
         {
             Some(chunk_info) => chunk_info,
-            None => {
+            None =>
                 return Err(IoError::new(
                     ErrorKind::InvalidInput,
                     "Attempted to load chunk outside of region",
-                ))
-            }
+                )),
         };
 
         if chunk_info.is_uninitialized() {
@@ -413,7 +417,7 @@ impl<R: Registry> Region<R> {
             | (buffer[1] as usize) << 16
             | (buffer[2] as usize) << 8
             | (buffer[3] as usize);
-        buffer.drain(..4);
+        buffer.drain(.. 4);
         buffer.resize(length, 0);
 
         Ok(true)

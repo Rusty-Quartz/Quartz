@@ -1,9 +1,7 @@
 use serde::Deserialize;
 use serde_json::from_str;
 
-use std::fs;
-use std::path::Path;
-use std::{collections::HashMap, env};
+use std::{collections::HashMap, env, fs, path::Path};
 
 const SERDE_HEADER: &str = r#"
 impl crate::network::PacketBuffer {
@@ -216,10 +214,16 @@ impl Field {
                 self.gen_array_serializer(mappings)
             )
         } else {
-            format!("\n\t\tmatch &value.{} {{\n\t\t\tSome(v) => self.write_{}({}v),\n\t\t\tNone => {{}}\n\t\t}}",
+            format!(
+                "\n\t\tmatch &value.{} {{\n\t\t\tSome(v) => self.write_{}({}v),\n\t\t\tNone => \
+                 {{}}\n\t\t}}",
                 self.name,
                 self.get_type(),
-                if mappings.primitives.contains(&self.get_type()) {"*"} else {""}
+                if mappings.primitives.contains(&self.get_type()) {
+                    "*"
+                } else {
+                    ""
+                }
             )
         }
     }

@@ -1,5 +1,7 @@
-use crate::command::executor::{CommandContext, ExecutableCommand};
-use crate::Registry;
+use crate::{
+    command::executor::{CommandContext, ExecutableCommand},
+    Registry,
+};
 use lazy_static::lazy_static;
 use regex::Regex;
 
@@ -16,7 +18,7 @@ impl<'cmd> ArgumentTraverser<'cmd> {
     pub fn new(command: &'cmd str) -> Self {
         ArgumentTraverser {
             command: if command.starts_with('/') {
-                &command[1..]
+                &command[1 ..]
             } else {
                 command
             },
@@ -36,16 +38,16 @@ impl<'cmd> ArgumentTraverser<'cmd> {
     /// was last read.
     pub fn remaining(&mut self) -> &'cmd str {
         self.index = self.command.len();
-        &self.command[self.anchor..]
+        &self.command[self.anchor ..]
     }
 
     /// Returns the remaining portion of the string being traversed from the current anchor
     /// position to the end of the string.
     pub fn remaining_truncated(&self, truncate_to: usize) -> &'cmd str {
         if self.command.len() - self.anchor > truncate_to {
-            &self.command[self.anchor..self.anchor + truncate_to]
+            &self.command[self.anchor .. self.anchor + truncate_to]
         } else {
-            &self.command[self.anchor..]
+            &self.command[self.anchor ..]
         }
     }
 
@@ -59,7 +61,7 @@ impl<'cmd> ArgumentTraverser<'cmd> {
     pub fn next(&mut self) -> Option<&'cmd str> {
         if self.paused {
             self.paused = false;
-            return Some(&self.command[self.anchor..self.index]);
+            return Some(&self.command[self.anchor .. self.index]);
         }
 
         if self.index >= self.command.len() {
@@ -109,7 +111,7 @@ impl<'cmd> ArgumentTraverser<'cmd> {
             self.index += 1;
         }
 
-        Some(&self.command[self.anchor..self.index])
+        Some(&self.command[self.anchor .. self.index])
     }
 }
 
@@ -167,7 +169,8 @@ impl<'cmd> Argument<'cmd> {
         context: &mut CommandContext<'ctx, R>,
         name: &'static str,
         argument: &'ctx str,
-    ) -> Result<(), String> {
+    ) -> Result<(), String>
+    {
         match self {
             Argument::Integer(_value) => {
                 let parsed = argument.parse::<i64>();
