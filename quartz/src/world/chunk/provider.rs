@@ -39,6 +39,7 @@ pub struct ChunkProvider<R: Registry> {
 }
 
 impl<R: Registry> ChunkProvider<R> {
+    /// Creates a chunk provider for the given root directory with the given number of threads.
     pub fn new<P: AsRef<Path>>(
         world_name: &str,
         root_directory: P,
@@ -71,11 +72,15 @@ impl<R: Registry> ChunkProvider<R> {
         })
     }
 
+    pub async fn lock_regions(&self) -> RegionMapGuard<'_, R> {
+        self.regions.lock().await
+    }
+
     pub fn request_load_full(&mut self, chunk_coords: ChunkCoordinatePair) {
         self.handle_request(ProviderRequest::LoadFull(chunk_coords));
     }
 
-    pub async fn flush_queue(&mut self) -> Result<(), &'static str> {
+    pub async fn flush_queue(&mut self) {
         let mut map_guard = self.regions.lock().await;
 
         while let Ok(chunk) = self.chunk_receiver.try_recv() {
@@ -85,8 +90,6 @@ impl<R: Registry> ChunkProvider<R> {
                 None => drop(chunk),
             }
         }
-
-        Ok(())
     }
 
     fn handle_request(&self, request: ProviderRequest) {
@@ -140,22 +143,24 @@ impl<R: Registry> ChunkProvider<R> {
                                     "Encountered invalid compression scheme ({}) for chunk at {}",
                                     buffer[0], chunk_coords
                                 ),
-                            )
-                            .into()),
+                            )),
                     };
 
                     let chunk = Chunk::from_nbt(&nbt.0);
                     match chunk {
-                        Some(chunk) => chunk_sender.send(chunk).await.map_err(|e| {
+                        Ok(chunk) => chunk_sender.send(chunk).await.map_err(|_| {
                             io::Error::new(
                                 io::ErrorKind::BrokenPipe,
                                 "Failed to send chunk between threads",
                             )
                         })?,
-                        None =>
+                        Err(e) =>
                             return Err(IoError::new(
                                 ErrorKind::InvalidData,
-                                format!("Encountered invalid NBT for chunk at {}", chunk_coords),
+                                format!(
+                                    "Encountered invalid NBT for chunk at {}: {}",
+                                    chunk_coords, e
+                                ),
                             )
                             .into()),
                     }
@@ -217,7 +222,7 @@ pub enum ProviderRequest {
     Unload(ChunkCoordinatePair),
 }
 
-struct RegionMap<R: Registry> {
+pub struct RegionMap<R: Registry> {
     // TODO: Consider changing to RwLock in the future
     inner: Arc<Mutex<HashMap<RegionCoordinatePair, Region<R>>>>,
     root_directory: PathBuf,
@@ -231,8 +236,8 @@ impl<R: Registry> RegionMap<R> {
         }
     }
 
-    async fn lock(&self) -> MapGuard<'_, R> {
-        MapGuard {
+    async fn lock(&self) -> RegionMapGuard<'_, R> {
+        RegionMapGuard {
             guard: self.inner.lock().await,
             map: self,
         }
@@ -248,12 +253,16 @@ impl<R: Registry> Clone for RegionMap<R> {
     }
 }
 
-struct MapGuard<'a, R: Registry> {
+pub struct RegionMapGuard<'a, R: Registry> {
     guard: MutexGuard<'a, HashMap<RegionCoordinatePair, Region<R>>>,
     map: &'a RegionMap<R>,
 }
 
-impl<'a, R: Registry> MapGuard<'a, R> {
+impl<'a, R: Registry> RegionMapGuard<'a, R> {
+    pub fn loaded_chunk_at(&mut self, location: ChunkCoordinatePair) -> Option<&mut Chunk<R>> {
+        self.guard.get_mut(&(location >> 5)).map(|region| region.chunk_at(location)).flatten()
+    }
+
     async fn region_at(&mut self, location: RegionCoordinatePair) -> io::Result<&mut Region<R>> {
         Ok(self
             .guard
@@ -261,7 +270,7 @@ impl<'a, R: Registry> MapGuard<'a, R> {
             .or_insert(Region::new(&self.map.root_directory, location).await?))
     }
 
-    fn loaded_region_at(&mut self, location: RegionCoordinatePair) -> Option<&mut Region<R>> {
+    pub fn loaded_region_at(&mut self, location: RegionCoordinatePair) -> Option<&mut Region<R>> {
         self.guard.get_mut(&location)
     }
 
@@ -270,7 +279,7 @@ impl<'a, R: Registry> MapGuard<'a, R> {
     }
 }
 
-struct Region<R: Registry> {
+pub struct Region<R: Registry> {
     file: File,
     chunk_offset: ChunkCoordinatePair,
     chunk_info: Box<[ChunkDataInfo<R>]>,
@@ -351,12 +360,28 @@ impl<R: Registry> Region<R> {
             + (absolute_position.z - self.chunk_offset.z) * 16) as usize
     }
 
+    pub fn chunk_at(&mut self, absolute_position: ChunkCoordinatePair) -> Option<&mut Chunk<R>> {
+        let chunk = self
+            .chunk_info
+            .get_mut(self.index_absolute(absolute_position))?;
+
+        if chunk.cached_chunk.is_some() {
+            if !chunk.cache_active {
+                chunk.cache_active = true;
+                self.loaded_count += 1;
+            }
+            chunk.cached_chunk.as_mut()
+        } else {
+            None
+        }
+    }
+
     fn cache(&mut self, chunk: Chunk<R>) {
         if let Some(chunk_info) = self
             .chunk_info
             .get_mut(self.index_absolute(chunk.chunk_coordinates()))
         {
-            chunk_info.cached_chunk = Some(Box::new(chunk));
+            chunk_info.cached_chunk = Some(chunk);
             chunk_info.cache_active = true;
         }
     }
@@ -383,7 +408,8 @@ impl<R: Registry> Region<R> {
 
     /// Attempts to load the chunk from disk, returning the `Ok` variant when no IO errors occur. The boolean
     /// returned indicates whether or not the chunk was actually on disk, if false is returned then that
-    /// indicates the chunk was never saved before. If `Ok(true)` is returned, then
+    /// indicates the chunk was never saved before. If `Ok(true)` is returned, then the chunk was saved on disk
+    /// before and has been loaded into the given buffer.
     async fn load_chunk_nbt(
         &mut self,
         absolute_position: ChunkCoordinatePair,
@@ -443,13 +469,14 @@ impl<R: Registry> Region<R> {
     }
 }
 
+// TODO: Consider boxing
 struct ChunkDataInfo<R: Registry> {
     sector_offset: u32,
     sector_count: u8,
     last_saved: u32,
-    cached_chunk: Option<Box<Chunk<R>>>,
+    cached_chunk: Option<Chunk<R>>,
     /// Whether or not the cached chunk value is actually being accessed. If this is set to false, then the region
-    /// that contains this chunk data may be unloaded at any time.
+    /// that contains this chunk data may be unloaded at any time if no other chunks are loaded.
     cache_active: bool,
 }
 

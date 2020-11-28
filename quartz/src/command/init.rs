@@ -59,7 +59,7 @@ pub fn init_commands<R: Registry>(command_executor: &mut CommandExecutor<R>) {
                             .command_names()
                             .iter()
                             .filter(|cmd| cmd.starts_with(arg))
-                            .map(|cmd| (*cmd).to_owned())
+                            .map(|&cmd| cmd.to_owned())
                             .collect()
                     }),
             ),

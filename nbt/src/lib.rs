@@ -14,5 +14,5 @@ pub mod snbt;
 /// Contains utilities for writing NBT data.
 pub mod write;
 
-pub use repr::NbtRepr;
+pub use repr::{NbtRepr, NbtReprError, NbtStructureError};
 pub use tag::{NbtCompound, NbtList, NbtTag};

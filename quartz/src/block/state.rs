@@ -36,7 +36,7 @@ pub trait BlockState<T>: Sized {
 }
 
 // TODO: Implement static block state
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StaticBlockState {
     pub handle: &'static Block<StaticStateID>,
     pub data: BlockStateData,
@@ -54,8 +54,7 @@ impl BlockState<StaticStateID> for StaticBlockState {
     }
 
     fn builder(block_name: &UnlocalizedName) -> Option<Self::Builder> {
-        StaticRegistry::global()
-            .default_state(block_name)
+        StaticRegistry::default_state(block_name)
             .map(StaticStateBuilder::new)
     }
 }
@@ -179,6 +178,13 @@ impl StaticStateBuilder {
     pub fn new(base: StaticBlockState) -> Self {
         StaticStateBuilder { state: base }
     }
+
+    fn property_error(&self, name: &str, value: &str) -> String {
+        format!(
+            "Invalid name or property value for {}: {}={}",
+            self.state.handle.name, name, value
+        )
+    }
 }
 
 impl StateBuilder<StaticBlockState> for StaticStateBuilder {
@@ -187,7 +193,7 @@ impl StateBuilder<StaticBlockState> for StaticStateBuilder {
             .state
             .data
             .with_property(name, value)
-            .ok_or("Invalid name or property value.".to_owned())?;
+            .ok_or(self.property_error(name, value))?;
         Ok(())
     }
 
@@ -197,7 +203,10 @@ impl StateBuilder<StaticBlockState> for StaticStateBuilder {
                 self.state.data = data;
                 Ok(self)
             }
-            None => Err((self, "Invalid name or property value.".to_owned())),
+            None => {
+                let msg = self.property_error(name, value);
+                Err((self, msg))
+            }
         }
     }
 

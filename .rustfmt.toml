@@ -9,7 +9,7 @@ fn_args_layout = "Tall"
 unstable_features = true
 
 blank_lines_upper_bound = 2
-brace_style = "PreferSameLine"
+brace_style = "SameLineWhere"
 condense_wildcard_suffixes = true
 control_brace_style = "AlwaysSameLine"
 format_strings = true

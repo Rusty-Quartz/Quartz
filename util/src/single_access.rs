@@ -63,11 +63,9 @@ impl<'a, T> DerefMut for AccessGuard<'a, T> {
 /// mutability.
 ///
 /// This type, unlike [`RefCell`], only allows one reference to its data at a time, and that reference is
-/// always mutable. In fact, when [`take`] is called on a single access box, its internal pointer is set to
-/// null until the smart pointer is dropped, at which point it is replaced. For this reason, the smart
-/// pointer returned by [`take`] is called [`BoxAccessGuard`].
+/// always mutable. In fact, when [`take`] is called on a single accessor box, its internal pointer is set to
+/// null until the smart pointer is dropped, at which point it is replaced.
 ///
-/// [`BoxAccessGuard`]: crate::single_access::BoxAccessGuard
 /// [`RefCell`]: std::cell::RefCell
 /// [`take`]: crate::single_access::SingleAccessorBox::take
 // TODO: Delete if unused

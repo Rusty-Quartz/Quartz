@@ -85,15 +85,15 @@ impl ItemStack {
     /// For `tag` format check https://minecraft.gamepedia.com/Player.dat_format#Item_structure
     pub fn from_nbt(tag: NbtCompound) -> Self {
         let tag = match tag.has("tag") {
-            true => match tag.get::<&NbtCompound>("tag") {
-                Some(tag) => tag.clone().to_owned(),
+            true => match tag.get::<_, &NbtCompound>("tag") {
+                Ok(tag) => tag.clone().to_owned(),
                 _ => NbtCompound::new(),
             },
             _ => NbtCompound::new(),
         };
 
         let damage = if tag.has("Damage") {
-            tag.get::<i32>("Damage").unwrap_or(0)
+            tag.get::<_, i32>("Damage").unwrap_or(0)
         } else {
             0
         } as u32;

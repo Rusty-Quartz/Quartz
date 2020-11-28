@@ -190,7 +190,7 @@ impl<R: Registry> CommandExecutor<R> {
                 .commands
                 .keys()
                 .filter(|cmd| cmd.starts_with(root_name))
-                .map(|cmd| (*cmd).to_owned())
+                .map(|&cmd| cmd.to_owned())
                 .collect();
         }
 

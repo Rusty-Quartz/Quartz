@@ -19,17 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut server: QuartzServer<StaticRegistry> = QuartzServer::new(config, console_interface);
-
     server.init();
-
-    use quartz::world::{chunk::ChunkProvider, location::CoordinatePair};
-    let mut provider: ChunkProvider<StaticRegistry> = ChunkProvider::new(
-        "world",
-        Path::new("/hd-pa/projects/FarLands2/run/world/region"),
-        1,
-    )?;
-    provider.request_load_full(CoordinatePair::new(0, 0));
-
     server.run();
     drop(server);
     logging::cleanup();

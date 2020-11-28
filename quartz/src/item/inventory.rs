@@ -60,7 +60,7 @@ impl Inventory {
     /// }]}
     /// ```
     pub fn from_tag(&mut self, nbt: &NbtCompound) {
-        let list = nbt.get::<&NbtList>("Items").unwrap();
+        let list = nbt.get::<_, &NbtList>("Items").unwrap();
 
         for i in 0 .. list.len() {
             // List has to have a element at every index because even slots without items need to have an empty stack

@@ -41,11 +41,12 @@ macro_rules! parse_nbt_array {
 ///
 /// # Example
 /// ```
-/// let snbt_string = r#"{string:Stuff, list:[I;1,2,3,4,5]}"#.to_owned();
-/// let parser = SnbtParser::new(&snbt_string, 0);
+/// # use nbt::snbt::*;
+/// let mut parser = SnbtParser::new(r#"{string:Stuff, list:[I;1,2,3,4,5]}"#, 0);
 /// let tag = parser.parse().unwrap();
-/// assert_eq!(tag.get_string("string"), "Stuff");
-/// assert_eq!(tag.get_int_array("list"), vec![1,2,3,4,5]);
+///
+/// assert_eq!(tag.get::<&str>("string"), Ok("Stuff"));
+/// assert_eq!(tag.get::<&[i32]>("list"), Ok(vec![1,2,3,4,5].as_slice()));
 /// ```
 pub struct SnbtParser<'sp> {
     data: Peekable<Chars<'sp>>,

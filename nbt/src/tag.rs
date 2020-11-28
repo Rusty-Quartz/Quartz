@@ -1,4 +1,4 @@
-use crate::{snbt::SnbtParser, NbtRepr};
+use crate::{snbt::SnbtParser, NbtRepr, NbtReprError, NbtStructureError};
 use chat::{
     color::PredefinedColor,
     component::{ToComponent, ToComponentParts},
@@ -6,12 +6,12 @@ use chat::{
     TextComponentBuilder,
 };
 use std::{
+    borrow::Borrow,
     collections::HashMap,
     convert::{AsMut, AsRef, TryFrom, TryInto},
     fmt,
+    hash::Hash,
     ops::{Index, IndexMut},
-    option::NoneError,
-    str::FromStr,
 };
 
 /// The generic NBT tag type, containing all supported tag variants which wrap around a corresponding rust type.
@@ -50,6 +50,7 @@ impl NbtTag {
     /// # Examples
     ///
     /// ```
+    /// # use nbt::NbtTag;
     /// assert_eq!(NbtTag::Long(10).type_specifier(), "L");
     /// assert_eq!(NbtTag::StringModUtf8(String::new()).type_specifier(), "");
     ///
@@ -72,7 +73,15 @@ impl NbtTag {
     }
 
     /// Returns the name of each tag type
-    pub fn type_string(&self) -> &str {
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use nbt::NbtTag;
+    /// assert_eq!(NbtTag::Float(0.0f32).type_string(), "Float");
+    /// assert_eq!(NbtTag::LongArray(Vec::new()).type_string(), "Long Array");
+    /// ```
+    pub fn type_string(&self) -> &'static str {
         match self {
             NbtTag::Byte(_) => "Byte",
             NbtTag::Short(_) => "Short",
@@ -97,15 +106,17 @@ impl NbtTag {
     /// Simple primitive conversion:
     ///
     /// ```
+    /// # use nbt::NbtTag;
     /// assert_eq!(NbtTag::Byte(5).to_snbt(), "5B");
-    /// assert_eq!(NbtTag::StringModUtf8("\"Quoted text\""), "'\"Quoted text\"'");
+    /// assert_eq!(NbtTag::StringModUtf8("\"Quoted text\"".to_owned()).to_snbt(), "'\"Quoted text\"'");
     /// ```
     ///
     /// More complex tag conversion:
     ///
     /// ```
+    /// # use nbt::*;
     /// let mut compound = NbtCompound::new();
-    /// compound.set_long_array("foo".to_owned(), vec![-1_i64, -3_i64, -5_i64]);
+    /// compound.set("foo".to_owned(), vec![-1_i64, -3_i64, -5_i64]);
     /// assert_eq!(NbtTag::Compound(compound).to_snbt(), "{foo:[L;-1,-3,-5]}");
     /// ```
     pub fn to_snbt(&self) -> String {
@@ -348,13 +359,13 @@ macro_rules! prim_from_tag {
     ($($type:ty, $tag:ident);*) => {
         $(
             impl TryFrom<&NbtTag> for $type {
-                type Error = NoneError;
+                type Error = NbtStructureError;
 
                 fn try_from(tag: &NbtTag) -> Result<Self, Self::Error> {
                     if let NbtTag::$tag(value) = tag {
                         Ok(*value)
                     } else {
-                        Err(NoneError)
+                        Err(NbtStructureError::TypeMismatch)
                     }
                 }
             }
@@ -372,7 +383,7 @@ prim_from_tag!(
 );
 
 impl TryFrom<&NbtTag> for bool {
-    type Error = NoneError;
+    type Error = NbtStructureError;
 
     fn try_from(tag: &NbtTag) -> Result<Self, Self::Error> {
         match tag {
@@ -380,7 +391,7 @@ impl TryFrom<&NbtTag> for bool {
             NbtTag::Short(value) => Ok(*value != 0),
             NbtTag::Int(value) => Ok(*value != 0),
             NbtTag::Long(value) => Ok(*value != 0),
-            _ => Err(NoneError),
+            _ => Err(NbtStructureError::TypeMismatch),
         }
     }
 }
@@ -389,25 +400,25 @@ macro_rules! ref_from_tag {
     ($($type:ty, $tag:ident);*) => {
         $(
             impl<'a> TryFrom<&'a NbtTag> for &'a $type {
-                type Error = NoneError;
+                type Error = NbtStructureError;
 
                 fn try_from(tag: &'a NbtTag) -> Result<Self, Self::Error> {
                     if let NbtTag::$tag(value) = tag {
                         Ok(value)
                     } else {
-                        Err(NoneError)
+                        Err(NbtStructureError::TypeMismatch)
                     }
                 }
             }
 
             impl<'a> TryFrom<&'a mut NbtTag> for &'a mut $type {
-                type Error = NoneError;
+                type Error = NbtStructureError;
 
                 fn try_from(tag: &'a mut NbtTag) -> Result<Self, Self::Error> {
                     if let NbtTag::$tag(value) = tag {
                         Ok(value)
                     } else {
-                        Err(NoneError)
+                        Err(NbtStructureError::TypeMismatch)
                     }
                 }
             }
@@ -465,7 +476,8 @@ impl NbtList {
     pub fn clone_from<'a, T, L>(list: &'a L) -> Self
     where
         T: Clone + Into<NbtTag> + 'a,
-        &'a L: IntoIterator<Item = &'a T>, {
+        &'a L: IntoIterator<Item = &'a T>,
+    {
         NbtList(list.into_iter().map(|x| x.clone().into()).collect())
     }
 
@@ -477,47 +489,49 @@ impl NbtList {
     pub fn clone_repr_from<'a, T, L>(list: &'a L) -> Self
     where
         T: NbtRepr + 'a,
-        &'a L: IntoIterator<Item = &'a T>, {
+        &'a L: IntoIterator<Item = &'a T>,
+    {
         NbtList(list.into_iter().map(|x| x.to_nbt().into()).collect())
     }
 
+    /// Iterates over this tag list, converting each tag reference into the specified type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use nbt::{NbtList, NbtStructureError};
+    /// let mut list = NbtList::new();
+    /// list.add(0i32);
+    /// list.add(1i32);
+    /// list.add(2.0f64);
+    ///
+    /// let mut iter = list.iter_map::<_, i32>();
+    /// assert_eq!(Some(Ok(0i32)), iter.next());
+    /// assert_eq!(Some(Ok(1i32)), iter.next());
+    /// assert_eq!(Some(Err(NbtStructureError::TypeMismatch)), iter.next());
+    /// assert_eq!(None, iter.next());
+    /// ```
     pub fn iter_map<'a, E, T: TryFrom<&'a NbtTag, Error = E>>(
         &'a self,
     ) -> impl Iterator<Item = Result<T, E>> + 'a {
         self.0.iter().map(|tag| T::try_from(tag))
     }
 
+    /// Iterates over mutable references to the tags in this list, converting each tag reference into
+    /// the specified type. See [`iter_map`](crate::tag::NbtList::iter_map) for usage details.
     pub fn iter_mut_map<'a, E, T: TryFrom<&'a mut NbtTag, Error = E>>(
         &'a mut self,
     ) -> impl Iterator<Item = Result<T, E>> + 'a {
         self.0.iter_mut().map(|tag| T::try_from(tag))
     }
 
-    pub fn iter_into_repr<T>(&self) -> impl Iterator<Item = Result<T, T::Error>> + '_
-    where
-        T: NbtRepr,
-        T::Error: From<NoneError>, {
-        self.0.iter().map(|tag| T::from_nbt(tag.try_into()?))
-    }
-
-    pub fn clone_into<'a, T, L>(&'a self, list: &mut L)
-    where
-        T: Clone + 'a,
-        &'a T: TryFrom<&'a NbtTag>,
-        L: Extend<T>, {
-        list.extend(
-            self.0
-                .iter()
-                .flat_map(|tag| TryInto::<&T>::try_into(tag).ok().map(|x| x.clone())),
-        );
-    }
-
-    pub fn clone_repr_into<'a, T, L>(&'a self, list: &mut L)
-    where
-        T: NbtRepr,
-        T::Error: From<NoneError>,
-        L: Extend<T>, {
-        list.extend(self.0.iter().flat_map(|tag| T::from_nbt(tag.try_into()?)));
+    /// Iterates over this tag list, converting each tag into an owned value of the given concrete type.
+    pub fn iter_into_repr<T: NbtRepr>(
+        &self,
+    ) -> impl Iterator<Item = Result<T, NbtReprError<T::Error>>> + '_ {
+        self.0
+            .iter()
+            .map(|tag| T::from_nbt(tag.try_into()?).map_err(NbtReprError::conversion))
     }
 
     /// Converts this tag list to a valid SNBT string.
@@ -550,14 +564,28 @@ impl NbtList {
 
     /// Returns the value of the tag at the given index, or `None` if the index is out of bounds. This method
     /// should be used for obtaining primitives and shared references to lists and compounds.
-    pub fn get<'a, T: TryFrom<&'a NbtTag>>(&'a self, index: usize) -> Option<T> {
-        T::try_from(self.0.get(index)?).ok()
+    pub fn get<'a, T: TryFrom<&'a NbtTag>>(
+        &'a self,
+        index: usize,
+    ) -> Result<T, NbtReprError<T::Error>>
+    {
+        T::try_from(self.0.get(index).ok_or(NbtStructureError::InvalidIndex)?)
+            .map_err(NbtReprError::conversion)
     }
 
     /// Returns a mutable reference to the tag at the given index, or `None` if the index is out of bounds. This
     /// method should be used for obtaining mutable references to lists and compounds.
-    pub fn get_mut<'a, T: TryFrom<&'a mut NbtTag>>(&'a mut self, index: usize) -> Option<T> {
-        T::try_from(self.0.get_mut(index)?).ok()
+    pub fn get_mut<'a, T: TryFrom<&'a mut NbtTag>>(
+        &'a mut self,
+        index: usize,
+    ) -> Result<T, NbtReprError<T::Error>>
+    {
+        T::try_from(
+            self.0
+                .get_mut(index)
+                .ok_or(NbtStructureError::InvalidIndex)?,
+        )
+        .map_err(NbtReprError::conversion)
     }
 
     /// Pushes the given value to the back of the list after wrapping it in an `NbtTag`.
@@ -645,80 +673,89 @@ impl NbtCompound {
         NbtCompound(HashMap::with_capacity(capacity))
     }
 
+    /// Clones the data in the given map and converts it into an [`NbtCompound`](crate::tag::NbtCompound).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use nbt::NbtCompound;
+    /// # use std::collections::HashMap;
+    /// let mut map = HashMap::new();
+    /// map.insert("foo", 10i32);
+    /// map.insert("bar", -5i32);
+    ///
+    /// let compound = NbtCompound::clone_from(&map);
+    /// assert_eq!(compound.get::<i32>("foo").unwrap() + compound.get::<i32>("bar").unwrap(), 5i32);
+    /// ```
     pub fn clone_from<'a, K, V, M>(map: &'a M) -> Self
     where
-        K: ToString + 'a,
+        K: Clone + Into<String> + 'a,
         V: Clone + Into<NbtTag> + 'a,
-        &'a M: IntoIterator<Item = (&'a K, &'a V)>, {
+        &'a M: IntoIterator<Item = (&'a K, &'a V)>,
+    {
         NbtCompound(
             map.into_iter()
-                .map(|(key, value)| (key.to_string(), value.clone().into()))
+                .map(|(key, value)| (key.clone().into(), value.clone().into()))
                 .collect(),
         )
     }
 
+    /// Creates an [`NbtCompound`] of [`NbtCompound`]s by mapping each element in the given map to its
+    /// NBT representation.
+    ///
+    /// [`NbtCompound`]: crate::tag::NbtCompound
     pub fn clone_repr_from<'a, K, V, M>(map: &'a M) -> Self
     where
-        K: ToString + 'a,
+        K: Clone + Into<String> + 'a,
         V: NbtRepr + 'a,
-        &'a M: IntoIterator<Item = (&'a K, &'a V)>, {
+        &'a M: IntoIterator<Item = (&'a K, &'a V)>,
+    {
         NbtCompound(
             map.into_iter()
-                .map(|(key, value)| (key.to_string(), value.to_nbt().into()))
+                .map(|(key, value)| (key.clone().into(), value.to_nbt().into()))
                 .collect(),
         )
     }
 
+    /// Iterates over this tag compound, converting each tag reference into the specified type. Each key is
+    /// paired with the result of the attempted conversion into the specified type. The iterator will not
+    /// terminate even if some conversions fail.
     pub fn iter_map<'a, E, T: TryFrom<&'a NbtTag, Error = E>>(
         &'a self,
-    ) -> impl Iterator<Item = (&'a String, Result<T, E>)> + 'a {
-        self.0.iter().map(|(key, tag)| (key, T::try_from(tag)))
-    }
-
-    pub fn iter_mut_map<'a, E, T: TryFrom<&'a mut NbtTag, Error = E>>(
-        &'a mut self,
-    ) -> impl Iterator<Item = (&'a String, Result<T, E>)> + 'a {
-        self.0.iter_mut().map(|(key, tag)| (key, T::try_from(tag)))
-    }
-
-    pub fn iter_into_repr<T>(
-        &self,
-    ) -> impl Iterator<Item = (&'_ String, Result<T, T::Error>)> + '_
-    where
-        T: NbtRepr,
-        T::Error: From<NoneError>, {
+    ) -> impl Iterator<Item = (&'a str, Result<T, E>)> + 'a {
         self.0
             .iter()
-            .map(|(key, tag)| match TryInto::<&NbtCompound>::try_into(tag) {
-                Ok(nbt) => (key, T::from_nbt(nbt)),
-                Err(_) => (key, Err(T::Error::from(NoneError))),
+            .map(|(key, tag)| (key.as_str(), T::try_from(tag)))
+    }
+
+    /// Iterates over this tag compound, converting each mutable tag reference into the specified type. See
+    /// [`iter_map`](crate::tag::NbtCompound::iter_map) for details.
+    pub fn iter_mut_map<'a, E, T: TryFrom<&'a mut NbtTag, Error = E>>(
+        &'a mut self,
+    ) -> impl Iterator<Item = (&'a str, Result<T, E>)> + 'a {
+        self.0
+            .iter_mut()
+            .map(|(key, tag)| (key.as_str(), T::try_from(tag)))
+    }
+
+    /// Iterates over this tag compound, converting each tag into the specified concrete type. Each key is
+    /// paired with the result of the attempted conversion into the specified type. The iterator will not
+    /// terminate even if some conversions fail.
+    pub fn iter_into_repr<T: NbtRepr>(
+        &self,
+    ) -> impl Iterator<Item = (&'_ str, Result<T, NbtReprError<T::Error>>)> + '_ {
+        self.0.iter().map(|(key, tag)| {
+            (key.as_str(), match tag {
+                NbtTag::Compound(compound) =>
+                    T::from_nbt(compound).map_err(NbtReprError::conversion),
+                _ => Err(NbtReprError::Structure(NbtStructureError::TypeMismatch)),
             })
+        })
     }
 
-    pub fn clone_into_map<'a, K, V, M>(&'a self, map: &mut M)
-    where
-        K: FromStr,
-        V: Clone + 'a,
-        &'a V: TryFrom<&'a NbtTag>,
-        M: Extend<(K, V)>, {
-        map.extend(self.0.iter().flat_map(|(key, tag)| {
-            Some((
-                K::from_str(key).ok()?,
-                TryInto::<&V>::try_into(tag).ok()?.clone(),
-            ))
-        }));
-    }
-
-    pub fn clone_repr_into_map<'a, K, V, M>(&'a self, map: &mut M)
-    where
-        K: FromStr,
-        V: NbtRepr,
-        M: Extend<(K, V)>, {
-        map.extend(self.0.iter().flat_map(|(key, tag)| {
-            Some((K::from_str(key).ok()?, V::from_nbt(tag.try_into()?).ok()?))
-        }));
-    }
-
+    /// Equivalent to `NbtRepr::`[`from_nbt`]`(&compound)`.
+    ///
+    /// [`from_nbt`]: crate::repr::NbtRepr::from_nbt
     #[inline]
     pub fn clone_into<T: NbtRepr>(&self) -> Result<T, T::Error> {
         T::from_nbt(self)
@@ -760,33 +797,52 @@ impl NbtCompound {
 
     /// Returns the value of the tag with the given name, or `None` if no tag could be found with the given name.
     /// This method should be used to obtain primitives as well as shared references to lists and compounds.
-    pub fn get<'a, T: TryFrom<&'a NbtTag>>(&'a self, name: &str) -> Option<T> {
-        T::try_from(self.0.get(name)?).ok()
+    pub fn get<'a, K, T>(&'a self, name: &K) -> Result<T, NbtReprError<T::Error>>
+    where
+        String: Borrow<K>,
+        K: Hash + Eq + ?Sized,
+        T: TryFrom<&'a NbtTag>,
+    {
+        T::try_from(self.0.get(name).ok_or(NbtStructureError::MissingTag)?)
+            .map_err(NbtReprError::conversion)
     }
 
     /// Returns the value of the tag with the given name, or `None` if no tag could be found with the given name.
     /// This method should be used to obtain mutable references to lists and compounds.
-    pub fn get_mut<'a, T: TryFrom<&'a mut NbtTag>>(&'a mut self, name: &str) -> Option<T> {
-        T::try_from(self.0.get_mut(name)?).ok()
+    pub fn get_mut<'a, K, T>(&'a mut self, name: &K) -> Result<T, NbtReprError<T::Error>>
+    where
+        String: Borrow<K>,
+        K: Hash + Eq + ?Sized,
+        T: TryFrom<&'a NbtTag>,
+    {
+        T::try_from(self.0.get_mut(name).ok_or(NbtStructureError::MissingTag)?)
+            .map_err(NbtReprError::conversion)
     }
 
     /// Returns whether or not this compound has a tag with the given name.
     #[inline]
-    pub fn has(&self, key: &str) -> bool {
+    pub fn has<K>(&self, key: &K) -> bool
+    where
+        String: Borrow<K>,
+        K: Hash + Eq + ?Sized,
+    {
         self.0.contains_key(key)
     }
 
     /// Adds the given value to this compound with the given name after wrapping that value in an `NbtTag`.
-    pub fn set<T: Into<NbtTag>>(&mut self, name: String, value: T) {
-        self.0.insert(name, value.into());
+    pub fn set<K: Into<String>, T: Into<NbtTag>>(&mut self, name: K, value: T) {
+        self.0.insert(name.into(), value.into());
     }
 
     /// Parses a nbt compound from snbt
+    ///
     /// # Example
+    ///
     /// ```
+    /// # use nbt::NbtCompound;
     /// let tag = NbtCompound::from_snbt(r#"{string:Stuff, list:[I;1,2,3,4,5]}"#).unwrap();
-    /// assert_eq!(tag.get_string("string"), "Stuff");
-    /// assert_eq!(tag.get_int_array("list"), vec![1,2,3,4,5]);
+    /// assert_eq!(tag.get::<&str>("string"), Ok("Stuff"));
+    /// assert_eq!(tag.get::<&[i32]>("list"), Ok(vec![1,2,3,4,5].as_slice()));
     /// ```
     pub fn from_snbt(input: &str) -> Result<Self, String> {
         let input = input.to_owned();

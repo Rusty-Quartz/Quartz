@@ -1,6 +1,7 @@
 use crate::block::{
     self,
     entity::{BlockEntity, StaticBlockEntity},
+    init::*,
     states::BLOCK_LOOKUP_BY_NAME,
     Block,
     BlockState,
@@ -9,12 +10,7 @@ use crate::block::{
 use log::info;
 use num_traits::Num;
 use once_cell::sync::OnceCell;
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, HashMap},
-    convert::TryInto,
-    fmt::{Debug, Display},
-};
+use std::fmt::{Debug, Display};
 use util::UnlocalizedName;
 
 static GLOBAL_STATIC_REGISTRY: OnceCell<StaticRegistry> = OnceCell::new();
@@ -23,10 +19,9 @@ pub type StaticStateID = <StaticRegistry as BlockRegistry>::StateID;
 pub type DynamicStateID = u32;
 
 pub trait Registry
-where Self: BlockRegistry + BlockEntityRegistry + Sized + 'static {
+where Self: BlockRegistry + BlockEntityRegistry + Sized + 'static
+{
     fn new() -> Self;
-
-    fn global() -> &'static Self;
 
     fn set_global(registry: Self) -> Result<(), Self>;
 }
@@ -36,8 +31,9 @@ pub trait BlockRegistry {
 
     type BlockState: BlockState<Self::StateID> + Sized;
 
-    fn default_state(self: &'static Self, block_name: &UnlocalizedName)
-        -> Option<Self::BlockState>;
+    fn default_state(block_name: &UnlocalizedName) -> Option<Self::BlockState>;
+
+    fn state_for_id(id: Self::StateID) -> Option<&'static Self::BlockState>;
 }
 
 pub trait BlockEntityRegistry {
@@ -46,6 +42,23 @@ pub trait BlockEntityRegistry {
 
 pub struct StaticRegistry {
     blocks: &'static [Block<StaticStateID>],
+    global_palette: Box<[StaticBlockState]>,
+}
+
+impl StaticRegistry {
+    #[inline]
+    fn get() -> &'static Self {
+        #[cfg(debug_assertions)]
+        {
+            GLOBAL_STATIC_REGISTRY.get()
+                .expect("Global static registry not initialized")
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            unsafe { GLOBAL_STATIC_REGISTRY.get_unchecked() }
+        }
+    }
 }
 
 impl BlockRegistry for StaticRegistry {
@@ -53,7 +66,6 @@ impl BlockRegistry for StaticRegistry {
     type StateID = u16;
 
     fn default_state(
-        self: &'static Self,
         block_name: &UnlocalizedName,
     ) -> Option<Self::BlockState>
     {
@@ -64,9 +76,14 @@ impl BlockRegistry for StaticRegistry {
         BLOCK_LOOKUP_BY_NAME
             .get(block_name.identifier.as_str())
             .map(|meta| StaticBlockState {
-                handle: &self.blocks[meta.internal_block_id],
+                // Safety: internal block IDs are guaranteed to be consistent and in-bounds
+                handle: unsafe { &Self::get().blocks.get_unchecked(meta.internal_block_id) },
                 data: meta.default_state_data,
             })
+    }
+
+    fn state_for_id(id: Self::StateID) -> Option<&'static Self::BlockState> {
+        Self::get().global_palette.get(id as usize)
     }
 }
 
@@ -77,26 +94,16 @@ impl BlockEntityRegistry for StaticRegistry {
 impl Registry for StaticRegistry {
     #[inline]
     fn new() -> Self {
+        info!("Initializing static registry");
+
+        info!("Initializing blocks");
+        let raw = load_raw_block_data::<StaticStateID>();
+        let blocks = make_block_list(&raw).leak();
+        let global_palette = make_static_global_palette(&raw, blocks).into_boxed_slice();
+
         StaticRegistry {
-            blocks: block::init::load_block_list::<StaticStateID>().leak(),
-        }
-    }
-
-    #[inline]
-    fn global() -> &'static Self {
-        #[cfg(debug_assertions)]
-        {
-            GLOBAL_STATIC_REGISTRY
-                .get()
-                .expect("Global static registry not initialized")
-        }
-
-        #[cfg(not(debug_assertions))]
-        {
-            match GLOBAL_STATIC_REGISTRY.get() {
-                Some(registry) => registry,
-                None => unsafe { std::hint::unreachable_unchecked() },
-            }
+            blocks,
+            global_palette,
         }
     }
 

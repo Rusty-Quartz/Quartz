@@ -3,10 +3,9 @@ use crate::{
         assets,
         registry::{DynamicStateID, StaticStateID},
     },
-    block::{Block, DynamicBlockState, DynamicStateBuilder},
+    block::{states::BLOCK_LOOKUP_BY_NAME, *},
 };
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use log::info;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
@@ -20,15 +19,6 @@ use util::UnlocalizedName;
 
 static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block<DynamicStateID>>> = OnceCell::new();
 static GLOBAL_PALETTE: OnceCell<Box<[DynamicBlockState]>> = OnceCell::new();
-
-lazy_static! {
-    static ref DUMMY_BLOCK: Block<DynamicStateID> = Block {
-        name: UnlocalizedName::minecraft("dummy"),
-        properties: ArrayVec::new(),
-        base_state: 0,
-        default_state: 0
-    };
-}
 
 #[inline(always)]
 pub fn get_block_list() -> &'static HashMap<UnlocalizedName, Block<DynamicStateID>> {
@@ -66,17 +56,15 @@ pub fn new_state(block_name: &UnlocalizedName) -> Option<DynamicStateBuilder> {
         .map(|block| DynamicStateBuilder::new(&get_global_palette()[block.default_state as usize]))
 }
 
-pub fn load_block_list<'de, T: Deserialize<'de> + Copy>() -> Vec<Block<T>> {
-    info!("Loading block data");
+pub(crate) fn load_raw_block_data<'de, T: Deserialize<'de>>() -> HashMap<String, RawBlockInfo<T>> {
+    serde_json::from_str::<HashMap<String, RawBlockInfo<T>>>(assets::BLOCK_INFO)
+        .expect("assets/blocks.json is corrupted.")
+}
 
-    let parsed_data = serde_json::from_str::<HashMap<String, RawBlockInfo<T>>>(assets::BLOCK_INFO)
-        .expect("assets/blocks.json is corrupted.");
+pub(crate) fn make_block_list<T: Copy>(raw: &HashMap<String, RawBlockInfo<T>>) -> Vec<Block<T>> {
     let mut block_list = Vec::new();
 
-    for (name, block_info) in parsed_data
-        .into_iter()
-        .sorted_by_key(|(_, info)| info.interm_id)
-    {
+    for (name, block_info) in raw.into_iter().sorted_by_key(|(_, info)| info.interm_id) {
         let uln = UnlocalizedName::from_str(&name)
             .expect("Invalid block name encountered during registration.");
 
@@ -100,100 +88,52 @@ pub fn load_block_list<'de, T: Deserialize<'de> + Copy>() -> Vec<Block<T>> {
     block_list
 }
 
-/// Initializes the block list and global palette
-pub fn init_blocks() {
-    info!("Loading block data");
+pub(crate) fn make_static_global_palette(
+    raw: &HashMap<String, RawBlockInfo<StaticStateID>>,
+    blocks: &'static [Block<StaticStateID>],
+) -> Vec<StaticBlockState>
+{
+    let mut global_palette = Vec::new();
 
-    let parsed_data =
-        serde_json::from_str::<HashMap<String, RawBlockInfo<DynamicStateID>>>(assets::BLOCK_INFO)
-            .expect("assets/blocks.json is corrupted.");
+    for (_, block) in raw {
+        let handle: &'static Block<StaticStateID> = &blocks[block.interm_id];
 
-    let mut block_list: HashMap<UnlocalizedName, Block<DynamicStateID>> =
-        HashMap::with_capacity(parsed_data.len());
-    let mut name_map: HashMap<String, UnlocalizedName> = HashMap::with_capacity(parsed_data.len());
-    let mut largest_state: usize = 0;
-
-    for (name, block_info) in parsed_data.iter() {
-        let uln = UnlocalizedName::from_str(name)
-            .expect("Invalid block name encountered during registration.");
-        name_map.insert(name.clone(), uln.clone());
-
-        // This should never happen if the data integrity is not compromised
-        if block_info.states.is_empty() {
-            panic!("Invalid block encountered: {}, no states found.", name);
-        }
-
-        block_list.insert(uln.clone(), Block {
-            name: uln,
-            properties: block_info
-                .properties
-                .clone()
-                .into_iter()
-                .collect::<ArrayVec<_>>(),
-            base_state: block_info.states[0].id,
-            default_state: block_info.default,
-        });
-
-        // Use this to determine the size of the global palette
-        let id = block_info.states.last().unwrap().id as usize;
-        if id > largest_state {
-            largest_state = id;
-        }
-    }
-
-    match BLOCK_LIST.set(block_list) {
-        Ok(()) => {}
-        Err(_) => panic!("Block list already initialized."),
-    }
-
-    let mut global_palette: Vec<DynamicBlockState> = Vec::with_capacity(largest_state + 1);
-    global_palette.resize_with(largest_state + 1, || DynamicBlockState {
-        handle: &DUMMY_BLOCK,
-        properties: ArrayVec::new(),
-    });
-
-    for (name, block) in parsed_data {
-        // All of the unwraps are guaranteed to succeed
-        let handle: &'static Block<DynamicStateID> = BLOCK_LIST
-            .get()
-            .unwrap()
-            .get(name_map.get(&name).unwrap())
-            .unwrap();
-
-        for state_info in block.states {
-            // Make sure we're not going out of bounds
-            assert!(
-                (state_info.id as usize) < global_palette.len(),
-                "Invalid state ID encountered: {} > {}",
-                state_info.id,
-                global_palette.len()
-            );
-
-            let state = DynamicBlockState {
+        for state_info in block.states.iter() {
+            let default_state = StaticBlockState {
                 handle,
-                properties: state_info.properties.into_iter().collect::<ArrayVec<_>>(),
+                data: BLOCK_LOOKUP_BY_NAME
+                    .get(handle.name.identifier.as_str())
+                    .unwrap()
+                    .default_state_data,
             };
+            let mut state_builder = StaticStateBuilder::new(default_state.clone());
+
+            for (key, value) in state_info.properties.iter() {
+                state_builder
+                    .add_property(key.as_str(), value.as_str())
+                    .unwrap();
+            }
+
+            let state = state_builder.build();
 
             // Make sure the computed ID matches the ID in the generated data
             assert_eq!(
                 state_info.id,
                 state.id(),
                 "Computed ID for {} does not match stored ID.",
-                state
+                state.handle.name
             );
 
-            global_palette[state_info.id as usize] = state;
+            global_palette.push(state);
         }
     }
 
-    match GLOBAL_PALETTE.set(global_palette.into_boxed_slice()) {
-        Ok(()) => {}
-        Err(_) => panic!("Global palette already initialized."),
-    }
+    global_palette.sort_by_key(|state| state.id());
+    global_palette
 }
 
 #[derive(Serialize, Deserialize)]
-struct RawBlockInfo<T> {
+pub(crate) struct RawBlockInfo<T> {
     // Use a BTreeMap for ordering so that we can compute state IDs
     #[serde(default = "BTreeMap::new")]
     properties: BTreeMap<String, Vec<String>>,

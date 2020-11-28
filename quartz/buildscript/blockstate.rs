@@ -167,10 +167,10 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
             property.name.replace('_', "")
         };
 
-        let mut curr_enum = format!("\n\n/// Blockstate property {} for", enum_name);
+        let mut curr_enum = format!("/// Blockstate property {} for", enum_name);
 
         for block in &property.blocks {
-            curr_enum.push_str(&format!("\n///\t{}", block));
+            curr_enum.push_str(&format!("\n/// {}", block));
         }
 
         curr_enum.push_str(&format!(
@@ -179,31 +179,30 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
         ));
 
         let mut property_value_names = Vec::new();
-        for value in &property.values {
+        for value in property.values.iter() {
             property_value_names.push(value.clone());
             if is_num {
                 curr_enum.push_str(&format!(
-                    "\n\t{}{} = {},",
+                    "{}{},",
                     snake_to_camel(&original_name),
-                    value.clone(),
                     value.clone()
                 ))
             } else if is_bool {
                 let mut var_name = value.clone();
                 var_name[.. 1].make_ascii_uppercase();
-                curr_enum.push_str(&format!("\n\t{},", snake_to_camel(&var_name)))
+                curr_enum.push_str(&format!("{},", snake_to_camel(&var_name)))
             } else {
-                curr_enum.push_str(&format!("\n\t{},", snake_to_camel(&value.clone())));
+                curr_enum.push_str(&format!("{},", snake_to_camel(&value.clone())));
             }
         }
 
-        enums.push_str(&format!("{}\n}}", curr_enum));
+        enums.push_str(&format!("{}}}", curr_enum));
 
         let mut const_arr_name = enum_name.clone();
 
         const_arr_name.make_ascii_uppercase();
         enums.push_str(&format!(
-            "\nconst {}_VALUES: [&str; {}] = [",
+            "const {}_VALUES: [&str; {}] = [",
             const_arr_name,
             property_value_names.len()
         ));
@@ -215,17 +214,17 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
         enums.push_str("];");
 
         enums.push_str(&format!(
-            "\nimpl {} {{\n\tpub const fn string_values() -> &'static [&'static str] {{\n\t\t",
+            "impl {} {{pub const fn string_values() -> &'static [&'static str] {{",
             snake_to_camel(&enum_name)
         ));
-        enums.push_str(&format!("&{}_VALUES\n\t}}", const_arr_name));
+        enums.push_str(&format!("&{}_VALUES}}", const_arr_name));
 
         enums.push_str(&format!(
             "const fn count() -> u16 {{{}}}",
             property_value_names.len()
         ));
 
-        enums.push_str("\n\n\tfn from_str(s: &str) -> Option<Self> {\n\t\tmatch s {");
+        enums.push_str("fn from_str(s: &str) -> Option<Self> {match s {");
         for value in &property.values {
             let prop_value = if value.parse::<u8>().is_ok() {
                 format!("{}{}", snake_to_camel(&original_name), value.clone())
@@ -237,13 +236,13 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
                 snake_to_camel(&value.clone())
             };
             enums.push_str(&format!(
-                "\n\t\t\t\"{}\" => Some({}::{}),",
+                "\"{}\" => Some({}::{}),",
                 value,
                 snake_to_camel(&enum_name),
                 prop_value
             ))
         }
-        enums.push_str("\n\t\t\t_ => None\n\t\t}\n\t}\n}");
+        enums.push_str("_ => None}}}");
     }
     enums
 }
@@ -331,7 +330,7 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> String {
         let block_name = snake_to_camel(&get_block_name(uln_name));
 
         block_struct.push_str(&format!(
-            "\n#[derive(Clone, Copy, Debug)]pub struct {}State {{",
+            "#[derive(Clone, Copy, Debug)]pub struct {}State {{",
             snake_to_camel(&block_name)
         ));
 
@@ -361,25 +360,23 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> String {
             }
 
             with_property.push_str(&format!(
-                "\"{0}\" => self.{0} = {1}::from_str(value)?,",
-                field_name, type_name
+                "\"{}\" => self.{} = {}::from_str(value)?,",
+                lowercase_name, field_name, type_name
             ));
         }
         block_struct.push_str("}");
 
         // Default state value
         block_struct.push_str(&format!(
-            "\nimpl {0}State {{\n\tconst fn const_default() -> Self {{\n\t\t{0}State ",
+            "impl {0}State {{const fn const_default() -> Self {{{0}State ",
             snake_to_camel(&block_name)
         ));
         block_struct.push_str(
             &serde_json::to_string_pretty(&block_info.default_state)
                 .unwrap()
-                .replace("  ", "\t")
-                .replace("\n", "\n\t\t")
                 .replace("\"", ""),
         );
-        block_struct.push_str("\n\t}");
+        block_struct.push_str("}");
 
         // ID computation
         block_struct.push_str(&format!(
@@ -407,7 +404,7 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> String {
 }
 
 fn gen_struct_enum(block_data: &HashMap<String, RawBlockInfo>) -> String {
-    let mut enum_str = "\n#[derive(Clone, Copy, Debug)]pub enum BlockStateData {".to_owned();
+    let mut enum_str = "#[derive(Clone, Copy, Debug)]pub enum BlockStateData {".to_owned();
 
     let mut with_property = String::new();
     let mut id = String::new();

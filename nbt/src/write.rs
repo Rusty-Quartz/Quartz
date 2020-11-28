@@ -75,8 +75,7 @@ where
     )
 }
 
-fn write_compound<W>(writer: &mut W, compound: &NbtCompound) -> Result<()>
-where W: Write {
+fn write_compound<W: Write>(writer: &mut W, compound: &NbtCompound) -> Result<()> {
     for (name, tag) in compound.as_ref().iter() {
         writer.write_u8(tag.id())?;
         write_string(writer, name)?;
@@ -87,8 +86,7 @@ where W: Write {
     writer.write_u8(0)
 }
 
-fn write_tag_body<W>(writer: &mut W, tag: &NbtTag) -> Result<()>
-where W: Write {
+fn write_tag_body<W: Write>(writer: &mut W, tag: &NbtTag) -> Result<()> {
     match tag {
         NbtTag::Byte(value) => writer.write_i8(*value),
         NbtTag::Short(value) => writer.write_i16::<BigEndian>(*value),
@@ -151,8 +149,7 @@ where W: Write {
     }
 }
 
-fn write_string<W>(writer: &mut W, string: &str) -> Result<()>
-where W: Write {
+fn write_string<W: Write>(writer: &mut W, string: &str) -> Result<()> {
     writer.write_u16::<BigEndian>(string.len() as u16)?;
     writer.write_all(&cesu8::to_java_cesu8(string))
 }

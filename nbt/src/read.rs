@@ -4,8 +4,7 @@ use flate2::read::{GzDecoder, ZlibDecoder};
 use std::io::{Error, ErrorKind, Read, Result};
 
 /// Reads uncompressed binary NBT data from the given source.
-pub fn read_nbt_uncompressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
-where R: Read {
+pub fn read_nbt_uncompressed<R: Read>(source: &mut R) -> Result<(NbtCompound, String)> {
     let root_id = source.read_u8()?;
     if root_id != 0xA {
         return Err(Error::new(
@@ -24,20 +23,17 @@ where R: Read {
 
 /// Wraps the given source in a zlib decoder, then passes the wrapped source to the uncompressed
 /// reader function.
-pub fn read_nbt_zlib_compressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
-where R: Read {
+pub fn read_nbt_zlib_compressed<R: Read>(source: &mut R) -> Result<(NbtCompound, String)> {
     read_nbt_uncompressed(&mut ZlibDecoder::new(source))
 }
 
 /// Wraps the given source in a gz decoder, then passes the wrapped source to the uncompressed
 /// reader function.
-pub fn read_nbt_gz_compressed<R>(source: &mut R) -> Result<(NbtCompound, String)>
-where R: Read {
+pub fn read_nbt_gz_compressed<R: Read>(source: &mut R) -> Result<(NbtCompound, String)> {
     read_nbt_uncompressed(&mut GzDecoder::new(source))
 }
 
-fn read_tag_body<R>(source: &mut R, id: u8) -> Result<NbtTag>
-where R: Read {
+fn read_tag_body<R: Read>(source: &mut R, id: u8) -> Result<NbtTag> {
     let tag = match id {
         0x1 => NbtTag::Byte(source.read_i8()?),
         0x2 => NbtTag::Short(source.read_i16::<BigEndian>()?),
@@ -123,8 +119,7 @@ where R: Read {
     Ok(tag)
 }
 
-fn read_string<R>(source: &mut R) -> Result<String>
-where R: Read {
+fn read_string<R: Read>(source: &mut R) -> Result<String> {
     let len = source.read_u16::<BigEndian>()? as usize;
     let mut bytes = vec![0; len];
     source.read_exact(&mut bytes)?;

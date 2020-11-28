@@ -17,7 +17,8 @@ const CLIENT_PACKET_START: &str = r#"#[doc = "Packets sent from the server to th
 pub enum ClientBoundPacket {"#;
 
 const DESERIALIZER_START: &str = r#"#[doc = "Deserializes a packet from the connection's buffer and either handles it immediately or forwards it to the server thread."]
-async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, packet_len: usize) {
+#[allow(unused_variables)]
+async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, _packet_len: usize) {
     let buffer = &mut conn.read_buffer;
     let id;
 
@@ -103,6 +104,7 @@ pub fn gen_packet_handlers() {
         ),
     )
     .unwrap();
+    super::format_in_place(dest_path.as_os_str());
 
     println!("cargo:rerun-if-changed=./assets/Pickaxe/protocol.json");
     println!("cargo:rerun-if-changed=./assets/Pickaxe/mappings.json");
@@ -115,11 +117,11 @@ fn gen_packet_enum(packet_arr: Vec<Packet>, mappings: &HashMap<String, String>) 
     for packet in packet_arr {
         // If no fields are used
         if used_field_count(&packet) == 0 {
-            output.push_str(&format!("\n\t{},", snake_to_camel(&packet.name)));
+            output.push_str(&format!("{},", snake_to_camel(&packet.name)));
             continue;
         }
 
-        let mut packet_str = format!("\n\t{} {{", snake_to_camel(&packet.name));
+        let mut packet_str = format!("{} {{", snake_to_camel(&packet.name));
 
         for field in packet.fields {
             if field.unused.unwrap_or(false) {
@@ -128,11 +130,11 @@ fn gen_packet_enum(packet_arr: Vec<Packet>, mappings: &HashMap<String, String>) 
             packet_str.push_str(&field.struct_type(mappings));
         }
 
-        packet_str.push_str("\n\t},");
+        packet_str.push_str("},");
         output.push_str(&packet_str);
     }
 
-    output.push_str("\n}");
+    output.push_str("}");
 
     output
 }
@@ -145,16 +147,15 @@ fn gen_deserializers(states_raw: &Vec<StatePacketInfo>, mappings_raw: &Mappings)
             continue;
         }
 
-        let mut state_str = format!("\n\t\tConnectionState::{} => {{", state.name);
+        let mut state_str = format!("ConnectionState::{} => {{", state.name);
 
         if state.server_bound.is_some() {
-            state_str.push_str("\n\t\t\tmatch id {");
+            state_str.push_str("match id {");
 
             for packet in state.server_bound.clone().unwrap() {
-                let mut packet_str = format!("\n\t\t\t\t{} => {{", packet.id);
+                let mut packet_str = format!("{} => {{", packet.id);
 
                 for field in &packet.fields {
-                    packet_str.push_str("\n\t\t\t\t\t");
                     packet_str.push_str(&format!("let {} = ", field.name));
 
                     if field.option {
@@ -183,14 +184,14 @@ fn gen_deserializers(states_raw: &Vec<StatePacketInfo>, mappings_raw: &Mappings)
 
                 if packet.is_async() {
                     packet_str.push_str(&format!(
-                        "\n\t\t\t\t\tasync_handler.{}(conn, {}).await;",
+                        "async_handler.{}(conn, {}).await;",
                         packet.name.to_ascii_lowercase(),
                         packet.format_params(&mappings_raw)
                     ));
-                    packet_str.push_str("\n\t\t\t\t},");
+                    packet_str.push_str("},");
                 } else {
                     packet_str.push_str(&format!(
-                        "\n\t\t\t\t\tconn.forward_to_server(ServerBoundPacket::{}{}",
+                        "conn.forward_to_server(ServerBoundPacket::{}{}",
                         snake_to_camel(&packet.name),
                         if used_field_count(&packet) == 0 {
                             ");"
@@ -200,7 +201,7 @@ fn gen_deserializers(states_raw: &Vec<StatePacketInfo>, mappings_raw: &Mappings)
                     ));
 
                     if used_field_count(&packet) == 0 {
-                        state_str.push_str(&format!("{}\n\t\t\t\t}},", packet_str));
+                        state_str.push_str(&format!("{}}},", packet_str));
                         continue;
                     }
 
@@ -212,20 +213,20 @@ fn gen_deserializers(states_raw: &Vec<StatePacketInfo>, mappings_raw: &Mappings)
                         packet_str.push_str(&format!("{},", field.name))
                     }
 
-                    packet_str.push_str("});}, //Stuff");
+                    packet_str.push_str("});},");
                 }
 
                 state_str.push_str(&packet_str);
             }
 
-            state_str.push_str("\n\t\t\t\t_ => invalid_packet!(id, buffer.len())\n\t\t\t}");
+            state_str.push_str("_ => invalid_packet!(id, buffer.len())}");
         }
 
-        state_str.push_str("\n\t\t},");
+        state_str.push_str("},");
         deserializers.push_str(&state_str);
     }
 
-    deserializers.push_str("\n\t\t_ => {}\n\t}\n}");
+    deserializers.push_str("_ => {}}}");
 
     deserializers
 }
@@ -235,18 +236,17 @@ fn gen_serializers(client_bound: &Vec<Packet>, mappings: &Mappings) -> String {
 
     for packet in client_bound {
         let mut packet_str = format!(
-            "\n\t\tClientBoundPacket::{} {{{}}} => {{",
+            "ClientBoundPacket::{} {{{}}} => {{",
             snake_to_camel(&packet.name),
             packet.struct_params()
         );
 
-        packet_str.push_str(&format!("\n\t\t\tbuffer.write_varint({});", packet.id));
+        packet_str.push_str(&format!("buffer.write_varint({});", packet.id));
 
         for field in &packet.fields {
             if field.option {
                 packet_str.push_str(&format!(
-                    "\n\t\t\tmatch {} {{\n\t\t\t\tSome({}) => {{{}}},\n\t\t\t\tNone => \
-                     {{}}\n\t\t\t}}",
+                    "match {} {{Some({}) => {{{}}},None => {{}}}}",
                     field.name,
                     field.name,
                     if field.array {
@@ -264,19 +264,19 @@ fn gen_serializers(client_bound: &Vec<Packet>, mappings: &Mappings) -> String {
             }
         }
 
-        packet_str.push_str("\n\t\t},");
+        packet_str.push_str("},");
 
         serlializers.push_str(&packet_str);
     }
 
-    serlializers.push_str("\n\t}\n}");
+    serlializers.push_str("}}");
 
     serlializers
 }
 
 fn serializer(field: &Field, mappings: &Mappings) -> String {
     format!(
-        "\n\t\t\tbuffer.write_{}({}{});",
+        "buffer.write_{}({}{});",
         field.var_type.to_ascii_lowercase(),
         if !mappings.primitives.contains(&field.var_type) {
             ""
@@ -289,7 +289,7 @@ fn serializer(field: &Field, mappings: &Mappings) -> String {
 
 fn array_serializer(field: &Field, mappings: &Mappings) -> String {
     format!(
-        "\n\t\t\tbuffer.write_{}array::<{}>({}, PacketBuffer::write_{});",
+        "buffer.write_{}array::<{}>({}, PacketBuffer::write_{});",
         if mappings
             .primitives
             .contains(&field.var_type.split("(").next().unwrap().to_owned())
@@ -314,7 +314,7 @@ fn gen_sync_dispatch(server_bound: &Vec<Packet>, mappings_raw: &Mappings) -> Str
 
     for packet in server_bound.iter().filter(|packet| packet.dispatch) {
         dispatch.push_str(&format!(
-            "\n\t\tServerBoundPacket::{} {{{}}} => handler.{}({}).await,",
+            "ServerBoundPacket::{} {{{}}} => handler.{}({}).await,",
             snake_to_camel(&packet.name),
             packet.struct_params(),
             packet.name.to_ascii_lowercase(),
@@ -329,7 +329,7 @@ fn gen_sync_dispatch(server_bound: &Vec<Packet>, mappings_raw: &Mappings) -> Str
         ));
     }
 
-    dispatch.push_str("\n\t\t_ => {}\n\t}\n}");
+    dispatch.push_str("}}");
 
     dispatch
 }
@@ -452,17 +452,13 @@ impl Field {
         self.unused.is_none() || !self.unused.unwrap()
     }
 
-    pub fn is_ref(&self) -> bool {
-        self.referenced.is_some() && self.referenced.unwrap()
-    }
-
     pub fn pass_raw(&self) -> bool {
         self.pass_raw.is_some() && self.pass_raw.unwrap()
     }
 
     pub fn struct_type(&self, mappings: &HashMap<String, String>) -> String {
         format!(
-            "\n\t\t{}: {}{}{}{}{},",
+            "{}: {}{}{}{}{},",
             self.name,
             if self.option { "Option<" } else { "" },
             if self.array { "Vec<" } else { "" },

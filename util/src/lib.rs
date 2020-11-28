@@ -7,6 +7,8 @@
 pub mod logging;
 /// Contains optimized maps where hash maps are insufficient.
 pub mod map;
+/// Contains fast math utilities.
+pub mod math;
 /// Contains an implementation of a single-access box allowing for interior mutability.
 pub mod single_access;
 mod uln;
@@ -17,9 +19,10 @@ pub use uln::UnlocalizedName;
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(debug_assertions))]
     extern crate test;
     #[cfg(not(debug_assertions))]
-    use test::Bencher;
+    use test::{black_box, Bencher};
 
     use super::*;
     use map::{IdList, Identify};
@@ -148,6 +151,34 @@ mod tests {
                 assert!(sa1.take().is_none());
                 *sa2.take().unwrap() -= *locmov1;
                 *locmov1 += *sa2.take().unwrap();
+            }
+        });
+    }
+
+    #[bench]
+    #[cfg(not(debug_assertions))]
+    fn fast_inv_sqrt64(bencher: &mut Bencher) {
+        use math::fast_inv_sqrt64;
+
+        let mut x = 0.01f64;
+
+        bencher.iter(move || {
+            for _ in 0 .. 10000 {
+                black_box(x * fast_inv_sqrt64(x));
+                x += 0.01;
+            }
+        });
+    }
+
+    #[bench]
+    #[cfg(not(debug_assertions))]
+    fn std_inv_sqrt64(bencher: &mut Bencher) {
+        let mut x = 0.01f64;
+
+        bencher.iter(move || {
+            for _ in 0 .. 10000 {
+                black_box(x / x.sqrt());
+                x += 0.01;
             }
         });
     }

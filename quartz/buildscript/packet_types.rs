@@ -22,13 +22,14 @@ pub fn gen_packet_types() {
 
         if custom_type.gen_serde {
             serde.push_str(&custom_type.gen_serializer(&mappings));
-            serde.push_str(&custom_type.gen_deserializer(&mappings));
+            serde.push_str(&custom_type.gen_deserializer());
         }
     }
 
-    serde.push_str("\n}");
+    serde.push_str("}");
 
-    fs::write(dest_path, format!("{}\n\n{}", structs, serde)).unwrap();
+    fs::write(&dest_path, format!("{}\n\n{}", structs, serde)).unwrap();
+    super::format_in_place(dest_path.as_os_str());
 }
 
 #[derive(Deserialize)]
@@ -61,11 +62,11 @@ impl Type {
     }
 
     pub fn gen_struct(&self, type_maps: &HashMap<String, String>) -> String {
-        let mut struct_str = format!("\npub struct {} {{", self.struct_name());
+        let mut struct_str = format!("pub struct {} {{", self.struct_name());
 
         for field in &self.fields {
             struct_str.push_str(&format!(
-                "\n\t{}: {}{}{}{}{},",
+                "{}: {}{}{}{}{},",
                 field.name,
                 if field.option { "Option<" } else { "" },
                 if field.array { "Vec<" } else { "" },
@@ -75,13 +76,13 @@ impl Type {
             ));
         }
 
-        struct_str.push_str("\n}\n");
+        struct_str.push_str("}");
         struct_str
     }
 
     pub fn gen_serializer(&self, mappings: &Mappings) -> String {
         format!(
-            "\n\tpub fn write{}(&mut self, value: &{}) {{{}\n\t}}",
+            "pub fn write{}(&mut self, value: &{}) {{{}}}",
             self.serde_name(),
             self.struct_name(),
             self.fields.iter().fold(String::new(), |mut i, f| {
@@ -91,18 +92,18 @@ impl Type {
         )
     }
 
-    pub fn gen_deserializer(&self, mappings: &Mappings) -> String {
+    pub fn gen_deserializer(&self) -> String {
         format!(
-            "\n\tpub fn read{}(&mut self) -> {} {{{}\n\t\t{} {{{}\n\t\t}}\n\t}}",
+            "pub fn read{}(&mut self) -> {} {{{}{} {{{}}}}}",
             self.serde_name(),
             self.struct_name(),
             self.fields.iter().fold(String::new(), |mut i, f| {
-                i.push_str(&f.gen_deserializer(mappings));
+                i.push_str(&f.gen_deserializer());
                 i
             }),
             self.struct_name(),
             self.fields.iter().fold(String::new(), |mut i, f| {
-                i.push_str(&format!("\n\t\t\t{},", f.name));
+                i.push_str(&format!("{},", f.name));
                 i
             })
         )
@@ -133,18 +134,14 @@ struct Field {
 }
 
 impl Field {
-    pub fn gen_deserializer(&self, mappings: &Mappings) -> String {
+    pub fn gen_deserializer(&self) -> String {
         if self.option {
-            self.gen_option_deserializer(mappings)
+            self.gen_option_deserializer()
         } else if self.array {
-            format!(
-                "\n\t\tlet {} = {};",
-                self.name,
-                self.gen_array_deserializer(mappings)
-            )
+            format!("let {} = {};", self.name, self.gen_array_deserializer())
         } else {
             format!(
-                "\n\t\tlet {} = self.read_{}{};",
+                "let {} = self.read_{}{};",
                 self.name,
                 self.var_type,
                 if self.var_type.contains("(") {
@@ -156,17 +153,17 @@ impl Field {
         }
     }
 
-    pub fn gen_option_deserializer(&self, mappings: &Mappings) -> String {
+    pub fn gen_option_deserializer(&self) -> String {
         if self.array {
             format!(
-                "\n\t\tlet {} = if {} {{\n\t\t\tSome({})\n\t\t}} else {{None}};",
+                "let {} = if {} {{Some({})}} else {{None}};",
                 self.name,
                 self.condition.clone().unwrap(),
-                self.gen_array_deserializer(mappings)
+                self.gen_array_deserializer()
             )
         } else {
             format!(
-                "\n\t\tlet {} = if {} {{\n\t\t\tSome(self.read_{}{})\n\t\t}} else {{None}};",
+                "let {} = if {} {{Some(self.read_{}{})}} else {{None}};",
                 self.name,
                 self.condition.clone().unwrap(),
                 self.var_type,
@@ -179,7 +176,7 @@ impl Field {
         }
     }
 
-    pub fn gen_array_deserializer(&self, mappings: &Mappings) -> String {
+    pub fn gen_array_deserializer(&self) -> String {
         format!(
             "self.read_array({} as usize, PacketBuffer::read_{})",
             self.var_type.split("(").nth(1).unwrap().replace(")", ""),
@@ -191,10 +188,10 @@ impl Field {
         if self.option {
             self.gen_option_serializer(mappings)
         } else if self.array {
-            format!("\n\t\t{}", self.gen_array_serializer(mappings))
+            format!("{}", self.gen_array_serializer(mappings))
         } else {
             format!(
-                "\n\t\tself.write_{}({}value.{});",
+                "self.write_{}({}value.{});",
                 self.get_type(),
                 if mappings.primitives.contains(&self.get_type()) {
                     ""
@@ -209,14 +206,13 @@ impl Field {
     pub fn gen_option_serializer(&self, mappings: &Mappings) -> String {
         if self.array {
             format!(
-                "\n\t\tmatch &value.{} {{\n\t\t\tSome(v) => {{{}}},\n\t\t\tNone => {{}}\n\t\t}}",
+                "match &value.{} {{Some(v) => {{{}}},None => {{}}}}",
                 self.name,
                 self.gen_array_serializer(mappings)
             )
         } else {
             format!(
-                "\n\t\tmatch &value.{} {{\n\t\t\tSome(v) => self.write_{}({}v),\n\t\t\tNone => \
-                 {{}}\n\t\t}}",
+                "match &value.{} {{Some(v) => self.write_{}({}v),None => {{}}}}",
                 self.name,
                 self.get_type(),
                 if mappings.primitives.contains(&self.get_type()) {

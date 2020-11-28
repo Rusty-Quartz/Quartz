@@ -35,7 +35,7 @@ impl Display for CoordinatePair {
 
 impl Debug for CoordinatePair {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(self, f)
+        write!(f, "({}, {})", self.x, self.z)
     }
 }
 
