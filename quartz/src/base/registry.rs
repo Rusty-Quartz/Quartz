@@ -1,5 +1,4 @@
 use crate::block::{
-    self,
     entity::{BlockEntity, StaticBlockEntity},
     init::*,
     states::BLOCK_LOOKUP_BY_NAME,

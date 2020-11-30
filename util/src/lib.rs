@@ -14,8 +14,11 @@ pub mod single_access;
 mod uln;
 /// Allows for downcasting of trait types.
 pub mod variant;
+/// Provides an implementation of a three-dimensional vector.
+mod vector;
 
 pub use uln::UnlocalizedName;
+pub use vector::Vector;
 
 #[cfg(test)]
 mod tests {
