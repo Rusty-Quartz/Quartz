@@ -150,6 +150,7 @@ fn write_tag_body<W: Write>(writer: &mut W, tag: &NbtTag) -> Result<()> {
 }
 
 fn write_string<W: Write>(writer: &mut W, string: &str) -> Result<()> {
-    writer.write_u16::<BigEndian>(string.len() as u16)?;
-    writer.write_all(&cesu8::to_java_cesu8(string))
+    let mod_utf8 = cesu8::to_java_cesu8(string);
+    writer.write_u16::<BigEndian>(mod_utf8.len() as u16)?;
+    writer.write_all(&mod_utf8)
 }
