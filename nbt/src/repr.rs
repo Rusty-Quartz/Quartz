@@ -33,7 +33,7 @@ impl From<NbtReprError<NbtStructureError>> for NbtStructureError {
     fn from(x: NbtReprError<NbtStructureError>) -> Self {
         match x {
             NbtReprError::Structure(e) => e,
-            NbtReprError::Conversion(e) => e,
+            NbtReprError::Custom(e) => e,
         }
     }
 }
@@ -45,14 +45,14 @@ pub enum NbtReprError<E> {
     /// And error associated with the NBT tree itself. See [`NbtStructureError`](crate::repr::NbtStructureError).
     Structure(NbtStructureError),
     /// A custom error defining an issue during the conversion process.
-    Conversion(E),
+    Custom(E),
 }
 
 impl<E> NbtReprError<E> {
-    /// Creates a [`Conversion`](crate::repr::NbtReprError::Conversion) variant of this error with
+    /// Creates a [`Custom`](crate::repr::NbtReprError::Custom) variant of this error with
     /// the given error.
-    pub fn conversion(x: E) -> Self {
-        NbtReprError::Conversion(x)
+    pub fn custom(x: E) -> Self {
+        NbtReprError::Custom(x)
     }
 }
 
@@ -66,7 +66,7 @@ impl<E: Error + 'static> Error for NbtReprError<E> {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             NbtReprError::Structure(source) => Some(source),
-            NbtReprError::Conversion(source) => Some(source),
+            NbtReprError::Custom(source) => Some(source),
         }
     }
 }

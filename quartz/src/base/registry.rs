@@ -14,21 +14,19 @@ use util::UnlocalizedName;
 
 static GLOBAL_STATIC_REGISTRY: OnceCell<StaticRegistry> = OnceCell::new();
 
-pub type StaticStateID = <StaticRegistry as BlockRegistry>::StateID;
+pub type StaticStateID = <StaticRegistry as BlockRegistry<StaticRegistry>>::StateID;
 pub type DynamicStateID = u32;
 
-pub trait Registry
-where Self: BlockRegistry + BlockEntityRegistry + Sized + 'static
-{
+pub trait Registry: BlockRegistry<Self> + BlockEntityRegistry + Sized + 'static {
     fn new() -> Self;
 
     fn set_global(registry: Self) -> Result<(), Self>;
 }
 
-pub trait BlockRegistry {
+pub trait BlockRegistry<R: Registry>: Sized {
     type StateID: Num + Copy + Send + Sync + Display + Debug + 'static;
 
-    type BlockState: BlockState<Self::StateID> + Sized;
+    type BlockState: BlockState<R> + Sized;
 
     fn default_state(block_name: &UnlocalizedName) -> Option<Self::BlockState>;
 
@@ -40,7 +38,7 @@ pub trait BlockEntityRegistry {
 }
 
 pub struct StaticRegistry {
-    blocks: &'static [Block<StaticStateID>],
+    blocks: &'static [Block<Self>],
     global_palette: Box<[StaticBlockState]>,
 }
 
@@ -49,7 +47,8 @@ impl StaticRegistry {
     fn get() -> &'static Self {
         #[cfg(debug_assertions)]
         {
-            GLOBAL_STATIC_REGISTRY.get()
+            GLOBAL_STATIC_REGISTRY
+                .get()
                 .expect("Global static registry not initialized")
         }
 
@@ -60,14 +59,11 @@ impl StaticRegistry {
     }
 }
 
-impl BlockRegistry for StaticRegistry {
+impl BlockRegistry<Self> for StaticRegistry {
     type BlockState = StaticBlockState;
     type StateID = u16;
 
-    fn default_state(
-        block_name: &UnlocalizedName,
-    ) -> Option<Self::BlockState>
-    {
+    fn default_state(block_name: &UnlocalizedName) -> Option<Self::BlockState> {
         if block_name.namespace != "minecraft" {
             return None;
         }
@@ -96,7 +92,8 @@ impl Registry for StaticRegistry {
         info!("Initializing static registry");
 
         info!("Initializing blocks");
-        let raw = load_raw_block_data::<StaticStateID>();
+        let mut raw = load_raw_block_data::<Self>();
+        attach_behavior(&mut raw);
         let blocks = make_block_list(&raw).leak();
         let global_palette = make_static_global_palette(&raw, blocks).into_boxed_slice();
 

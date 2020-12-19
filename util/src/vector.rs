@@ -1,7 +1,9 @@
-use num_traits::Float;
-use std::ops::*;
 use crate::math::fast_inv_sqrt64;
-use std::fmt::{self, Display, Formatter};
+use num_traits::Float;
+use std::{
+    fmt::{self, Display, Formatter},
+    ops::*,
+};
 
 /// Represents a vector in 3D space. Note that this coordinate system is consistent with that used
 /// by Minecraft which has the y and z axes flipped.
@@ -12,7 +14,7 @@ pub struct Vector<T> {
     /// The y component of the vector.
     pub y: T,
     /// The z component of the vector.
-    pub z: T
+    pub z: T,
 }
 
 impl Vector<f32> {
@@ -21,7 +23,7 @@ impl Vector<f32> {
         Vector {
             x: 0.0,
             y: 0.0,
-            z: 0.0
+            z: 0.0,
         }
     }
 }
@@ -32,7 +34,7 @@ impl Vector<f64> {
         Vector {
             x: 0.0,
             y: 0.0,
-            z: 0.0
+            z: 0.0,
         }
     }
 
@@ -48,7 +50,10 @@ impl Vector<f64> {
     /// ```
     pub fn fast_angle(&self, other: &Self) -> f64 {
         // TODO: switch to f64::clamp when stable
-        (self.dot(other) * fast_inv_sqrt64(self.len_sq() * other.len_sq())).min(1.0).max(-1.0).acos()
+        (self.dot(other) * fast_inv_sqrt64(self.len_sq() * other.len_sq()))
+            .min(1.0)
+            .max(-1.0)
+            .acos()
     }
 
     /// Normalizes this vector, trading some accuracy for efficiency.
@@ -90,7 +95,7 @@ impl<T: Float + Copy> Vector<T> {
         Vector {
             x: T::zero(),
             y: T::zero(),
-            z: T::zero()
+            z: T::zero(),
         }
     }
 
@@ -106,7 +111,7 @@ impl<T: Float + Copy> Vector<T> {
         Vector {
             x: r_proj_xz * theta.cos(),
             y: radius * phi.cos(),
-            z: r_proj_xz * theta.sin()
+            z: r_proj_xz * theta.sin(),
         }
     }
 
@@ -119,7 +124,7 @@ impl<T: Float + Copy> Vector<T> {
         Vector {
             x: -r_proj_xz * yaw.sin(),
             y: -radius * pitch.sin(),
-            z: r_proj_xz * yaw.cos()
+            z: r_proj_xz * yaw.cos(),
         }
     }
 
@@ -135,7 +140,10 @@ impl<T: Float + Copy> Vector<T> {
     /// assert!((u.angle(&v) - FRAC_PI_4).abs() < 1e-10);
     /// ```
     pub fn angle(&self, other: &Self) -> T {
-        (self.dot(other) / (self.len_sq() * other.len_sq()).sqrt()).min(T::one()).max(-T::one()).acos()
+        (self.dot(other) / (self.len_sq() * other.len_sq()).sqrt())
+            .min(T::one())
+            .max(-T::one())
+            .acos()
     }
 
     /// Computes the angle clockwise from the positive z-axis of the projection of this vector onto the
@@ -255,7 +263,7 @@ impl<T: Float + Copy> Vector<T> {
         Vector {
             x: self.y * other.z - self.z * other.y,
             y: self.z * other.x - self.x * other.z,
-            z: self.x * other.y - self.y * other.x
+            z: self.x * other.y - self.y * other.x,
         }
     }
 
@@ -370,7 +378,7 @@ impl<T: Add<Output = T> + Copy> Add for Vector<T> {
         Vector {
             x: self.x + rhs.x,
             y: self.y + rhs.y,
-            z: self.z + rhs.z
+            z: self.z + rhs.z,
         }
     }
 }
@@ -390,7 +398,7 @@ impl<T: Sub<Output = T> + Copy> Sub for Vector<T> {
         Vector {
             x: self.x - rhs.x,
             y: self.y - rhs.y,
-            z: self.z - rhs.z
+            z: self.z - rhs.z,
         }
     }
 }
@@ -410,7 +418,7 @@ impl<T: Neg<Output = T>> Neg for Vector<T> {
         Vector {
             x: -self.x,
             y: -self.y,
-            z: -self.z
+            z: -self.z,
         }
     }
 }
@@ -422,7 +430,7 @@ impl<T: Mul<Output = T> + Copy> Mul<T> for Vector<T> {
         Vector {
             x: self.x * rhs,
             y: self.y * rhs,
-            z: self.z * rhs
+            z: self.z * rhs,
         }
     }
 }
@@ -442,7 +450,7 @@ impl<T: Div<Output = T> + Copy> Div<T> for Vector<T> {
         Vector {
             x: self.x / rhs,
             y: self.y / rhs,
-            z: self.z / rhs
+            z: self.z / rhs,
         }
     }
 }

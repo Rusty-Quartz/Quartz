@@ -1,36 +1,16 @@
-use crate::{base::registry::*, block::states::BlockStateData};
-use std::fmt::{self, Debug, Display, Formatter};
-use tinyvec::ArrayVec;
+use crate::{
+    base::registry::*,
+    block::{states::BlockStateData, Block},
+};
+use std::fmt::Debug;
 use util::UnlocalizedName;
 
-/// A specific block type, not to be confused with a block state which specifies variants of a type. This
-/// is used as a data handle for block states.
-pub struct Block<T> {
-    pub name: UnlocalizedName,
-    pub properties: ArrayVec<[(String, Vec<String>); 16]>,
-    pub base_state: T,
-    pub default_state: T,
-}
-
-impl<T> Display for Block<T> {
-    #[inline]
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(&self.name, f)
-    }
-}
-
-impl<T> Debug for Block<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(self, f)
-    }
-}
-
-pub trait BlockState<T>: Sized {
+pub trait BlockState<R: Registry>: Sized {
     type Builder: StateBuilder<Self>;
 
-    fn handle(&self) -> &Block<T>;
+    fn handle(&self) -> &Block<R>;
 
-    fn id(&self) -> T;
+    fn id(&self) -> R::StateID;
 
     fn builder(block_name: &UnlocalizedName) -> Option<Self::Builder>;
 }
@@ -38,14 +18,14 @@ pub trait BlockState<T>: Sized {
 // TODO: Implement static block state
 #[derive(Clone, Debug)]
 pub struct StaticBlockState {
-    pub handle: &'static Block<StaticStateID>,
+    pub handle: &'static Block<StaticRegistry>,
     pub data: BlockStateData,
 }
 
-impl BlockState<StaticStateID> for StaticBlockState {
+impl BlockState<StaticRegistry> for StaticBlockState {
     type Builder = StaticStateBuilder;
 
-    fn handle(&self) -> &Block<StaticStateID> {
+    fn handle(&self) -> &Block<StaticRegistry> {
         self.handle
     }
 
@@ -54,12 +34,11 @@ impl BlockState<StaticStateID> for StaticBlockState {
     }
 
     fn builder(block_name: &UnlocalizedName) -> Option<Self::Builder> {
-        StaticRegistry::default_state(block_name)
-            .map(StaticStateBuilder::new)
+        StaticRegistry::default_state(block_name).map(StaticStateBuilder::new)
     }
 }
 
-#[derive(Clone)]
+/*#[derive(Clone)]
 pub struct DynamicBlockState {
     pub handle: &'static Block<DynamicStateID>,
     pub properties: ArrayVec<[(String, String); 16]>,
@@ -154,7 +133,7 @@ impl Display for DynamicBlockState {
 
         Ok(())
     }
-}
+}*/
 
 pub trait StateBuilder<S>: Sized {
     fn add_property(&mut self, name: &str, value: &str) -> Result<(), String>;
@@ -224,6 +203,7 @@ impl StateBuilder<StaticBlockState> for StaticStateBuilder {
     }
 }
 
+/*
 pub struct DynamicStateBuilder {
     state: DynamicBlockState,
 }
@@ -294,4 +274,4 @@ impl DynamicStateBuilder {
     pub fn build(self) -> DynamicBlockState {
         self.state
     }
-}
+}*/

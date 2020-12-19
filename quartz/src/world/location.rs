@@ -11,15 +11,83 @@ pub struct BlockPosition {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Coordinate {
+    Block(CoordinatePair),
+    Chunk(CoordinatePair),
+    Region(CoordinatePair),
+}
+
+impl Coordinate {
+    pub const fn block(x: i32, z: i32) -> Self {
+        Self::Block(CoordinatePair::new(x, z))
+    }
+
+    pub const fn chunk(x: i32, z: i32) -> Self {
+        Self::Chunk(CoordinatePair::new(x, z))
+    }
+
+    pub const fn region(x: i32, z: i32) -> Self {
+        Self::Region(CoordinatePair::new(x, z))
+    }
+
+    pub const fn into_block(self) -> Self {
+        match self {
+            Coordinate::Block(_) => self,
+            Coordinate::Chunk(pair) => Self::block(pair.x << 4, pair.z << 4),
+            Coordinate::Region(pair) => Self::block(pair.x << 9, pair.z << 9),
+        }
+    }
+
+    pub const fn into_chunk(self) -> Self {
+        match self {
+            Coordinate::Block(pair) => Self::chunk(pair.x >> 4, pair.z >> 4),
+            Coordinate::Chunk(_) => self,
+            Coordinate::Region(pair) => Self::chunk(pair.x << 5, pair.z << 5),
+        }
+    }
+
+    pub const fn into_region(self) -> Self {
+        match self {
+            Coordinate::Block(pair) => Self::region(pair.x >> 9, pair.z >> 9),
+            Coordinate::Chunk(pair) => Self::region(pair.x >> 5, pair.z >> 5),
+            Coordinate::Region(_) => self,
+        }
+    }
+
+    pub const fn into_inner(self) -> CoordinatePair {
+        match self {
+            Coordinate::Block(pair) => pair,
+            Coordinate::Chunk(pair) => pair,
+            Coordinate::Region(pair) => pair,
+        }
+    }
+}
+
+impl Display for Coordinate {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Coordinate::Block(CoordinatePair { x, z }) => write!(f, "[Block] x: {}, z: {}", x, z),
+            Coordinate::Chunk(CoordinatePair { x, z }) => write!(f, "[Chunk] x: {}, z: {}", x, z),
+            Coordinate::Region(CoordinatePair { x, z }) => write!(f, "[Region] x: {}, z: {}", x, z),
+        }
+    }
+}
+
+impl Debug for Coordinate {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Coordinate::Block(CoordinatePair { x, z }) => write!(f, "B({}, {})", x, z),
+            Coordinate::Chunk(CoordinatePair { x, z }) => write!(f, "C({}, {})", x, z),
+            Coordinate::Region(CoordinatePair { x, z }) => write!(f, "R({}, {})", x, z),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CoordinatePair {
     pub x: i32,
     pub z: i32,
 }
-
-/// Type alias for `CoordinatePair` to disambiguate between chunk coordinate pairs and region coordinate pairs.
-pub type ChunkCoordinatePair = CoordinatePair;
-/// Type alias for `CoordinatePair` to disambiguate between chunk coordinate pairs and region coordinate pairs.
-pub type RegionCoordinatePair = CoordinatePair;
 
 impl CoordinatePair {
     pub const fn new(x: i32, z: i32) -> Self {

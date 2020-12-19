@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-#![feature(try_trait)]
+#![feature(or_patterns, try_trait)]
 
 //! Provides support for encoding and decoding Minecraft's NBT format. This crate supports both
 //! zlib and gz compression, and also provides tools for converting NBT to stringified NBT (SNBT).

@@ -1,15 +1,14 @@
-use crate::{snbt::SnbtParser, NbtRepr, NbtReprError, NbtStructureError};
-use chat::{
-    color::PredefinedColor,
-    component::{ToComponent, ToComponentParts},
-    Component,
-    TextComponentBuilder,
+use crate::{
+    snbt::{self, ParserError},
+    NbtRepr,
+    NbtReprError,
+    NbtStructureError,
 };
 use std::{
     borrow::Borrow,
     collections::HashMap,
     convert::{AsMut, AsRef, TryFrom, TryInto},
-    fmt,
+    fmt::{self, Debug, Display, Formatter},
     hash::Hash,
     ops::{Index, IndexMut},
 };
@@ -152,14 +151,16 @@ impl NbtTag {
 
     /// Returns whether or not the given string needs to be quoted due to non-alphanumeric or otherwise
     /// non-standard characters.
-    fn should_quote(string: &str) -> bool {
+    pub fn should_quote(string: &str) -> bool {
         for ch in string.chars() {
-            if (ch < '0' || ch > '9')
-                && (ch < 'A' || ch > 'Z')
-                && (ch < 'a' || ch > 'z')
-                && ch != '_'
-                && ch != '-'
-                && ch != '.'
+            if ch == ':'
+                || ch == ','
+                || ch == '"'
+                || ch == '\''
+                || ch == '{'
+                || ch == '}'
+                || ch == '['
+                || ch == ']'
             {
                 return true;
             }
@@ -169,7 +170,7 @@ impl NbtTag {
     }
 
     /// Wraps the given string in quotes and escapes any quotes contained in the original string.
-    fn string_to_snbt(string: &str) -> String {
+    pub fn string_to_snbt(string: &str) -> String {
         // Determine the best option for the surrounding quotes to minimize escape sequences
         let surrounding: char;
         if string.contains("\"") {
@@ -194,117 +195,15 @@ impl NbtTag {
     }
 }
 
-impl ToComponentParts for NbtTag {
-    fn to_component_parts(&self) -> Vec<Component> {
-        macro_rules! primitive_to_component {
-            ($value:expr) => {
-                TextComponentBuilder::empty()
-                    .add()
-                    .text(format!("{}", $value))
-                    .predef_color(PredefinedColor::Gold)
-                    .add()
-                    .text(self.type_specifier().to_owned())
-                    .predef_color(PredefinedColor::Red)
-                    .build_children()
-            };
-        }
-
-        macro_rules! list_to_component {
-            ($list:expr) => {{
-                // Handle the empty case
-                if $list.is_empty() {
-                    return TextComponentBuilder::empty()
-                        .add()
-                        .text("[".to_owned())
-                        .add()
-                        .text(self.type_specifier().to_owned())
-                        .predef_color(PredefinedColor::Red)
-                        .add()
-                        .text(";]".to_owned())
-                        .build_children();
-                }
-
-                // 1+ elements
-
-                let mut builder = TextComponentBuilder::empty()
-                    .add()
-                    .text("[".to_owned())
-                    .add()
-                    .text(self.type_specifier().to_owned())
-                    .predef_color(PredefinedColor::Red)
-                    .add()
-                    .text("; ".to_owned())
-                    .add()
-                    .text(format!("{}", $list[0]))
-                    .predef_color(PredefinedColor::Gold);
-
-                for element in $list.iter().skip(1) {
-                    builder = builder
-                        .add()
-                        .text(", ".to_owned())
-                        .add()
-                        .text(format!("{}", element))
-                        .predef_color(PredefinedColor::Gold);
-                }
-
-                builder.add().text("]".to_owned()).build_children()
-            }};
-        }
-
-        match self {
-            NbtTag::Byte(value) => primitive_to_component!(value),
-            NbtTag::Short(value) => primitive_to_component!(value),
-            NbtTag::Int(value) => vec![Component::colored(
-                format!("{}", value),
-                PredefinedColor::Gold,
-            )],
-            NbtTag::Long(value) => primitive_to_component!(value),
-            NbtTag::Float(value) => primitive_to_component!(value),
-            NbtTag::Double(value) => primitive_to_component!(value),
-            NbtTag::ByteArray(value) => list_to_component!(value),
-            NbtTag::StringModUtf8(value) => {
-                // Determine the best option for the surrounding quotes to minimize escape sequences
-                let surrounding: char;
-                if value.contains("\"") {
-                    surrounding = '\'';
-                } else {
-                    surrounding = '"';
-                }
-
-                let mut snbt_string = String::with_capacity(value.len());
-
-                // Construct the string accounting for escape sequences
-                for ch in value.chars() {
-                    if ch == surrounding || ch == '\\' {
-                        snbt_string.push('\\');
-                    }
-                    snbt_string.push(ch);
-                }
-
-                TextComponentBuilder::empty()
-                    .add()
-                    .text(surrounding.to_string())
-                    .add()
-                    .text(snbt_string)
-                    .predef_color(PredefinedColor::Green)
-                    .add()
-                    .text(surrounding.to_string())
-                    .build_children()
-            }
-            NbtTag::List(value) => value.to_component_parts(),
-            NbtTag::Compound(value) => value.to_component_parts(),
-            NbtTag::IntArray(value) => list_to_component!(value),
-            NbtTag::LongArray(value) => list_to_component!(value),
-        }
+impl Display for NbtTag {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(&self.to_snbt(), f)
     }
 }
 
-impl ToComponent for NbtTag {}
-
-// Display the tag in a user-friendly form
-impl fmt::Display for NbtTag {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.to_component().fmt(f)
+impl Debug for NbtTag {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Debug::fmt(&self.to_snbt(), f)
     }
 }
 
@@ -445,6 +344,39 @@ ref_from_tag!(
     [i64], LongArray
 );
 
+macro_rules! from_tag {
+    ($($type:ty, $tag:ident);*) => {
+        $(
+            impl TryFrom<NbtTag> for $type {
+                type Error = NbtStructureError;
+
+                fn try_from(tag: NbtTag) -> Result<Self, Self::Error> {
+                    if let NbtTag::$tag(value) = tag {
+                        Ok(value)
+                    } else {
+                        Err(NbtStructureError::TypeMismatch)
+                    }
+                }
+            }
+        )*
+    };
+}
+
+from_tag!(
+    i8, Byte;
+    i16, Short;
+    i32, Int;
+    i64, Long;
+    f32, Float;
+    f64, Double;
+    Vec<i8>, ByteArray;
+    String, StringModUtf8;
+    NbtList, List;
+    NbtCompound, Compound;
+    Vec<i32>, IntArray;
+    Vec<i64>, LongArray
+);
+
 /// The NBT tag list type which is essentially just a wrapper for a vec of NBT tags.
 #[repr(transparent)]
 #[derive(Clone)]
@@ -454,6 +386,11 @@ impl NbtList {
     /// Returns a new NBT tag list with an empty internal vec.
     pub fn new() -> Self {
         NbtList(Vec::new())
+    }
+
+    /// Returns the internal vector of this NBT list.
+    pub fn into_inner(self) -> Vec<NbtTag> {
+        self.0
     }
 
     /// Returns a new NBT tag list with the given initial capacity.
@@ -531,7 +468,7 @@ impl NbtList {
     ) -> impl Iterator<Item = Result<T, NbtReprError<T::Error>>> + '_ {
         self.0
             .iter()
-            .map(|tag| T::from_nbt(tag.try_into()?).map_err(NbtReprError::conversion))
+            .map(|tag| T::from_nbt(tag.try_into()?).map_err(NbtReprError::custom))
     }
 
     /// Converts this tag list to a valid SNBT string.
@@ -570,7 +507,7 @@ impl NbtList {
     ) -> Result<T, NbtReprError<T::Error>>
     {
         T::try_from(self.0.get(index).ok_or(NbtStructureError::InvalidIndex)?)
-            .map_err(NbtReprError::conversion)
+            .map_err(NbtReprError::custom)
     }
 
     /// Returns a mutable reference to the tag at the given index, or `None` if the index is out of bounds. This
@@ -585,7 +522,7 @@ impl NbtList {
                 .get_mut(index)
                 .ok_or(NbtStructureError::InvalidIndex)?,
         )
-        .map_err(NbtReprError::conversion)
+        .map_err(NbtReprError::custom)
     }
 
     /// Pushes the given value to the back of the list after wrapping it in an `NbtTag`.
@@ -614,31 +551,15 @@ impl AsMut<Vec<NbtTag>> for NbtList {
     }
 }
 
-impl ToComponentParts for NbtList {
-    fn to_component_parts(&self) -> Vec<Component> {
-        if self.is_empty() {
-            return vec![Component::text("[]".to_owned())];
-        }
-
-        let mut components = Vec::with_capacity(2 + 3 * self.len());
-        components.push(Component::text("[".to_owned()));
-        components.extend(self[0].to_component_parts());
-
-        for tag in self.as_ref().iter().skip(1) {
-            components.push(Component::text(", ".to_owned()));
-            components.extend(tag.to_component_parts());
-        }
-
-        components.push(Component::text("]".to_owned()));
-        components
+impl Display for NbtList {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(&self.to_snbt(), f)
     }
 }
 
-impl ToComponent for NbtList {}
-
-impl fmt::Display for NbtList {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.to_component().fmt(f)
+impl Debug for NbtList {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Debug::fmt(&self.to_snbt(), f)
     }
 }
 
@@ -668,6 +589,11 @@ impl NbtCompound {
         NbtCompound(HashMap::new())
     }
 
+    /// Returns the internal hash map of this NBT compound.
+    pub fn into_inner(self) -> HashMap<String, NbtTag> {
+        self.0
+    }
+
     /// Returns a new NBT tag compound with the given initial capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         NbtCompound(HashMap::with_capacity(capacity))
@@ -685,7 +611,7 @@ impl NbtCompound {
     /// map.insert("bar", -5i32);
     ///
     /// let compound = NbtCompound::clone_from(&map);
-    /// assert_eq!(compound.get::<i32>("foo").unwrap() + compound.get::<i32>("bar").unwrap(), 5i32);
+    /// assert_eq!(compound.get::<_, i32>("foo").unwrap() + compound.get::<_, i32>("bar").unwrap(), 5i32);
     /// ```
     pub fn clone_from<'a, K, V, M>(map: &'a M) -> Self
     where
@@ -746,8 +672,7 @@ impl NbtCompound {
     ) -> impl Iterator<Item = (&'_ str, Result<T, NbtReprError<T::Error>>)> + '_ {
         self.0.iter().map(|(key, tag)| {
             (key.as_str(), match tag {
-                NbtTag::Compound(compound) =>
-                    T::from_nbt(compound).map_err(NbtReprError::conversion),
+                NbtTag::Compound(compound) => T::from_nbt(compound).map_err(NbtReprError::custom),
                 _ => Err(NbtReprError::Structure(NbtStructureError::TypeMismatch)),
             })
         })
@@ -804,7 +729,7 @@ impl NbtCompound {
         T: TryFrom<&'a NbtTag>,
     {
         T::try_from(self.0.get(name).ok_or(NbtStructureError::MissingTag)?)
-            .map_err(NbtReprError::conversion)
+            .map_err(NbtReprError::custom)
     }
 
     /// Returns the value of the tag with the given name, or `None` if no tag could be found with the given name.
@@ -816,7 +741,7 @@ impl NbtCompound {
         T: TryFrom<&'a NbtTag>,
     {
         T::try_from(self.0.get_mut(name).ok_or(NbtStructureError::MissingTag)?)
-            .map_err(NbtReprError::conversion)
+            .map_err(NbtReprError::custom)
     }
 
     /// Returns whether or not this compound has a tag with the given name.
@@ -841,14 +766,11 @@ impl NbtCompound {
     /// ```
     /// # use nbt::NbtCompound;
     /// let tag = NbtCompound::from_snbt(r#"{string:Stuff, list:[I;1,2,3,4,5]}"#).unwrap();
-    /// assert_eq!(tag.get::<&str>("string"), Ok("Stuff"));
-    /// assert_eq!(tag.get::<&[i32]>("list"), Ok(vec![1,2,3,4,5].as_slice()));
+    /// assert_eq!(tag.get::<_, &str>("string"), Ok("Stuff"));
+    /// assert_eq!(tag.get::<_, &[i32]>("list"), Ok(vec![1,2,3,4,5].as_slice()));
     /// ```
-    pub fn from_snbt(input: &str) -> Result<Self, String> {
-        let input = input.to_owned();
-        let mut parser = SnbtParser::new(&input, 0);
-
-        parser.parse()
+    pub fn from_snbt(input: &str) -> Result<Self, ParserError> {
+        snbt::parse(input)
     }
 }
 
@@ -866,62 +788,14 @@ impl AsMut<HashMap<String, NbtTag>> for NbtCompound {
     }
 }
 
-impl ToComponentParts for NbtCompound {
-    fn to_component_parts(&self) -> Vec<Component> {
-        if self.is_empty() {
-            return vec![Component::text("{}".to_owned())];
-        }
-
-        let mut components = Vec::with_capacity(2 + 3 * self.len());
-
-        // Grab the elements and push the first one
-        let elements = self.as_ref().iter().collect::<Vec<(&String, &NbtTag)>>();
-        components.push(Component::text("{".to_owned()));
-
-        // Push the rest of the elements
-        for element in elements.iter() {
-            // The key contains special characters and needs to be quoted/escaped
-            if NbtTag::should_quote(element.0) {
-                // Convert the key to an SNBT string
-                let snbt_key = NbtTag::string_to_snbt(element.0);
-                // Get the quote type used
-                let quote = snbt_key.as_bytes()[0] as char;
-
-                if components.len() > 1 {
-                    components.push(Component::text(format!(", {}", quote)));
-                }
-                components.push(Component::colored(
-                    snbt_key[1 .. snbt_key.len() - 1].to_owned(),
-                    PredefinedColor::Aqua,
-                ));
-                components.push(Component::text(format!("{}: ", quote)));
-            }
-            // They key can be pushed as-is
-            else {
-                if components.len() > 1 {
-                    components.push(Component::text(", ".to_owned()));
-                }
-                components.push(Component::colored(
-                    element.0.to_owned(),
-                    PredefinedColor::Aqua,
-                ));
-                components.push(Component::text(": ".to_owned()));
-            }
-
-            // Add the tag's components
-            components.extend(element.1.to_component_parts());
-        }
-
-        components.push(Component::text("}".to_owned()));
-        components
+impl Display for NbtCompound {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(&self.to_snbt(), f)
     }
 }
 
-impl ToComponent for NbtCompound {}
-
-// Display the compound as valid SNBT format
-impl fmt::Display for NbtCompound {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.to_component().fmt(f)
+impl Debug for NbtCompound {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Debug::fmt(&self.to_snbt(), f)
     }
 }

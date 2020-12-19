@@ -1,15 +1,17 @@
+use crate::{
+    builder::TextComponentBuilder,
+    color::{Color, PredefinedColor},
+};
+use nbt::{NbtCompound, NbtList, NbtTag};
+use serde::{Deserialize, Serialize};
+use serde_with::skip_serializing_none;
 use std::{
     fmt::{self, Display, Formatter},
     str,
 };
 
-use serde::{Deserialize, Serialize};
-use serde_with::skip_serializing_none;
-
 #[cfg(unix)]
 use termion::style;
-
-use crate::color::{Color, PredefinedColor};
 
 /// The generalized component type, including: text, translate, selector, keybind, and nbt components.
 #[skip_serializing_none]
@@ -455,3 +457,185 @@ enum EventArgument {
     Text(String),
     Index(u32),
 }
+
+impl ToComponentParts for NbtTag {
+    fn to_component_parts(&self) -> Vec<Component> {
+        macro_rules! primitive_to_component {
+            ($value:expr) => {
+                TextComponentBuilder::empty()
+                    .add()
+                    .text(format!("{}", $value))
+                    .predef_color(PredefinedColor::Gold)
+                    .add()
+                    .text(self.type_specifier().to_owned())
+                    .predef_color(PredefinedColor::Red)
+                    .build_children()
+            };
+        }
+
+        macro_rules! list_to_component {
+            ($list:expr) => {{
+                // Handle the empty case
+                if $list.is_empty() {
+                    return TextComponentBuilder::empty()
+                        .add()
+                        .text("[".to_owned())
+                        .add()
+                        .text(self.type_specifier().to_owned())
+                        .predef_color(PredefinedColor::Red)
+                        .add()
+                        .text(";]".to_owned())
+                        .build_children();
+                }
+
+                // 1+ elements
+
+                let mut builder = TextComponentBuilder::empty()
+                    .add()
+                    .text("[".to_owned())
+                    .add()
+                    .text(self.type_specifier().to_owned())
+                    .predef_color(PredefinedColor::Red)
+                    .add()
+                    .text("; ".to_owned())
+                    .add()
+                    .text(format!("{}", $list[0]))
+                    .predef_color(PredefinedColor::Gold);
+
+                for element in $list.iter().skip(1) {
+                    builder = builder
+                        .add()
+                        .text(", ".to_owned())
+                        .add()
+                        .text(format!("{}", element))
+                        .predef_color(PredefinedColor::Gold);
+                }
+
+                builder.add().text("]".to_owned()).build_children()
+            }};
+        }
+
+        match self {
+            NbtTag::Byte(value) => primitive_to_component!(value),
+            NbtTag::Short(value) => primitive_to_component!(value),
+            NbtTag::Int(value) => vec![Component::colored(
+                format!("{}", value),
+                PredefinedColor::Gold,
+            )],
+            NbtTag::Long(value) => primitive_to_component!(value),
+            NbtTag::Float(value) => primitive_to_component!(value),
+            NbtTag::Double(value) => primitive_to_component!(value),
+            NbtTag::ByteArray(value) => list_to_component!(value),
+            NbtTag::StringModUtf8(value) => {
+                // Determine the best option for the surrounding quotes to minimize escape sequences
+                let surrounding: char;
+                if value.contains("\"") {
+                    surrounding = '\'';
+                } else {
+                    surrounding = '"';
+                }
+
+                let mut snbt_string = String::with_capacity(value.len());
+
+                // Construct the string accounting for escape sequences
+                for ch in value.chars() {
+                    if ch == surrounding || ch == '\\' {
+                        snbt_string.push('\\');
+                    }
+                    snbt_string.push(ch);
+                }
+
+                TextComponentBuilder::empty()
+                    .add()
+                    .text(surrounding.to_string())
+                    .add()
+                    .text(snbt_string)
+                    .predef_color(PredefinedColor::Green)
+                    .add()
+                    .text(surrounding.to_string())
+                    .build_children()
+            }
+            NbtTag::List(value) => value.to_component_parts(),
+            NbtTag::Compound(value) => value.to_component_parts(),
+            NbtTag::IntArray(value) => list_to_component!(value),
+            NbtTag::LongArray(value) => list_to_component!(value),
+        }
+    }
+}
+
+impl ToComponent for NbtTag {}
+
+impl ToComponentParts for NbtList {
+    fn to_component_parts(&self) -> Vec<Component> {
+        if self.is_empty() {
+            return vec![Component::text("[]".to_owned())];
+        }
+
+        let mut components = Vec::with_capacity(2 + 3 * self.len());
+        components.push(Component::text("[".to_owned()));
+        components.extend(self[0].to_component_parts());
+
+        for tag in self.as_ref().iter().skip(1) {
+            components.push(Component::text(", ".to_owned()));
+            components.extend(tag.to_component_parts());
+        }
+
+        components.push(Component::text("]".to_owned()));
+        components
+    }
+}
+
+impl ToComponent for NbtList {}
+
+impl ToComponentParts for NbtCompound {
+    fn to_component_parts(&self) -> Vec<Component> {
+        if self.is_empty() {
+            return vec![Component::text("{}".to_owned())];
+        }
+
+        let mut components = Vec::with_capacity(2 + 3 * self.len());
+
+        // Grab the elements and push the first one
+        let elements = self.as_ref().iter().collect::<Vec<(&String, &NbtTag)>>();
+        components.push(Component::text("{".to_owned()));
+
+        // Push the rest of the elements
+        for element in elements.iter() {
+            // The key contains special characters and needs to be quoted/escaped
+            if NbtTag::should_quote(element.0) {
+                // Convert the key to an SNBT string
+                let snbt_key = NbtTag::string_to_snbt(element.0);
+                // Get the quote type used
+                let quote = snbt_key.as_bytes()[0] as char;
+
+                if components.len() > 1 {
+                    components.push(Component::text(format!(", {}", quote)));
+                }
+                components.push(Component::colored(
+                    snbt_key[1 .. snbt_key.len() - 1].to_owned(),
+                    PredefinedColor::Aqua,
+                ));
+                components.push(Component::text(format!("{}: ", quote)));
+            }
+            // They key can be pushed as-is
+            else {
+                if components.len() > 1 {
+                    components.push(Component::text(", ".to_owned()));
+                }
+                components.push(Component::colored(
+                    element.0.to_owned(),
+                    PredefinedColor::Aqua,
+                ));
+                components.push(Component::text(": ".to_owned()));
+            }
+
+            // Add the tag's components
+            components.extend(element.1.to_component_parts());
+        }
+
+        components.push(Component::text("}".to_owned()));
+        components
+    }
+}
+
+impl ToComponent for NbtCompound {}

@@ -1,13 +1,15 @@
 use crate::{
     base::{
         assets,
-        registry::{DynamicStateID, StaticStateID},
+        registry::{Registry, StaticRegistry},
     },
-    block::{states::BLOCK_LOOKUP_BY_NAME, *},
+    block::{
+        behavior::{BlockBehaviorSMT, DefaultBehavior},
+        states::BLOCK_LOOKUP_BY_NAME,
+        *,
+    },
 };
 use itertools::Itertools;
-use log::info;
-use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::{
@@ -17,51 +19,29 @@ use std::{
 use tinyvec::ArrayVec;
 use util::UnlocalizedName;
 
-static BLOCK_LIST: OnceCell<HashMap<UnlocalizedName, Block<DynamicStateID>>> = OnceCell::new();
-static GLOBAL_PALETTE: OnceCell<Box<[DynamicBlockState]>> = OnceCell::new();
-
-#[inline(always)]
-pub fn get_block_list() -> &'static HashMap<UnlocalizedName, Block<DynamicStateID>> {
-    BLOCK_LIST.get().expect("Block list not initialized.")
-}
-
-#[inline(always)]
-pub fn get_global_palette() -> &'static [DynamicBlockState] {
-    GLOBAL_PALETTE
-        .get()
-        .expect("Global palette not initialized.")
-}
-
-#[inline]
-pub fn get_block(block_name: &UnlocalizedName) -> Option<&'static Block<DynamicStateID>> {
-    get_block_list().get(block_name)
-}
-
-#[inline]
-pub fn default_state(block_name: &UnlocalizedName) -> Option<DynamicStateID> {
-    get_block_list()
-        .get(block_name)
-        .map(|block| block.default_state)
-}
-
-#[inline]
-pub fn get_state(id: DynamicStateID) -> Option<&'static DynamicBlockState> {
-    get_global_palette().get(id as usize)
-}
-
-#[inline]
-pub fn new_state(block_name: &UnlocalizedName) -> Option<DynamicStateBuilder> {
-    get_block_list()
-        .get(block_name)
-        .map(|block| DynamicStateBuilder::new(&get_global_palette()[block.default_state as usize]))
-}
-
-pub(crate) fn load_raw_block_data<'de, T: Deserialize<'de>>() -> HashMap<String, RawBlockInfo<T>> {
-    serde_json::from_str::<HashMap<String, RawBlockInfo<T>>>(assets::BLOCK_INFO)
+pub(crate) fn load_raw_block_data<'de, R: Registry>() -> HashMap<String, RawBlockInfo<R>>
+where R::StateID: Deserialize<'de> {
+    serde_json::from_str::<HashMap<String, RawBlockInfo<R>>>(assets::BLOCK_INFO)
         .expect("assets/blocks.json is corrupted.")
 }
 
-pub(crate) fn make_block_list<T: Copy>(raw: &HashMap<String, RawBlockInfo<T>>) -> Vec<Block<T>> {
+pub(crate) fn attach_behavior<R: Registry>(raw: &mut HashMap<String, RawBlockInfo<R>>) {
+    macro_rules! attach {
+        ($behavior:ty, $( $block_name:literal ),+) => {
+            $(
+                raw.get_mut(concat!("minecraft:", $block_name))
+                    .expect("Invalid block name during behavior attachment")
+                    .behavior = Some(BlockBehaviorSMT::new::<$behavior>());
+            )+
+        };
+    }
+
+    attach!(DefaultBehavior, "air", "stone");
+}
+
+pub(crate) fn make_block_list<R: Registry>(
+    raw: &HashMap<String, RawBlockInfo<R>>,
+) -> Vec<Block<R>> {
     let mut block_list = Vec::new();
 
     for (name, block_info) in raw.into_iter().sorted_by_key(|(_, info)| info.interm_id) {
@@ -82,6 +62,10 @@ pub(crate) fn make_block_list<T: Copy>(raw: &HashMap<String, RawBlockInfo<T>>) -
                 .collect::<ArrayVec<_>>(),
             base_state: block_info.states[0].id,
             default_state: block_info.default,
+            behavior: block_info
+                .behavior
+                .clone()
+                .unwrap_or(BlockBehaviorSMT::new::<DefaultBehavior>()),
         });
     }
 
@@ -89,14 +73,14 @@ pub(crate) fn make_block_list<T: Copy>(raw: &HashMap<String, RawBlockInfo<T>>) -
 }
 
 pub(crate) fn make_static_global_palette(
-    raw: &HashMap<String, RawBlockInfo<StaticStateID>>,
-    blocks: &'static [Block<StaticStateID>],
+    raw: &HashMap<String, RawBlockInfo<StaticRegistry>>,
+    blocks: &'static [Block<StaticRegistry>],
 ) -> Vec<StaticBlockState>
 {
     let mut global_palette = Vec::new();
 
     for (_, block) in raw {
-        let handle: &'static Block<StaticStateID> = &blocks[block.interm_id];
+        let handle: &'static Block<StaticRegistry> = &blocks[block.interm_id];
 
         for state_info in block.states.iter() {
             let default_state = StaticBlockState {
@@ -133,13 +117,15 @@ pub(crate) fn make_static_global_palette(
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct RawBlockInfo<T> {
+pub(crate) struct RawBlockInfo<R: Registry> {
     // Use a BTreeMap for ordering so that we can compute state IDs
     #[serde(default = "BTreeMap::new")]
     properties: BTreeMap<String, Vec<String>>,
-    default: T,
+    default: R::StateID,
     interm_id: usize,
-    states: Vec<RawStateInfo<T>>,
+    states: Vec<RawStateInfo<R::StateID>>,
+    #[serde(skip_serializing, skip_deserializing, default = "Option::default")]
+    behavior: Option<BlockBehaviorSMT<R>>,
 }
 
 #[derive(Serialize, Deserialize)]

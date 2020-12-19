@@ -2,7 +2,7 @@ use crate::{
     block::{BlockState, StateBuilder},
     world::{
         chunk::{encoder::CompactStateBuffer, ChunkIOError},
-        location::{BlockPosition, ChunkCoordinatePair, CoordinatePair},
+        location::{BlockPosition, Coordinate, CoordinatePair},
     },
     Registry,
 };
@@ -10,7 +10,11 @@ use array_init::array_init;
 use log::{error, warn};
 use nbt::{NbtCompound, NbtList};
 use num_traits::Zero;
-use std::{collections::HashMap, str::FromStr, fmt::{self, Debug, Formatter}};
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug, Formatter},
+    str::FromStr,
+};
 use util::{
     math::fast_log2_64,
     single_access::{AccessGuard, SingleAccessor},
@@ -111,6 +115,10 @@ impl<R: Registry> Chunk<R> {
         Ok(chunk)
     }
 
+    pub fn coordinates(&self) -> Coordinate {
+        Coordinate::Block(self.block_offset)
+    }
+
     fn bits_for_palette_size(palette_size: usize) -> usize {
         fast_log2_64(palette_size as u64).max(4) as usize
     }
@@ -123,16 +131,16 @@ impl<R: Registry> Chunk<R> {
     }
 
     #[inline]
-    pub fn block_state_at(&self, absolute_position: BlockPosition) -> Option<&'static R::BlockState> {
+    pub fn block_state_at(
+        &self,
+        absolute_position: BlockPosition,
+    ) -> Option<&'static R::BlockState>
+    {
         match self.sections.get((absolute_position.y as usize) >> 4) {
-            Some(section) => R::state_for_id(section.block_id(self.section_index_absolute(absolute_position))),
+            Some(section) =>
+                R::state_for_id(section.block_id(self.section_index_absolute(absolute_position))),
             None => None,
         }
-    }
-
-    #[inline]
-    pub fn chunk_coordinates(&self) -> ChunkCoordinatePair {
-        self.block_offset >> 4
     }
 
     pub fn block_entity_at(
