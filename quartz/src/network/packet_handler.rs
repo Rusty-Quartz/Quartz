@@ -9,12 +9,12 @@ use chat::{color::PredefinedColor, Component};
 use hex::ToHex;
 use lazy_static::lazy_static;
 use log::{debug, error, warn};
-use nbt::NbtCompound;
 use openssl::{
     pkey::Private,
     rsa::{Padding, Rsa},
     sha,
 };
+use quartz_nbt::NbtCompound;
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use serde::Deserialize;

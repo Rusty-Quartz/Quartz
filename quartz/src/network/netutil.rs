@@ -1,5 +1,5 @@
 use chat::Component;
-use nbt::NbtCompound;
+use quartz_nbt::NbtCompound;
 use std::{
     fmt::{self, Display, Formatter},
     ops::{Index, IndexMut},
@@ -395,7 +395,7 @@ impl PacketBuffer {
     /// Reads a [`NbtCompound`](nbt::NbtCompound) from bytes stored in this buffer
     /// Does not expect compression
     pub fn read_nbt_tag(&mut self) -> NbtCompound {
-        nbt::read::read_nbt_uncompressed(&mut self.inner.as_slice())
+        quartz_nbt::read::read_nbt_uncompressed(&mut self.inner.as_slice())
             .expect("Error reading nbt compound")
             .0
     }
@@ -659,8 +659,8 @@ impl PacketBuffer {
     /// Converts a [`NbtCompound`](nbt::NbtCompound) to bytes and writes it to this buffer
     /// This does not apply compression
     #[inline]
-    pub fn write_nbt_tag(&mut self, value: &nbt::NbtCompound) {
-        nbt::write::write_nbt_uncompressed(&mut self.inner, "root", value)
+    pub fn write_nbt_tag(&mut self, value: &NbtCompound) {
+        quartz_nbt::write::write_nbt_uncompressed(&mut self.inner, "root", value)
             .expect("Error writing nbt compound")
     }
 

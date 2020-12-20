@@ -2,7 +2,7 @@ use crate::{
     builder::TextComponentBuilder,
     color::{Color, PredefinedColor},
 };
-use nbt::{NbtCompound, NbtList, NbtTag};
+use quartz_nbt::{NbtCompound, NbtList, NbtTag};
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 use std::{
@@ -526,7 +526,7 @@ impl ToComponentParts for NbtTag {
             NbtTag::Float(value) => primitive_to_component!(value),
             NbtTag::Double(value) => primitive_to_component!(value),
             NbtTag::ByteArray(value) => list_to_component!(value),
-            NbtTag::StringModUtf8(value) => {
+            NbtTag::String(value) => {
                 // Determine the best option for the surrounding quotes to minimize escape sequences
                 let surrounding: char;
                 if value.contains("\"") {

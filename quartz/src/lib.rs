@@ -7,7 +7,7 @@
 
 // Expose sub-crates
 pub use chat;
-pub use nbt;
+pub use quartz_nbt as nbt;
 pub use util;
 
 mod base;

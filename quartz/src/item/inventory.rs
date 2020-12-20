@@ -1,5 +1,5 @@
 use crate::item::item::{ItemStack, OptionalItemStack};
-use nbt::{NbtCompound, NbtList};
+use quartz_nbt::{NbtCompound, NbtList};
 
 /// Represents a basic inventory
 pub struct Inventory {
@@ -65,7 +65,7 @@ impl Inventory {
         for i in 0 .. list.len() {
             // List has to have a element at every index because even slots without items need to have an empty stack
             let compound = list.get::<&NbtCompound>(i).unwrap();
-            let slot = compound.get("Slot").unwrap_or(0) as usize;
+            let slot = compound.get::<_, i32>("Slot").unwrap_or(0) as usize;
 
             if slot < self.size {
                 self.items[slot] =
@@ -91,13 +91,13 @@ impl Inventory {
         for i in 0 .. self.size {
             let mut slot_tag = NbtCompound::new();
 
-            slot_tag.set("Slot".to_owned(), i as i8);
+            slot_tag.insert("Slot".to_owned(), i as i8);
             // Every index must have a stack, even if it is empty
             let item = self.items.get(i).unwrap();
             item.write_nbt(&mut slot_tag);
-            list.add(slot_tag);
+            list.push(slot_tag);
         }
 
-        tag.set("Items".to_owned(), list);
+        tag.insert("Items".to_owned(), list);
     }
 }

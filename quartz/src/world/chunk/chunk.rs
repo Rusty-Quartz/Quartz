@@ -8,8 +8,8 @@ use crate::{
 };
 use array_init::array_init;
 use log::{error, warn};
-use nbt::{NbtCompound, NbtList};
 use num_traits::Zero;
+use quartz_nbt::{NbtCompound, NbtList};
 use std::{
     collections::HashMap,
     fmt::{self, Debug, Formatter},
@@ -45,7 +45,7 @@ impl<R: Registry> Chunk<R> {
         // Iterate over the sections (16x16x16 voxels) that contain block and lighting info
         for section in level
             .get::<_, &NbtList>("Sections")?
-            .iter_map::<_, &NbtCompound>()
+            .iter_map::<&NbtCompound>()
         {
             let section = section?;
 
@@ -59,7 +59,7 @@ impl<R: Registry> Chunk<R> {
             let mut index: usize = 0;
 
             // Iterate over the block states in the palette
-            for state in raw_palette.iter_map::<_, &NbtCompound>() {
+            for state in raw_palette.iter_map::<&NbtCompound>() {
                 let state = state?;
                 let state_name: &str = state.get("Name")?;
 
@@ -77,7 +77,7 @@ impl<R: Registry> Chunk<R> {
 
                 // If the state has property values, add those to the builder
                 if let Ok(properties) = state.get::<_, &NbtCompound>("Properties") {
-                    for (name, property_value) in properties.iter_map::<_, &String>() {
+                    for (name, property_value) in properties.iter_map::<&String>() {
                         if let Err(message) = state_builder.add_property(name, property_value?) {
                             warn!("{}", message);
                         }

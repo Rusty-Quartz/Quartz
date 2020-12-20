@@ -1,4 +1,4 @@
-use crate::nbt::{NbtReprError, NbtStructureError};
+use quartz_nbt::{NbtReprError, NbtStructureError};
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},

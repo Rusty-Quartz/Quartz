@@ -10,7 +10,7 @@ use futures_lite::{
     io::{AsyncReadExt, AsyncSeekExt},
 };
 use log::error;
-use nbt::read::{read_nbt_gz_compressed, read_nbt_zlib_compressed};
+use quartz_nbt::read::{read_nbt_gz_compressed, read_nbt_zlib_compressed};
 use smol::{
     channel::{self, Receiver, Sender},
     fs::{File, OpenOptions},

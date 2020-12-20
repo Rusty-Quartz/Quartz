@@ -1,6 +1,6 @@
 use crate::block::entities::FurnaceBlockEntity;
 use enum_dispatch::enum_dispatch;
-use nbt::NbtCompound;
+use quartz_nbt::NbtCompound;
 
 // All block entities must impl this
 /// Trait for block entities

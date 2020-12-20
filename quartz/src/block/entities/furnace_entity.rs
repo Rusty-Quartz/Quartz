@@ -3,7 +3,7 @@ use crate::{
     item::{get_item, Inventory, ItemStack},
     world::location::BlockPosition,
 };
-use nbt::NbtCompound;
+use quartz_nbt::NbtCompound;
 use util::UnlocalizedName;
 
 // While this is somewhat accurate to how the Furnace BE will be implemented the tick method is no where near finished and some key fields are missing
@@ -45,22 +45,22 @@ impl BlockEntity for FurnaceBlockEntity {
         self.cook_time_total = nbt.get("CookTimeTotal").unwrap_or(0);
         self.items.from_tag(nbt);
 
-        if nbt.has("CustomName") {
+        if nbt.contains_key("CustomName") {
             self.custom_name = nbt.get("CustomName").unwrap_or("Furnace").to_owned();
         }
 
-        if nbt.has("Lock") {
+        if nbt.contains_key("Lock") {
             self.lock = nbt.get("Lock").unwrap_or(false);
         }
     }
 
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        nbt.set("BurnTime".to_owned(), self.burn_time);
-        nbt.set("CookTime".to_owned(), self.cook_time);
-        nbt.set("CookTimeTotal".to_owned(), self.cook_time_total);
+        nbt.insert("BurnTime".to_owned(), self.burn_time);
+        nbt.insert("CookTime".to_owned(), self.cook_time);
+        nbt.insert("CookTimeTotal".to_owned(), self.cook_time_total);
         self.items.write_tag(nbt);
-        nbt.set("CustomName".to_owned(), self.custom_name.clone());
-        nbt.set("Lock".to_owned(), self.lock);
+        nbt.insert("CustomName".to_owned(), self.custom_name.clone());
+        nbt.insert("Lock".to_owned(), self.lock);
     }
 
     fn tick(&mut self) {

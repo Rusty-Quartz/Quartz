@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "chat",
-    "nbt",
     "quartz",
     "quartz_macros",
     "quartz_plugins",

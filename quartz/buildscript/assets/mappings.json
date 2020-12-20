@@ -6,7 +6,7 @@
         "byte_array": "Vec<u8>",
         "unlocalized_name": "util::UnlocalizedName",
         "uuid": "Uuid",
-        "nbt_tag": "nbt::NbtCompound",
+        "nbt_tag": "quartz_nbt::NbtCompound",
         "position": "crate::world::location::BlockPosition",
         "slot": "Slot",
         "chat": "chat::Component",
