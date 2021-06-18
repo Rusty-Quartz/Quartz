@@ -1,16 +1,16 @@
 use crate::{
-    base::registry::*,
+    base::*,
     block::{states::BlockStateData, Block},
 };
 use std::fmt::Debug;
 use util::UnlocalizedName;
 
-pub trait BlockState<R: Registry>: Sized {
+pub trait BlockStateImpl: Sized {
     type Builder: StateBuilder<Self>;
 
-    fn handle(&self) -> &Block<R>;
+    fn handle(&self) -> &Block;
 
-    fn id(&self) -> R::StateID;
+    fn id(&self) -> StateID;
 
     fn builder(block_name: &UnlocalizedName) -> Option<Self::Builder>;
 }
@@ -18,18 +18,19 @@ pub trait BlockState<R: Registry>: Sized {
 // TODO: Implement static block state
 #[derive(Clone, Debug)]
 pub struct StaticBlockState {
-    pub handle: &'static Block<StaticRegistry>,
+    pub handle: &'static Block,
     pub data: BlockStateData,
 }
 
-impl BlockState<StaticRegistry> for StaticBlockState {
+// TODO: put behind compiler flag
+impl BlockStateImpl for StaticBlockState {
     type Builder = StaticStateBuilder;
 
-    fn handle(&self) -> &Block<StaticRegistry> {
+    fn handle(&self) -> &Block {
         self.handle
     }
 
-    fn id(&self) -> StaticStateID {
+    fn id(&self) -> StateID {
         self.data.id()
     }
 

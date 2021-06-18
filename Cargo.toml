@@ -2,7 +2,5 @@
 members = [
     "chat",
     "quartz",
-    "quartz_macros",
-    "quartz_plugins",
     "util"
 ]

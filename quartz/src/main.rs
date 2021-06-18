@@ -1,6 +1,6 @@
 use linefeed::Interface;
 use log::error;
-use quartz::{config::load_config, registry::StaticRegistry, util::logging, Config, QuartzServer};
+use quartz::{config::load_config, util::logging, Config, QuartzServer};
 use std::{error::Error, path::Path, sync::Arc};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let mut server: QuartzServer<StaticRegistry> = QuartzServer::new(config, console_interface);
+    let mut server: QuartzServer = QuartzServer::new(config, console_interface);
     server.init();
     server.run();
     drop(server);

@@ -1,9 +1,8 @@
 use crate::{
-    command::CommandSender,
+    command::{CommandContext, CommandSender},
     network::{AsyncClientConnection, ConnectionState, PacketBuffer},
     server::{self, QuartzServer},
     world::location::BlockPosition,
-    Registry,
 };
 use chat::{color::PredefinedColor, Component};
 use hex::ToHex;
@@ -14,6 +13,7 @@ use openssl::{
     rsa::{Padding, Rsa},
     sha,
 };
+use quartz_commands::CommandModule;
 use quartz_nbt::NbtCompound;
 use rand::{thread_rng, Rng};
 use regex::Regex;
@@ -244,8 +244,7 @@ impl AsyncPacketHandler {
         conn: &mut AsyncClientConnection,
         shared_secret: &Vec<u8>,
         verify_token: &Vec<u8>,
-    )
-    {
+    ) {
         // Decrypt and check verify token
         let mut decrypted_verify = vec![0; self.key_pair.size() as usize];
         if let Err(e) =
@@ -367,21 +366,27 @@ impl AsyncPacketHandler {
 
         // Make a get request
         let mojang_req = ureq::get(&url).call();
-        if mojang_req.ok() {
-            match mojang_req.into_json_deserialize::<AuthResponse>() {
-                Ok(json) => match Uuid::from_str(&json.id) {
-                    Ok(uuid) =>
-                        conn.send_packet(&ClientBoundPacket::LoginSuccess {
-                            uuid,
-                            username: self.username.clone(),
-                        })
-                        .await,
-                    Err(e) => error!("Malformed UUID in auth resonse: {}", e),
-                },
-                Err(e) => error!("Failed to upack JSON from session server response: {}", e),
+        let string_uuid = match mojang_req.map(|response| response.into_json::<AuthResponse>()) {
+            Ok(Ok(AuthResponse { id, .. })) => id,
+            Ok(Err(e)) => {
+                error!("Failed to parse response JSON: {}", e);
+                return;
             }
-        } else {
-            error!("Failed to make session server request")
+            Err(e) => {
+                error!("Failed to parse authentication response: {}", e);
+                return;
+            }
+        };
+
+        match Uuid::from_str(&string_uuid) {
+            Ok(uuid) => {
+                conn.send_packet(&ClientBoundPacket::LoginSuccess {
+                    uuid,
+                    username: self.username.clone(),
+                })
+                .await;
+            }
+            Err(e) => error!("Failed to parse malformed UUID: {}", e),
         }
     }
 
@@ -391,13 +396,12 @@ impl AsyncPacketHandler {
         _message_id: i32,
         _successful: bool,
         _data: &Option<Vec<u8>>,
-    )
-    {
+    ) {
         // TODO: Implement login_plugin_response
     }
 }
 
-impl<R: Registry> QuartzServer<R> {
+impl QuartzServer {
     async fn login_success_server(&mut self, _sender: usize, _uuid: &Uuid, _username: &str) {
         // TODO: Implement login_success_server
     }
@@ -407,7 +411,10 @@ impl<R: Registry> QuartzServer<R> {
         match command_executor.try_borrow() {
             Ok(executor) => {
                 let sender = CommandSender::Console(self.console_interface.clone());
-                executor.dispatch(command, self, sender);
+                let context = CommandContext::new(self, &*executor, sender);
+                if let Err(e) = executor.dispatch(command, context) {
+                    self.display_to_console(&e);
+                }
             }
             Err(_) => error!(
                 "Internal error: could not borrow command_executor as mutable while executing a \
@@ -421,7 +428,8 @@ impl<R: Registry> QuartzServer<R> {
         match command_executor.try_borrow() {
             Ok(executor) => {
                 let sender = CommandSender::Console(self.console_interface.clone());
-                let suggestions = executor.get_suggestions(command, self, sender);
+                let context = CommandContext::new(self, &*executor, sender);
+                let suggestions = executor.get_suggestions(command, &context);
                 // Error handling not useful here
                 drop(response.send(suggestions));
             }
@@ -521,8 +529,7 @@ impl<R: Registry> QuartzServer<R> {
         cursor_position_y: &f32,
         cursor_position_z: &f32,
         inside_block: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -540,8 +547,7 @@ impl<R: Registry> QuartzServer<R> {
         line_2: &str,
         line_3: &str,
         line_4: &String,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -564,8 +570,7 @@ impl<R: Registry> QuartzServer<R> {
         integrity: &f32,
         seed: &i64,
         flags: &i8,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -581,8 +586,7 @@ impl<R: Registry> QuartzServer<R> {
         pool: &UnlocalizedName,
         final_state: &str,
         joint_type: &str,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -592,8 +596,7 @@ impl<R: Registry> QuartzServer<R> {
         entity_id: &i32,
         command: &str,
         track_output: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -604,8 +607,7 @@ impl<R: Registry> QuartzServer<R> {
         command: &str,
         mode: &i32,
         flags: &i8,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -617,8 +619,7 @@ impl<R: Registry> QuartzServer<R> {
         sender: usize,
         primary_effect: &i32,
         secondary_effect: &i32,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -630,8 +631,7 @@ impl<R: Registry> QuartzServer<R> {
         sender: usize,
         action: &i32,
         tab_id: &Option<UnlocalizedName>,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -647,8 +647,7 @@ impl<R: Registry> QuartzServer<R> {
         book_id: &i32,
         book_open: &bool,
         filter_active: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -664,8 +663,7 @@ impl<R: Registry> QuartzServer<R> {
         entity_id: &i32,
         action_id: &i32,
         jump_boost: &i32,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -675,8 +673,7 @@ impl<R: Registry> QuartzServer<R> {
         status: &i32,
         location: &BlockPosition,
         face: &i8,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -689,8 +686,7 @@ impl<R: Registry> QuartzServer<R> {
         window_id: &i8,
         recipe: &UnlocalizedName,
         make_all: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -702,8 +698,7 @@ impl<R: Registry> QuartzServer<R> {
         sender: usize,
         left_paddle_turning: &bool,
         right_paddle_turning: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -721,8 +716,7 @@ impl<R: Registry> QuartzServer<R> {
         z: &f64,
         yaw: &f32,
         pitch: &f32,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -733,8 +727,7 @@ impl<R: Registry> QuartzServer<R> {
         feet_y: &f64,
         z: &f64,
         on_ground: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -747,8 +740,7 @@ impl<R: Registry> QuartzServer<R> {
         yaw: &f32,
         pitch: &f32,
         on_ground: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -764,8 +756,7 @@ impl<R: Registry> QuartzServer<R> {
         location: &BlockPosition,
         levels: &i32,
         keep_jigsaws: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -779,8 +770,7 @@ impl<R: Registry> QuartzServer<R> {
         target_z: &Option<f32>,
         hand: &Option<i32>,
         sneaking: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -792,8 +782,7 @@ impl<R: Registry> QuartzServer<R> {
         sender: usize,
         channel: &UnlocalizedName,
         data: &Vec<u8>,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -809,8 +798,7 @@ impl<R: Registry> QuartzServer<R> {
         action_number: &i16,
         mode: &i32,
         clicked_item: &Slot,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -823,8 +811,7 @@ impl<R: Registry> QuartzServer<R> {
         window_id: &i8,
         action_number: &i16,
         accepted: &bool,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -840,8 +827,7 @@ impl<R: Registry> QuartzServer<R> {
         chat_colors: &bool,
         displayed_skin_parts: &u8,
         main_hand: &i32,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -862,8 +848,7 @@ impl<R: Registry> QuartzServer<R> {
         sender: usize,
         trasaction_id: &i32,
         location: &BlockPosition,
-    )
-    {
+    ) {
     }
 
     #[allow(unused_variables)]
@@ -874,8 +859,7 @@ impl<R: Registry> QuartzServer<R> {
 pub async fn handle_async_connection(
     mut conn: AsyncClientConnection,
     private_key: Arc<Rsa<Private>>,
-)
-{
+) {
     let mut async_handler = AsyncPacketHandler::new(private_key);
 
     while conn.connection_state != ConnectionState::Disconnected {

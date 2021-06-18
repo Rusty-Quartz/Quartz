@@ -250,8 +250,7 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> String {
 fn update_block_property_names(
     block_data: &mut HashMap<String, RawBlockInfo>,
     property_data: &Vec<PropertyData>,
-)
-{
+) {
     for property in property_data {
         // replace the original name with the enum name
         let og_name = get_original_property_name(property);
@@ -274,8 +273,7 @@ fn update_block_property_names(
 fn gen_default_states(
     block_data: &mut HashMap<String, RawBlockInfo>,
     property_data: &Vec<PropertyData>,
-)
-{
+) {
     for (block_name, block_info) in block_data.iter_mut() {
         let default_state_raw = block_info
             .states

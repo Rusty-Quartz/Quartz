@@ -1,10 +1,11 @@
 use crate::{
-    block::{BlockState, StateBuilder},
+    block::{BlockStateImpl, StateBuilder},
     world::{
         chunk::{encoder::CompactStateBuffer, ChunkIOError},
         location::{BlockPosition, Coordinate, CoordinatePair},
     },
-    Registry,
+    base::{BlockState, StateID, BlockEntity},
+    Registry
 };
 use array_init::array_init;
 use log::{error, warn};
@@ -21,14 +22,14 @@ use util::{
     UnlocalizedName,
 };
 
-pub struct Chunk<R: Registry> {
+pub struct Chunk {
     block_offset: CoordinatePair,
-    sections: [Section<R::StateID>; 16],
-    block_entities: HashMap<BlockPosition, SingleAccessor<R::BlockEntity>>,
+    sections: [Section<StateID>; 16],
+    block_entities: HashMap<BlockPosition, SingleAccessor<BlockEntity>>,
 }
 
-impl<R: Registry> Chunk<R> {
-    pub fn from_nbt(nbt: &NbtCompound) -> Result<Chunk<R>, ChunkIOError> {
+impl Chunk {
+    pub fn from_nbt(nbt: &NbtCompound) -> Result<Chunk, ChunkIOError> {
         let mut chunk = Chunk {
             block_offset: CoordinatePair::new(0, 0),
             sections: array_init(|_index| Section::default()),
@@ -55,7 +56,7 @@ impl<R: Registry> Chunk<R> {
                 Err(_) => continue,
             };
 
-            let mut palette = vec![R::StateID::zero(); raw_palette.len()].into_boxed_slice();
+            let mut palette = vec![StateID::zero(); raw_palette.len()].into_boxed_slice();
             let mut index: usize = 0;
 
             // Iterate over the block states in the palette
@@ -64,7 +65,7 @@ impl<R: Registry> Chunk<R> {
                 let state_name: &str = state.get("Name")?;
 
                 // Initialize the state builder
-                let mut state_builder = match R::BlockState::builder(
+                let mut state_builder = match BlockState::builder(
                     &UnlocalizedName::from_str(state_name)
                         .map_err(|_| ChunkIOError::InvalidNbtData)?,
                 ) {
@@ -89,7 +90,7 @@ impl<R: Registry> Chunk<R> {
             }
 
             // TODO: Make sure that there aren't any bounds checks here, and consider putting data on the stack
-            let mut block_states = vec![R::StateID::zero(); 4096].into_boxed_slice();
+            let mut block_states = vec![StateID::zero(); 4096].into_boxed_slice();
             let mut state_reader =
                 CompactStateBuffer::from(section.get::<_, &[i64]>("BlockStates")?);
             let bits_per_index = Self::bits_for_palette_size(palette.len());
@@ -134,11 +135,11 @@ impl<R: Registry> Chunk<R> {
     pub fn block_state_at(
         &self,
         absolute_position: BlockPosition,
-    ) -> Option<&'static R::BlockState>
+    ) -> Option<&'static BlockState>
     {
         match self.sections.get((absolute_position.y as usize) >> 4) {
             Some(section) =>
-                R::state_for_id(section.block_id(self.section_index_absolute(absolute_position))),
+                Registry::state_for_id(section.block_id(self.section_index_absolute(absolute_position))),
             None => None,
         }
     }
@@ -146,13 +147,13 @@ impl<R: Registry> Chunk<R> {
     pub fn block_entity_at(
         &self,
         absolute_position: BlockPosition,
-    ) -> Option<AccessGuard<'_, R::BlockEntity>>
+    ) -> Option<AccessGuard<'_, BlockEntity>>
     {
         self.block_entities.get(&absolute_position)?.take()
     }
 }
 
-impl<R: Registry> Debug for Chunk<R> {
+impl Debug for Chunk {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Chunk@{:?}", self.block_offset >> 5)
     }

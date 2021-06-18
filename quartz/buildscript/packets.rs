@@ -35,7 +35,7 @@ pub fn serialize(packet: &ClientBoundPacket, buffer: &mut PacketBuffer) {
     match packet {"#;
 
 const DISPATCHER_START: &str = r#"#[doc = "Dispatches a synchronous packet on the server thread."]
-pub async fn dispatch_sync_packet<R: Registry>(wrapped_packet: &WrappedServerBoundPacket, handler: &mut QuartzServer<R>) {
+pub async fn dispatch_sync_packet(wrapped_packet: &WrappedServerBoundPacket, handler: &mut QuartzServer) {
     match &wrapped_packet.packet {"#;
 
 pub fn gen_packet_handlers() {

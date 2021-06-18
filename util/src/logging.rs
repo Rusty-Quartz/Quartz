@@ -52,8 +52,7 @@ const LEVEL_FILTER: LevelFilter = LevelFilter::Info;
 pub fn init_logger(
     crate_filter: &str,
     console_interface: Arc<Interface<DefaultTerminal>>,
-) -> Result<(), Box<dyn Error>>
-{
+) -> Result<(), Box<dyn Error>> {
     // Logs info to the console with colors and such
     let console = CustomConsoleAppender { console_interface };
 
@@ -159,7 +158,7 @@ struct CustomConsoleAppender {
 
 impl Append for CustomConsoleAppender {
     #[cfg(unix)]
-    fn append(&self, record: &Record) -> Result<(), Box<dyn Error + Sync + Send>> {
+    fn append(&self, record: &Record) -> anyhow::Result<()> {
         let mut writer = self.console_interface.lock_writer_erase()?;
         match record.metadata().level() {
             Level::Error => write!(writer, "{}", color::Fg(color::Red))?,
@@ -222,7 +221,7 @@ impl fmt::Debug for CustomLogTrigger {
 }
 
 impl Trigger for CustomLogTrigger {
-    fn trigger(&self, file: &LogFile) -> Result<bool, Box<dyn Error + Sync + Send>> {
+    fn trigger(&self, file: &LogFile) -> anyhow::Result<bool> {
         if let Ok(mut guard) = self.last_day.lock() {
             let current_day = Local::now().ordinal();
             if current_day != *guard {
@@ -276,12 +275,7 @@ impl CustomLogRoller {
         }
     }
 
-    pub fn roll_threaded(
-        &self,
-        file: &Path,
-        threaded: bool,
-    ) -> Result<(), Box<dyn Error + Sync + Send>>
-    {
+    pub fn roll_threaded(&self, file: &Path, threaded: bool) -> anyhow::Result<()> {
         let mut guard = match self.name_info.lock() {
             Ok(g) => g,
 
@@ -338,7 +332,7 @@ impl CustomLogRoller {
 }
 
 impl Roll for CustomLogRoller {
-    fn roll(&self, file: &Path) -> Result<(), Box<dyn Error + Sync + Send>> {
+    fn roll(&self, file: &Path) -> anyhow::Result<()> {
         self.roll_threaded(file, true)
     }
 }

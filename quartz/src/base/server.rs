@@ -1,4 +1,4 @@
-use crate::{command::*, item::init_items, network::*, Config, Registry};
+use crate::{item::init_items, network::*, CommandExecutor, Config, Registry};
 use futures_lite::future;
 use linefeed::{
     complete::{Completer, Completion, Suffix},
@@ -9,14 +9,13 @@ use linefeed::{
 };
 use log::*;
 use openssl::rsa::Rsa;
-use quartz_plugins::PluginManager;
 use smol::{net::TcpListener, LocalExecutor, Timer};
 use std::{
     cell::RefCell,
     collections::HashMap,
     error::Error,
+    fmt::Display,
     net::TcpStream as StdTcpStream,
-    path::Path,
     rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -41,11 +40,11 @@ pub fn is_running() -> bool {
 }
 
 /// The main struct containing all relevant data to the quartz server instance.
-pub struct QuartzServer<R: Registry> {
+pub struct QuartzServer {
     /// The server config.
     pub config: Config,
     /// The server registry, containing an API to access types, block data, item data, etc.
-    pub registry: Option<R>,
+    pub registry: Option<Registry>,
     /// The list of connected clients.
     pub(crate) client_list: ClientList,
     /// A handle to interact with the console.
@@ -57,17 +56,18 @@ pub struct QuartzServer<R: Registry> {
     /// A map of thread join handles to join when the server is dropped.
     join_handles: HashMap<String, JoinHandle<()>>,
     /// The command executor instance for the server.
-    pub(crate) command_executor: Rc<RefCell<CommandExecutor<R>>>,
+    pub(crate) command_executor: Rc<RefCell<CommandExecutor>>,
     /// The server clock, used to time and regulate ticks.
     pub clock: ServerClock,
-    /// The server plugin manager.
-    pub plugin_manager: PluginManager,
 }
 
-impl<R: Registry> QuartzServer<R> {
+impl QuartzServer {
     /// Creates a new server instance with the given config and terminal handle.
     pub fn new(config: Config, console_interface: Arc<Interface<DefaultTerminal>>) -> Self {
-        if RUNNING.compare_and_swap(false, true, Ordering::SeqCst) {
+        if RUNNING
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             panic!("Attempted to create a server instance after one was already created.");
         }
 
@@ -75,7 +75,7 @@ impl<R: Registry> QuartzServer<R> {
 
         QuartzServer {
             config,
-            registry: Some(R::new()),
+            registry: Some(Registry::new()),
             client_list: ClientList::new(),
             console_interface,
             sync_packet_sender: sender,
@@ -83,7 +83,6 @@ impl<R: Registry> QuartzServer<R> {
             join_handles: HashMap::new(),
             command_executor: Rc::new(RefCell::new(CommandExecutor::new())),
             clock: ServerClock::new(50),
-            plugin_manager: PluginManager::new(Path::new("./plguins")),
         }
     }
 
@@ -98,16 +97,7 @@ impl<R: Registry> QuartzServer<R> {
         init_items();
 
         // Initialize commands
-        match self.command_executor.try_borrow_mut() {
-            Ok(mut executor) => init_commands(&mut *executor),
-            Err(_) => {
-                error!(
-                    "Internal error: could not borrow command_executor as mutable during \
-                     initialization."
-                );
-                return false;
-            }
-        }
+        // TODO: deal with dynamically added commands
 
         // Setup the command handler thread
         self.init_command_handler();
@@ -128,7 +118,7 @@ impl<R: Registry> QuartzServer<R> {
         };
 
         // Initialize the global registry
-        if let Err(_) = R::set_global(registry) {
+        if let Err(_) = Registry::set_global(registry) {
             error!("Internal error: attempted to overwrite initialized global registry.");
             return false;
         }
@@ -142,7 +132,7 @@ impl<R: Registry> QuartzServer<R> {
         // A simple tab-completer for console
         struct ConsoleCompleter {
             packet_pipe: Mutex<Sender<WrappedServerBoundPacket>>,
-        };
+        }
 
         impl Completer<DefaultTerminal> for ConsoleCompleter {
             fn complete(
@@ -151,8 +141,7 @@ impl<R: Registry> QuartzServer<R> {
                 prompter: &Prompter<'_, '_, DefaultTerminal>,
                 _start: usize,
                 _end: usize,
-            ) -> Option<Vec<Completion>>
-            {
+            ) -> Option<Vec<Completion>> {
                 // Retrieve the packet pipe
                 let pipe = match self.packet_pipe.lock() {
                     Ok(pipe) => pipe,
@@ -230,9 +219,7 @@ impl<R: Registry> QuartzServer<R> {
             }),
         );
     }
-}
 
-impl<R: Registry> QuartzServer<R> {
     fn start_tcp_server(&mut self) -> Result<(), Box<dyn Error>> {
         let listener = smol::block_on(TcpListener::bind(format!(
             "{}:{}",
@@ -255,8 +242,7 @@ impl<R: Registry> QuartzServer<R> {
     async fn tcp_server(
         listener: TcpListener,
         sync_packet_sender: Sender<WrappedServerBoundPacket>,
-    )
-    {
+    ) {
         let mut next_connection_id: usize = 0;
 
         info!("Started TCP Server Thread");
@@ -342,9 +328,19 @@ impl<R: Registry> QuartzServer<R> {
             }
         }
     }
+
+    pub fn display_to_console<T: Display>(&self, message: &T) {
+        match self.console_interface.lock_writer_erase() {
+            Ok(mut writer) =>
+                if let Err(e) = writeln!(writer, "{}", message) {
+                    error!("Failed to send message to console: {}", e);
+                },
+            Err(e) => error!("Failed to lock console interface: {}", e),
+        }
+    }
 }
 
-impl<R: Registry> Drop for QuartzServer<R> {
+impl Drop for QuartzServer {
     fn drop(&mut self) {
         // In case this is reached due to a panic
         RUNNING.store(false, Ordering::SeqCst);

@@ -1,23 +1,23 @@
-use crate::{base::registry::Registry, world::location::BlockPosition};
+use crate::{base::BlockState, world::location::BlockPosition};
 
-pub trait BlockBehavior<R: Registry> {
+pub trait BlockBehavior {
     // TODO: add world argument
-    fn on_break(position: BlockPosition, state: &'static R::BlockState) {}
+    fn on_break(_position: BlockPosition, _state: &'static BlockState) {}
 }
 
-pub struct BlockBehaviorSMT<R: Registry> {
-    on_break: fn(position: BlockPosition, state: &'static R::BlockState),
+pub struct BlockBehaviorSMT {
+    on_break: fn(position: BlockPosition, state: &'static BlockState),
 }
 
-impl<R: Registry> BlockBehaviorSMT<R> {
-    pub fn new<T: BlockBehavior<R>>() -> Self {
+impl BlockBehaviorSMT {
+    pub fn new<T: BlockBehavior>() -> Self {
         BlockBehaviorSMT {
             on_break: T::on_break,
         }
     }
 }
 
-impl<R: Registry> Clone for BlockBehaviorSMT<R> {
+impl Clone for BlockBehaviorSMT {
     fn clone(&self) -> Self {
         BlockBehaviorSMT {
             on_break: self.on_break,
@@ -27,4 +27,4 @@ impl<R: Registry> Clone for BlockBehaviorSMT<R> {
 
 pub struct DefaultBehavior;
 
-impl<R: Registry> BlockBehavior<R> for DefaultBehavior {}
+impl BlockBehavior for DefaultBehavior {}

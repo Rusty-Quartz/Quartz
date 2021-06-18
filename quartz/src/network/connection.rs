@@ -61,8 +61,7 @@ impl IOHandle {
         source: &mut PacketBuffer,
         temp: &mut PacketBuffer,
         stream: &mut TcpStream,
-    ) -> Result<()>
-    {
+    ) -> Result<()> {
         if let Some(encrypter) = encrypter {
             temp.resize(source.len());
             encrypter.update(&source[..], &mut temp[..])?;
@@ -91,8 +90,7 @@ impl IOHandle {
     pub fn enable_encryption(
         &mut self,
         shared_secret: &[u8],
-    ) -> std::result::Result<(), ErrorStack>
-    {
+    ) -> std::result::Result<(), ErrorStack> {
         self.encrypter = Some(Crypter::new(
             Cipher::aes_128_cfb8(),
             Mode::Encrypt,
@@ -118,8 +116,7 @@ impl IOHandle {
         &mut self,
         packet_data: &mut PacketBuffer,
         stream: &mut TcpStream,
-    ) -> Result<()>
-    {
+    ) -> Result<()> {
         // Prepare the operation buffer
         self.operation_buffer.clear();
         let result: Result<()>;
@@ -199,8 +196,7 @@ impl IOHandle {
         packet_buffer: &mut PacketBuffer,
         stream: &mut TcpStream,
         decrypt: bool,
-    ) -> Result<usize>
-    {
+    ) -> Result<usize> {
         if decrypt {
             self.decrypt_buffer(&mut *packet_buffer, 0);
         }
@@ -339,8 +335,7 @@ impl AsyncClientConnection {
         id: usize,
         stream: TcpStream,
         sync_packet_sender: StdSender<WrappedServerBoundPacket>,
-    ) -> Self
-    {
+    ) -> Self {
         AsyncClientConnection {
             id,
             stream,
@@ -431,8 +426,7 @@ impl AsyncClientConnection {
     pub async fn initiate_encryption(
         &mut self,
         shared_secret: &[u8],
-    ) -> std::result::Result<(), ErrorStack>
-    {
+    ) -> std::result::Result<(), ErrorStack> {
         self.io_handle.lock().await.enable_encryption(shared_secret)
     }
 

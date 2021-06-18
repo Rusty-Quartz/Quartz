@@ -1,6 +1,6 @@
 #![deny(rust_2018_idioms)]
-#![warn(missing_docs)]
-#![feature(associated_type_bounds)]
+// TODO: enable when ready
+// #![warn(missing_docs)]
 
 //! This crate contains virtually all of the code, APIs, and other malarkey that makes quartz run. The server
 //! code is launched through the separate `quartz_launcher` crate. Plugins should use this crate as a library
@@ -23,4 +23,3 @@ pub mod network;
 pub mod world;
 
 pub use base::*;
-pub use quartz_plugins::{plugin::plugin_info::get_quartz_info, Listeners, PluginInfo};

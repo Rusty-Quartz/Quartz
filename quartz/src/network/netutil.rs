@@ -633,8 +633,7 @@ impl PacketBuffer {
         &mut self,
         value: &Vec<T>,
         serializer: fn(&mut Self, T) -> (),
-    )
-    {
+    ) {
         for &e in value {
             serializer(self, e);
         }

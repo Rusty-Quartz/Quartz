@@ -560,8 +560,7 @@ pub fn parse_cfmt(cfmt: &str) -> Result<Component, CfmtError> {
 fn finish_component(
     stack: &mut Vec<TextComponent>,
     has_children: &mut Vec<bool>,
-) -> Result<(), CfmtError>
-{
+) -> Result<(), CfmtError> {
     if !try_unwrap(stack.last(), COMPONENT_STACK_ERROR)?.is_empty() {
         // Some children are already present
         if *try_unwrap(has_children.last(), CHILD_STACK_ERROR)? {
@@ -588,8 +587,7 @@ fn finish_event(
     has_children: &mut Vec<bool>,
     token_stack: &mut Vec<String>,
     has_component: bool,
-) -> Result<(), CfmtError>
-{
+) -> Result<(), CfmtError> {
     // Handle stack operations and retrieve the component argument
     if has_component {
         // Add any remaining child

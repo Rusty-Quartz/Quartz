@@ -2,7 +2,6 @@ use crate::{
     color::{Color, PredefinedColor},
     component::{ClickEvent, Component, HoverEvent, TextComponent},
 };
-use doc_comment::doc_comment;
 
 /// Utility struct for building text components. Components can have children, and those children
 /// can have children, etc., however this utility only allows for a base component with a list of
@@ -16,12 +15,10 @@ pub struct TextComponentBuilder {
 
 macro_rules! component_format {
     ($name:ident, $comment:expr) => {
-        doc_comment! {
-            concat!("Set whether or not this component's text should be ", $comment, "."),
-            pub fn $name(mut self, value: bool) -> Self {
-                self.current().$name = Some(value);
-                self
-            }
+        #[doc = concat!("Set whether or not this component's text should be ", $comment, ".")]
+        pub fn $name(mut self, value: bool) -> Self {
+            self.current().$name = Some(value);
+            self
         }
     };
 }
