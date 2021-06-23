@@ -1,6 +1,6 @@
 use crate::{
     command::{CommandContext, CommandSender},
-    network::{AsyncClientConnection, ConnectionState, PacketBuffer},
+    network::{packets::*, AsyncClientConnection, ConnectionState, PacketBuffer},
     server::{self, QuartzServer},
     world::location::BlockPosition,
 };
@@ -14,7 +14,6 @@ use openssl::{
     sha,
 };
 use quartz_commands::CommandModule;
-use quartz_nbt::NbtCompound;
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use serde::Deserialize;
@@ -34,120 +33,6 @@ pub const PROTOCOL_VERSION: i32 = 736;
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
 include!(concat!(env!("OUT_DIR"), "/packet_output.rs"));
-include!(concat!(env!("OUT_DIR"), "/packet_types.rs"));
-
-#[allow(missing_docs)]
-pub enum EntityMetadata {
-    Byte(i8),
-    VarInt(i32),
-    Float(f32),
-    String(String),
-    Chat(Component),
-    OptChat(bool, Option<Component>),
-    Slot(Slot),
-    Boolean(bool),
-    Rotation(f32, f32, f32),
-    Position(BlockPosition),
-    OptPosition(bool, Option<BlockPosition>),
-    Direction(i32),
-    OptUUID(bool, Option<Uuid>),
-    OptBlockId(i32),
-    NBT(NbtCompound),
-    Particle(WrappedParticle),
-    VillagerData(i32, i32, i32),
-    OptVarInt(i32),
-    Pose(i32),
-}
-
-#[allow(missing_docs)]
-pub enum Particle {
-    AmbientEntityEffect,
-    AngryVillager,
-    Barrier,
-    Block(i32),
-    Bubble,
-    Cloud,
-    Crit,
-    DamageIndicator,
-    DragonBreath,
-    DrippingLava,
-    FallingLava,
-    LandingLava,
-    DrippingWater,
-    FallingWater,
-    Dust(f32, f32, f32, f32),
-    Effect,
-    ElderGuardian,
-    EnchantedHit,
-    Enchant,
-    EndRod,
-    EntityEffect,
-    ExplosionEmitter,
-    Explosion,
-    FallingDust(i32),
-    Firework,
-    Fishing,
-    Flame,
-    Flash,
-    HappyVillager,
-    Composter,
-    Heart,
-    InstantEffect,
-    Item(Slot),
-    ItemSlime,
-    ItemSnowball,
-    LargeSmoke,
-    Lava,
-    Mycelium,
-    Note,
-    Poof,
-    Portal,
-    Rain,
-    Smoke,
-    Sneeze,
-    Spit,
-    SquidInk,
-    SweepAttack,
-    TotemOfUndying,
-    Underwater,
-    Splash,
-    Witch,
-    BubblePop,
-    CurrentDown,
-    BubbleColumnUp,
-    Nautilus,
-    Dolphin,
-    CampfireCosySmoke,
-    CampfireSignalSmoke,
-    DrippingHoney,
-    FallingHoney,
-    LandingHoney,
-    FallingNectar,
-}
-
-#[allow(missing_docs)]
-pub enum PlayerInfoAction {
-    AddPlayer {
-        name: String,
-        number_of_properties: i32,
-        properties: Vec<PlayerProperty>,
-        gamemode: i32,
-        ping: i32,
-        has_display_name: bool,
-        display_name: Option<Component>,
-    },
-    UpdateGamemode {
-        gamemode: i32,
-    },
-    UpdateLatency {
-        ping: i32,
-    },
-    UpdateDisplayName {
-        has_display_name: bool,
-        display_name: Option<Component>,
-    },
-    RemovePlayer,
-}
 
 /// A wraper for a server-bound packet which includes the sender ID.
 pub struct WrappedServerBoundPacket {
@@ -476,11 +361,11 @@ impl QuartzServer {
 
         // Write FF and length
         buffer.write_bytes(&[0xFF]);
-        buffer.write_u16(string_vec.len() as u16);
+        buffer.write(&(string_vec.len() as u16));
 
         // Write String
         for bytes in string_vec {
-            buffer.write_u16(bytes);
+            buffer.write(&bytes);
         }
 
         self.client_list.send_buffer(sender, buffer).await;

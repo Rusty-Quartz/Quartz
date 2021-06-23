@@ -17,6 +17,7 @@ path = "src/lib.rs"
 chat = { path = "../chat" }
 util = { path = "../util" }
 quartz_commands = { path = "../../quartz_commands" }
+quartz_macros = { path = "../quartz_macros" }
 
 # External dependencies
 array-init = "2.0.0"

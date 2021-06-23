@@ -25,7 +25,7 @@ async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut Asy
     if conn.connection_state == ConnectionState::Handshake && buffer.peek() == LEGACY_PING_PACKET_ID as u8 {
         id = LEGACY_PING_PACKET_ID;
     } else {
-        id = buffer.read_varint();
+        id = buffer.read_varying();
     }
 
     match conn.connection_state {"#;
@@ -83,7 +83,7 @@ pub fn gen_packet_handlers() {
 
     let deserializers = gen_deserializers(&states_raw, &mappings_raw);
 
-    let serlializers = gen_serializers(&client_bound, &mappings_raw);
+    let serlializers = gen_serializers(&client_bound);
 
     let dispatch = gen_sync_dispatch(&server_bound, &mappings_raw);
 
@@ -156,27 +156,51 @@ fn gen_deserializers(states_raw: &Vec<StatePacketInfo>, mappings_raw: &Mappings)
                 let mut packet_str = format!("{} => {{", packet.id);
 
                 for field in &packet.fields {
-                    packet_str.push_str(&format!("let {} = ", field.name));
+                    let cut = field
+                        .var_type
+                        .chars()
+                        .position(|ch| ch == '(')
+                        .unwrap_or(field.var_type.len());
+                    let ty = mappings_raw.of(&field.var_type[.. cut]);
+                    packet_str.push_str(&format!("let {}{} = ", field.name, match ty {
+                        Some(ty) =>
+                            if field.option {
+                                format!(": Option<{}>", ty)
+                            } else {
+                                format!(": {}", ty)
+                            },
+                        None => "".to_owned(),
+                    }));
 
                     if field.option {
                         packet_str.push_str(&format!(
-                            "if {} {{ Some(buffer.read_{}{}) }} else {{None}};",
+                            "if {} {{ Some(buffer.read{}{}) }} else {{None}};",
                             field.condition,
-                            field.var_type,
-                            if field.var_type.contains("(") {
-                                ""
+                            if field.var_type.starts_with("var") {
+                                "_varying"
                             } else {
-                                "()"
+                                ""
+                            },
+                            if field.var_type.contains("(") {
+                                let cut = field.var_type.chars().position(|ch| ch == '(').unwrap();
+                                format!("_array{}", &field.var_type[cut ..])
+                            } else {
+                                "()".to_owned()
                             }
                         ))
                     } else {
                         packet_str.push_str(&format!(
-                            "buffer.read_{}{};",
-                            field.var_type,
-                            if field.var_type.contains("(") {
-                                ""
+                            "buffer.read{}{};",
+                            if field.var_type.starts_with("var") {
+                                "_varying"
                             } else {
-                                "()"
+                                ""
+                            },
+                            if field.var_type.contains("(") {
+                                let cut = field.var_type.chars().position(|ch| ch == '(').unwrap();
+                                format!("_array{}", &field.var_type[cut ..])
+                            } else {
+                                "()".to_owned()
                             }
                         ));
                     }
@@ -231,7 +255,7 @@ fn gen_deserializers(states_raw: &Vec<StatePacketInfo>, mappings_raw: &Mappings)
     deserializers
 }
 
-fn gen_serializers(client_bound: &Vec<Packet>, mappings: &Mappings) -> String {
+fn gen_serializers(client_bound: &Vec<Packet>) -> String {
     let mut serlializers = SERIALIZER_START.to_owned();
 
     for packet in client_bound {
@@ -241,7 +265,7 @@ fn gen_serializers(client_bound: &Vec<Packet>, mappings: &Mappings) -> String {
             packet.struct_params()
         );
 
-        packet_str.push_str(&format!("buffer.write_varint({});", packet.id));
+        packet_str.push_str(&format!("buffer.write_varying(&{});", packet.id));
 
         for field in &packet.fields {
             if field.option {
@@ -250,16 +274,16 @@ fn gen_serializers(client_bound: &Vec<Packet>, mappings: &Mappings) -> String {
                     field.name,
                     field.name,
                     if field.array {
-                        array_serializer(field, mappings)
+                        array_serializer(field)
                     } else {
-                        serializer(field, mappings)
+                        serializer(field)
                     }
                 ))
             } else {
                 packet_str.push_str(&if field.array {
-                    array_serializer(field, mappings)
+                    array_serializer(field)
                 } else {
-                    serializer(field, mappings)
+                    serializer(field)
                 });
             }
         }
@@ -274,38 +298,34 @@ fn gen_serializers(client_bound: &Vec<Packet>, mappings: &Mappings) -> String {
     serlializers
 }
 
-fn serializer(field: &Field, mappings: &Mappings) -> String {
+fn serializer(field: &Field) -> String {
     format!(
-        "buffer.write_{}({}{});",
-        field.var_type.to_ascii_lowercase(),
-        if !mappings.primitives.contains(&field.var_type) {
-            ""
+        "buffer.write{}({});",
+        if field.var_type.to_ascii_lowercase().starts_with("var") {
+            "_varying"
         } else {
-            "*"
+            ""
         },
         field.name
     )
 }
 
-fn array_serializer(field: &Field, mappings: &Mappings) -> String {
+fn array_serializer(field: &Field) -> String {
     format!(
-        "buffer.write_{}array::<{}>({}, PacketBuffer::write_{});",
-        if mappings
-            .primitives
-            .contains(&field.var_type.split("(").next().unwrap().to_owned())
-        {
-            "primative_"
-        } else {
-            ""
-        },
-        parse_type(field.var_type.split("(").next().unwrap(), &mappings.types),
-        field.name,
-        field
+        "buffer.write{}({});",
+        if field
             .var_type
             .to_ascii_lowercase()
             .split("(")
             .next()
-            .unwrap(),
+            .unwrap()
+            .starts_with("var")
+        {
+            "_array_varying"
+        } else {
+            ""
+        },
+        field.name,
     )
 }
 
@@ -473,4 +493,18 @@ impl Field {
 struct Mappings {
     types: HashMap<String, String>,
     primitives: Vec<String>,
+}
+
+impl Mappings {
+    fn of(&self, key: &str) -> Option<String> {
+        match self.types.get(key).map(Clone::clone) {
+            mapping @ Some(_) => mapping,
+            None =>
+                if self.primitives.iter().any(|element| element == key) {
+                    Some(key.to_owned())
+                } else {
+                    None
+                },
+        }
+    }
 }

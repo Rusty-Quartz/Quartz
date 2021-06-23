@@ -137,12 +137,12 @@ impl IOHandle {
                 packet_data.clear();
 
                 // Raw length
-                packet_data.write_varint(
-                    (PacketBuffer::varint_size(data_len as i32) + self.operation_buffer.len())
-                        as i32,
+                packet_data.write_varying(
+                    &((PacketBuffer::varint_size(data_len as i32) + self.operation_buffer.len())
+                        as i32),
                 );
                 // Data length
-                packet_data.write_varint(data_len as i32);
+                packet_data.write_varying(&(data_len as i32));
                 packet_data.write_bytes(&self.operation_buffer[..]);
 
                 result = IOHandle::write_encrypted(
@@ -157,9 +157,9 @@ impl IOHandle {
             else {
                 // Raw length
                 self.operation_buffer
-                    .write_varint(packet_data.len() as i32 + 1);
+                    .write_varying(&(packet_data.len() as i32 + 1));
                 // Data length of 0 signals that this packet is uncompressed
-                self.operation_buffer.write_u8(0);
+                self.operation_buffer.write_one(0);
                 self.operation_buffer.write_bytes(&packet_data[..]);
 
                 result = IOHandle::write_encrypted(
@@ -173,7 +173,8 @@ impl IOHandle {
         }
         // The packet does not need to be compressed, so just record the length and write the raw bytes
         else {
-            self.operation_buffer.write_varint(packet_data.len() as i32);
+            self.operation_buffer
+                .write_varying(&(packet_data.len() as i32));
             self.operation_buffer.write_bytes(&packet_data[..]);
 
             result = IOHandle::write_encrypted(
@@ -204,7 +205,7 @@ impl IOHandle {
         // Read the packet header
 
         // Length of the packet in its raw, unaltered form
-        let raw_len: usize = packet_buffer.read_varint() as usize;
+        let raw_len = packet_buffer.read_varying::<i32>() as usize;
         // Length of the uncompressed packet data exluding the raw length header
         let mut data_len: usize;
         let compressed: bool;
@@ -212,7 +213,7 @@ impl IOHandle {
         // Compression is active
         if self.compression_threshold >= 0 {
             // Read the length of the uncompressed packet data
-            data_len = packet_buffer.read_varint() as usize;
+            data_len = packet_buffer.read_varying::<i32>() as usize;
 
             // If that length is zero, the packet was not compressed
             if data_len == 0 {

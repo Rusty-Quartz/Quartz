@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let mut server: QuartzServer = QuartzServer::new(config, console_interface);
+    let mut server = QuartzServer::new(config, console_interface);
     server.init();
     server.run();
     drop(server);
