@@ -1,11 +1,10 @@
 [package]
-name = "quartz_macros"
+name = "quartz_macros_impl"
 version = "0.1.0"
 edition = "2018"
 
-[lib]
-proc-macro = true
-
 [dependencies]
-quartz_macros_impl = { path = '../quartz_macros_impl' }
+proc-macro2 = "1.0.24"
+proc-macro-crate = "1.0.0"
+quote = "1.0.8"
 syn = { version = "1.0.55", features = ["full"] }

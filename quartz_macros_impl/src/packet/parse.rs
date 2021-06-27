@@ -1,23 +1,10 @@
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{
-    parenthesized,
-    parse::{Parse, ParseStream},
-    Data,
-    DeriveInput,
-    Error,
-    Expr,
-    Fields,
-    GenericArgument,
-    Ident,
-    LitStr,
-    PathArguments,
-    Result,
-    Token,
-    Type,
-};
+use quote::{ToTokens, format_ident, quote};
+use super::Side;
+use crate::{is_option, is_vec, extract_type_from_container};
+use syn::{Data, DataEnum, DeriveInput, Error, Expr, Fields, Ident, LitStr, Result, Token, Type, parenthesized, parse::{Parse, ParseStream}};
 
-pub fn parse_fields(input: &DeriveInput) -> Result<Vec<Field>> {
+pub(crate) fn parse_fields(input: &DeriveInput, side: Side) -> Result<Vec<Field>> {
     let data_struct = match &input.data {
         Data::Struct(data_struct) => data_struct,
         _ => return Err(Error::new_spanned(&input.ident, "Expected struct")),
@@ -28,8 +15,81 @@ pub fn parse_fields(input: &DeriveInput) -> Result<Vec<Field>> {
         tokens @ _ => return Err(Error::new_spanned(tokens, "Struct fields must be named")),
     };
 
+    parse_fields_impl(&named_fields.named, true, side)
+}
+
+pub(crate) fn parse_enum(input: &DataEnum, side: Side) -> Result<Vec<EnumStructVariant>> {
+    let mut variants = Vec::new();
+    for variant in &input.variants {
+        match &variant.fields {
+            Fields::Named(named_fields) => {
+                variants.push(EnumStructVariant {
+                    name: variant.ident.clone(),
+                    fields: parse_fields_impl(&named_fields.named, true, side)?,
+                    is_tuple: false
+                });
+            },
+            Fields::Unnamed(unnamed_fields) => {
+                variants.push(EnumStructVariant {
+                    name: variant.ident.clone(),
+                    fields: parse_fields_impl(&unnamed_fields.unnamed, false, side)?,
+                    is_tuple: true
+                });
+            }
+            Fields::Unit => {
+                variants.push(EnumStructVariant {
+                    name: variant.ident.clone(),
+                    fields: Vec::new(),
+                    is_tuple: false
+                });
+            }
+        };
+    }
+    Ok(variants)
+}
+
+fn parse_fields_impl<'a, T>(field_defs: &'a T, require_names: bool, side: Side) -> Result<Vec<Field>>
+where
+    &'a T: IntoIterator<Item = &'a syn::Field>,
+{
     let mut fields = Vec::new();
-    for field_def in &named_fields.named {
+
+    fn process_vec(fields: &mut Vec<Field>, name: Ident, ty: Type, params: PacketSerdeParams, is_option: bool, side: Side) -> Result<()> {
+        let is_array_u8 = match extract_type_from_container(&ty)? {
+            Type::Path(path) => path.qself.is_none() && path.path.is_ident("u8"),
+            _ => return Err(Error::new_spanned(ty, "Expected path type")),
+        };
+
+        let len = if params.greedy {
+            if !is_array_u8 {
+                return Err(Error::new_spanned(
+                    ty,
+                    "Only Vec<u8> can be market as greedy",
+                ));
+            }
+
+            quote! { __buffer.remaining() }
+        } else {
+            if side == Side::Read && params.len.is_none() {
+                return Err(Error::new_spanned(ty, "Vecs must have a length expression"));
+            }
+
+            params.len.to_token_stream()
+        };
+
+        fields.push(Field::array(
+            name,
+            ty,
+            len,
+            params.condition,
+            is_option,
+            params.varying,
+            is_array_u8
+        ));
+        Ok(())
+    }
+
+    for (index, field_def) in field_defs.into_iter().enumerate() {
         let attr = field_def
             .attrs
             .iter()
@@ -39,38 +99,21 @@ pub fn parse_fields(input: &DeriveInput) -> Result<Vec<Field>> {
             .transpose()?
             .unwrap_or_default();
 
+        let name = if require_names {
+            match field_def.ident.clone() {
+                Some(ident) => ident,
+                None => return Err(Error::new_spanned(field_def, "Fields must be named"))
+            }
+        } else {
+            match &field_def.ident {
+                Some(ident) => ident.clone(),
+                None => format_ident!("var{}", index)
+            }
+        };
+
         let ty = field_def.ty.clone();
         if is_vec(&ty) {
-            let len = if params.greedy {
-                let inner_type = extract_type_from_container(&ty)?;
-                match inner_type {
-                    Type::Path(path) =>
-                        if path.qself.is_some() || !path.path.is_ident("u8") {
-                            return Err(Error::new_spanned(
-                                ty,
-                                "Only Vec<u8> can be market as greedy",
-                            ));
-                        },
-                    _ => return Err(Error::new_spanned(ty, "Expected path type")),
-                }
-
-                quote! { __buffer.remaining() }
-            } else {
-                if params.len.is_none() {
-                    return Err(Error::new_spanned(ty, "Vecs must have a length expression"));
-                }
-
-                params.len.unwrap().to_token_stream()
-            };
-
-            fields.push(Field::array(
-                field_def.ident.clone().unwrap(),
-                ty,
-                len,
-                params.condition,
-                false,
-                params.varying,
-            ));
+            process_vec(&mut fields, name, ty, params, false, side)?;
             continue;
         }
 
@@ -82,7 +125,7 @@ pub fn parse_fields(input: &DeriveInput) -> Result<Vec<Field>> {
         }
 
         if is_option(&ty) {
-            if params.condition.is_none() {
+            if side == Side::Read && params.condition.is_none() {
                 return Err(Error::new_spanned(
                     ty,
                     "Options must have a condition expression",
@@ -91,21 +134,7 @@ pub fn parse_fields(input: &DeriveInput) -> Result<Vec<Field>> {
 
             let inner_ty = extract_type_from_container(&ty)?;
             if is_vec(&inner_ty) {
-                if params.len.is_none() {
-                    return Err(Error::new_spanned(
-                        inner_ty,
-                        "Vecs must have a length expression",
-                    ));
-                }
-
-                fields.push(Field::array(
-                    field_def.ident.clone().unwrap(),
-                    inner_ty,
-                    params.len.unwrap().to_token_stream(),
-                    params.condition,
-                    true,
-                    params.varying,
-                ));
+                process_vec(&mut fields, name, inner_ty, params, true, side)?;
             } else {
                 if params.len.is_some() {
                     return Err(Error::new_spanned(
@@ -115,8 +144,8 @@ pub fn parse_fields(input: &DeriveInput) -> Result<Vec<Field>> {
                 }
 
                 fields.push(Field::regular(
-                    field_def.ident.clone().unwrap(),
-                    inner_ty,
+                    name,
+                    ty,
                     params.condition,
                     true,
                     params.varying,
@@ -134,7 +163,7 @@ pub fn parse_fields(input: &DeriveInput) -> Result<Vec<Field>> {
         }
 
         fields.push(Field::regular(
-            field_def.ident.clone().unwrap(),
+            name,
             ty,
             params.condition,
             false,
@@ -219,12 +248,20 @@ impl Default for PacketSerdeParams {
     }
 }
 
+pub struct EnumStructVariant {
+    pub name: Ident,
+    pub fields: Vec<Field>,
+    pub is_tuple: bool
+}
+
 pub struct Field {
     pub name: Ident,
+    pub raw_ty: Type,
     pub ty: FieldType,
     pub condition: Option<Expr>,
     pub is_option: bool,
     pub varying: bool,
+    pub is_array_u8: bool
 }
 
 impl Field {
@@ -237,10 +274,12 @@ impl Field {
     ) -> Self {
         Field {
             name,
-            ty: FieldType::Regular(ty),
+            raw_ty: ty,
+            ty: FieldType::Regular,
             condition,
             is_option,
             varying,
+            is_array_u8: false
         }
     }
 
@@ -251,59 +290,21 @@ impl Field {
         condition: Option<Expr>,
         is_option: bool,
         varying: bool,
+        is_array_u8: bool
     ) -> Self {
         Field {
             name,
-            ty: FieldType::Array { ty, len },
+            raw_ty: ty,
+            ty: FieldType::Array { len },
             condition,
             is_option,
             varying,
+            is_array_u8
         }
     }
 }
 
 pub enum FieldType {
-    Regular(Type),
-    Array { ty: Type, len: TokenStream },
-}
-
-fn is_vec(ty: &Type) -> bool {
-    match ty {
-        Type::Path(path) =>
-            path.qself.is_none()
-                && path.path.leading_colon.is_none()
-                && !path.path.segments.is_empty()
-                && path.path.segments.last().unwrap().ident == "Vec",
-        _ => false,
-    }
-}
-
-fn is_option(ty: &Type) -> bool {
-    match ty {
-        Type::Path(path) =>
-            path.qself.is_none()
-                && path.path.leading_colon.is_none()
-                && !path.path.segments.is_empty()
-                && path.path.segments.last().unwrap().ident == "Option",
-        _ => false,
-    }
-}
-
-fn extract_type_from_container(ty: &Type) -> Result<Type> {
-    match ty {
-        Type::Path(path) => {
-            let type_params = &path.path.segments.last().unwrap().arguments;
-
-            let generic_arg = match type_params {
-                PathArguments::AngleBracketed(params) => params.args.first().unwrap(),
-                tokens @ _ => return Err(Error::new_spanned(tokens, "Expected type parameter")),
-            };
-
-            match generic_arg {
-                GenericArgument::Type(ty) => Ok(ty.clone()),
-                arg @ _ => Err(Error::new_spanned(arg, "Expected type parameter")),
-            }
-        }
-        ty @ _ => Err(Error::new_spanned(ty, "Expected path type")),
-    }
+    Regular,
+    Array { len: TokenStream },
 }
