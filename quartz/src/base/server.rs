@@ -1,4 +1,4 @@
-use crate::{item::init_items, network::*, CommandExecutor, Config, Registry};
+use crate::{item::init_items, network::{*, packet::{WrappedServerBoundPacket, ServerBoundPacket, ClientBoundPacket}}, CommandExecutor, Config, Registry};
 use futures_lite::future;
 use linefeed::{
     complete::{Completer, Completion, Suffix},
@@ -154,7 +154,7 @@ impl QuartzServer {
                 // Send the completion request
                 pipe.send(WrappedServerBoundPacket::new(
                     0,
-                    ServerBoundPacket::HandleConsoleCompletion {
+                    ServerBoundPacket::ConsoleCompletion {
                         // Take the slice of the command up to the cursor
                         command: prompter.buffer()[.. prompter.cursor()].to_owned(),
                         response: sender,
@@ -200,7 +200,7 @@ impl QuartzServer {
                                 // Forward the command to the server thread
                                 let packet = WrappedServerBoundPacket::new(
                                     0,
-                                    ServerBoundPacket::HandleConsoleCommand {
+                                    ServerBoundPacket::ConsoleCommand {
                                         command: command.trim().to_owned(),
                                     },
                                 );

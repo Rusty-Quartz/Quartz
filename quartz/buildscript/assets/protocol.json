@@ -30,21 +30,6 @@
       },
       {
         "dispatch": true,
-        "name": "query_entity_nbt",
-        "id": "0x0D",
-        "fields": [
-          {
-            "name": "transaction_id",
-            "type": "varint"
-          },
-          {
-            "name": "entity_id",
-            "type": "varint"
-          }
-        ]
-      },
-      {
-        "dispatch": true,
         "name": "set_difficulty",
         "id": "0x02",
         "fields": [
@@ -56,7 +41,7 @@
       },
       {
         "dispatch": true,
-        "name": "chat_message_serverbound",
+        "name": "chat_message",
         "id": "0x03",
         "fields": [
           {
@@ -104,12 +89,16 @@
           {
             "name": "main_hand",
             "type": "varint"
+          },
+          {
+            "name": "disable_text_filtering",
+            "type": "bool"
           }
         ]
       },
       {
         "dispatch": true,
-        "name": "tab_complete_serverbound",
+        "name": "tab_complete",
         "id": "0x06",
         "fields": [
           {
@@ -124,27 +113,8 @@
       },
       {
         "dispatch": true,
-        "name": "window_confirmation_serverbound",
-        "id": "0x07",
-        "fields": [
-          {
-            "name": "window_id",
-            "type": "i8"
-          },
-          {
-            "name": "action_number",
-            "type": "i16"
-          },
-          {
-            "name": "accepted",
-            "type": "bool"
-          }
-        ]
-      },
-      {
-        "dispatch": true,
         "name": "click_window_button",
-        "id": "0x08",
+        "id": "0x07",
         "fields": [
           {
             "name": "window_id",
@@ -159,7 +129,7 @@
       {
         "dispatch": true,
         "name": "click_window",
-        "id": "0x09",
+        "id": "0x08",
         "fields": [
           {
             "name": "window_id",
@@ -174,12 +144,17 @@
             "type": "i8"
           },
           {
-            "name": "action_number",
-            "type": "i16"
-          },
-          {
             "name": "mode",
             "type": "varint"
+          },
+          {
+            "name": "slots_len",
+            "type": "varint"
+          },
+          {
+            "name": "slots",
+            "type": "slot(slots_len as usize)",
+            "array": true
           },
           {
             "name": "clicked_item",
@@ -189,8 +164,8 @@
       },
       {
         "dispatch": true,
-        "name": "close_window_serverbound",
-        "id": "0x0A",
+        "name": "close_window",
+        "id": "0x09",
         "fields": [
           {
             "name": "window_id",
@@ -200,8 +175,8 @@
       },
       {
         "dispatch": true,
-        "name": "plugin_message_serverbound",
-        "id": "0x0B",
+        "name": "plugin_message",
+        "id": "0x0A",
         "fields": [
           {
             "name": "channel",
@@ -209,14 +184,15 @@
           },
           {
             "name": "data",
-            "type": "byte_array(buffer.remaining())"
+            "type": "u8(buffer.remaining())",
+            "array": true
           }
         ]
       },
       {
         "dispatch": true,
         "name": "edit_book",
-        "id": "0x0C",
+        "id": "0x0B",
         "fields": [
           {
             "name": "new_book",
@@ -234,8 +210,23 @@
       },
       {
         "dispatch": true,
+        "name": "query_entity_nbt",
+        "id": "0x0C",
+        "fields": [
+          {
+            "name": "transaction_id",
+            "type": "varint"
+          },
+          {
+            "name": "entity_id",
+            "type": "varint"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
         "name": "interact_entity",
-        "id": "0x0E",
+        "id": "0x0D",
         "fields": [
           {
             "name": "entity_id",
@@ -278,7 +269,7 @@
       {
         "dispatch": true,
         "name": "generate_structure",
-        "id": "0x0F",
+        "id": "0x0E",
         "fields": [
           {
             "name": "location",
@@ -296,8 +287,8 @@
       },
       {
         "dispatch": true,
-        "name": "keep_alive_serverbound",
-        "id": "0x10",
+        "name": "keep_alive",
+        "id": "0x0F",
         "fields": [
           {
             "name": "keep_alive_id",
@@ -308,7 +299,7 @@
       {
         "dispatch": true,
         "name": "lock_difficulty",
-        "id": "0x11",
+        "id": "0x10",
         "fields": [
           {
             "name": "locked",
@@ -319,7 +310,7 @@
       {
         "dispatch": true,
         "name": "player_position",
-        "id": "0x12",
+        "id": "0x11",
         "fields": [
           {
             "name": "x",
@@ -341,8 +332,8 @@
       },
       {
         "dispatch": true,
-        "name": "player_position_and_rotation_serverbound",
-        "id": "0x13",
+        "name": "player_position_and_rotation",
+        "id": "0x12",
         "fields": [
           {
             "name": "x",
@@ -373,7 +364,7 @@
       {
         "dispatch": true,
         "name": "player_rotation",
-        "id": "0x14",
+        "id": "0x13",
         "fields": [
           {
             "name": "yaw",
@@ -392,7 +383,7 @@
       {
         "dispatch": true,
         "name": "player_movement",
-        "id": "0x15",
+        "id": "0x14",
         "fields": [
           {
             "name": "on_ground",
@@ -402,8 +393,8 @@
       },
       {
         "dispatch": true,
-        "name": "vehicle_move_serverbound",
-        "id": "0x16",
+        "name": "vehicle_move",
+        "id": "0x15",
         "fields": [
           {
             "name": "x",
@@ -430,7 +421,7 @@
       {
         "dispatch": true,
         "name": "steer_boat",
-        "id": "0x17",
+        "id": "0x16",
         "fields": [
           {
             "name": "left_paddle_turning",
@@ -445,7 +436,7 @@
       {
         "dispatch": true,
         "name": "pick_item",
-        "id": "0x18",
+        "id": "0x17",
         "fields": [
           {
             "name": "slot_to_use",
@@ -456,7 +447,7 @@
       {
         "dispatch": true,
         "name": "craft_recipe_request",
-        "id": "0x19",
+        "id": "0x18",
         "fields": [
           {
             "name": "window_id",
@@ -474,8 +465,8 @@
       },
       {
         "dispatch": true,
-        "name": "player_abilities_serverbound",
-        "id": "0x1A",
+        "name": "player_abilities",
+        "id": "0x19",
         "fields": [
           {
             "name": "flags",
@@ -486,7 +477,7 @@
       {
         "dispatch": true,
         "name": "player_digging",
-        "id": "0x1B",
+        "id": "0x1A",
         "fields": [
           {
             "name": "status",
@@ -505,7 +496,7 @@
       {
         "dispatch": true,
         "name": "entity_action",
-        "id": "0x1C",
+        "id": "0x1B",
         "fields": [
           {
             "name": "entity_id",
@@ -524,7 +515,7 @@
       {
         "dispatch": true,
         "name": "steer_vehicle",
-        "id": "0x1D",
+        "id": "0x1C",
         "fields": [
           {
             "name": "sideways",
@@ -542,19 +533,19 @@
       },
       {
         "dispatch": true,
-        "name": "set_displayed_recipe",
-        "id": "0x1E",
+        "name": "pong",
+        "id": "0x1D",
         "fields": [
           {
-            "name": "recipe_id",
-            "type": "unlocalized_name"
+            "name": "id",
+            "type": "i32"
           }
         ]
       },
       {
         "dispatch": true,
         "name": "set_recipe_book_state",
-        "id": "0x1F",
+        "id": "0x1E",
         "fields": [
           {
             "name": "book_id",
@@ -567,6 +558,17 @@
           {
             "name": "filter_active",
             "type": "bool"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "set_displayed_recipe",
+        "id": "0x1F",
+        "fields": [
+          {
+            "name": "recipe_id",
+            "type": "unlocalized_name"
           }
         ]
       },
@@ -637,7 +639,7 @@
       },
       {
         "dispatch": true,
-        "name": "held_item_change_serverbound",
+        "name": "held_item_change",
         "id": "0x25",
         "fields": [
           {
@@ -691,7 +693,7 @@
       {
         "dispatch": true,
         "name": "creative_inventory_action",
-        "id": "0x29",
+        "id": "0x28",
         "fields": [
           {
             "name": "slot",
@@ -706,7 +708,7 @@
       {
         "dispatch": true,
         "name": "update_jigsaw_block",
-        "id": "0x28",
+        "id": "0x29",
         "fields": [
           {
             "name": "location",
@@ -834,7 +836,7 @@
       },
       {
         "dispatch": true,
-        "name": "animation_serverbound",
+        "name": "animation",
         "id": "0x2C",
         "fields": [
           {
@@ -1103,8 +1105,28 @@
       },
       {
         "dispatch": true,
-        "name": "entity_animation_clientbound",
+        "name": "sculk_vibration_signal",
         "id": "0x05",
+        "fields": [
+          {
+            "name": "source_position",
+            "type": "position"
+          },
+          {
+            "name": "destination_identifier",
+            "type": "unlocalized_name"
+          },
+          {
+            "name": "payload",
+            "type": "u8(buffer.remaining())",
+            "array": true
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "entity_animation",
+        "id": "0x06",
         "fields": [
           {
             "name": "entity_id",
@@ -1119,7 +1141,7 @@
       {
         "dispatch": true,
         "name": "statistics",
-        "id": "0x06",
+        "id": "0x07",
         "fields": [
           {
             "name": "count",
@@ -1135,7 +1157,7 @@
       {
         "dispatch": true,
         "name": "acknowledge_player_digging",
-        "id": "0x07",
+        "id": "0x08",
         "fields": [
           {
             "name": "location",
@@ -1158,7 +1180,7 @@
       {
         "dispatch": true,
         "name": "block_break_animation",
-        "id": "0x08",
+        "id": "0x09",
         "fields": [
           {
             "name": "entity_id",
@@ -1177,7 +1199,7 @@
       {
         "dispatch": true,
         "name": "block_entity_data",
-        "id": "0x09",
+        "id": "0x0A",
         "fields": [
           {
             "name": "location",
@@ -1196,7 +1218,7 @@
       {
         "dispatch": true,
         "name": "block_action",
-        "id": "0x0A",
+        "id": "0x0B",
         "fields": [
           {
             "name": "location",
@@ -1219,7 +1241,7 @@
       {
         "dispatch": true,
         "name": "block_change",
-        "id": "0x0B",
+        "id": "0x0C",
         "fields": [
           {
             "name": "location",
@@ -1234,7 +1256,7 @@
       {
         "dispatch": true,
         "name": "boss_bar",
-        "id": "0x0C",
+        "id": "0x0D",
         "fields": [
           {
             "name": "uuid",
@@ -1285,7 +1307,7 @@
       {
         "dispatch": true,
         "name": "server_difficulty",
-        "id": "0x0D",
+        "id": "0x0E",
         "fields": [
           {
             "name": "difficulty",
@@ -1299,8 +1321,8 @@
       },
       {
         "dispatch": true,
-        "name": "chat_message_clientbound",
-        "id": "0x0E",
+        "name": "chat_message",
+        "id": "0x0F",
         "fields": [
           {
             "name": "json_data",
@@ -1318,8 +1340,19 @@
       },
       {
         "dispatch": true,
-        "name": "tab_complete_clientbound",
-        "id": "0xF",
+        "name": "clear_titles",
+        "id": "0x10",
+        "fields": [
+          {
+            "name": "reset",
+            "type": "bool"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "tab_complete",
+        "id": "0x11",
         "fields": [
           {
             "name": "id",
@@ -1347,7 +1380,7 @@
       {
         "dispatch": true,
         "name": "declare_commands",
-        "id": "0x10",
+        "id": "0x12",
         "fields": [
           {
             "name": "count",
@@ -1355,7 +1388,7 @@
           },
           {
             "name": "nodes",
-            "type": "byte_array",
+            "type": "u8(0)",
             "array": false,
             "TODO": "Add support for command node type"
           },
@@ -1367,27 +1400,8 @@
       },
       {
         "dispatch": true,
-        "name": "window_confirmation_clientbound",
-        "id": "0x11",
-        "fields": [
-          {
-            "name": "window_id",
-            "type": "i8"
-          },
-          {
-            "name": "action_number",
-            "type": "i16"
-          },
-          {
-            "name": "accepted",
-            "type": "bool"
-          }
-        ]
-      },
-      {
-        "dispatch": true,
-        "name": "close_window_clientbound",
-        "id": "0x12",
+        "name": "close_window",
+        "id": "0x13",
         "fields": [
           {
             "name": "window_id",
@@ -1398,7 +1412,7 @@
       {
         "dispatch": true,
         "name": "window_items",
-        "id": "0x13",
+        "id": "0x14",
         "fields": [
           {
             "name": "window_id",
@@ -1418,7 +1432,7 @@
       {
         "dispatch": true,
         "name": "window_property",
-        "id": "0x14",
+        "id": "0x15",
         "fields": [
           {
             "name": "window_id",
@@ -1437,7 +1451,7 @@
       {
         "dispatch": true,
         "name": "set_slot",
-        "id": "0x15",
+        "id": "0x16",
         "fields": [
           {
             "name": "window_id",
@@ -1456,7 +1470,7 @@
       {
         "dispatch": true,
         "name": "set_cooldown",
-        "id": "0x16",
+        "id": "0x17",
         "fields": [
           {
             "name": "item_id",
@@ -1470,8 +1484,8 @@
       },
       {
         "dispatch": true,
-        "name": "plugin_message_clientbound",
-        "id": "0x17",
+        "name": "plugin_message",
+        "id": "0x18",
         "fields": [
           {
             "name": "channel",
@@ -1479,14 +1493,15 @@
           },
           {
             "name": "data",
-            "type": "byte_array"
+            "type": "u8(buffer.remaining())",
+            "array": true
           }
         ]
       },
       {
         "dispatch": true,
         "name": "named_sound_effect",
-        "id": "0x18",
+        "id": "0x19",
         "fields": [
           {
             "name": "sound_name",
@@ -1521,7 +1536,7 @@
       {
         "dispatch": true,
         "name": "disconnect_play",
-        "id": "0x19",
+        "id": "0x1A",
         "fields": [
           {
             "name": "reason",
@@ -1532,7 +1547,7 @@
       {
         "dispatch": true,
         "name": "entity_status",
-        "id": "0x1A",
+        "id": "0x1B",
         "fields": [
           {
             "name": "entity_id",
@@ -1547,7 +1562,7 @@
       {
         "dispatch": true,
         "name": "explosion",
-        "id": "0x1B",
+        "id": "0x1C",
         "fields": [
           {
             "name": "x",
@@ -1567,7 +1582,7 @@
           },
           {
             "name": "record_count",
-            "type": "i32"
+            "type": "varint"
           },
           {
             "name": "records",
@@ -1591,7 +1606,7 @@
       {
         "dispatch": true,
         "name": "unload_chunk",
-        "id": "0x1C",
+        "id": "0x1D",
         "fields": [
           {
             "name": "chunk_x",
@@ -1606,7 +1621,7 @@
       {
         "dispatch": true,
         "name": "change_game_state",
-        "id": "0x1D",
+        "id": "0x1E",
         "fields": [
           {
             "name": "reason",
@@ -1621,7 +1636,7 @@
       {
         "dispatch": true,
         "name": "open_horse_window",
-        "id": "0x1E",
+        "id": "0x1F",
         "fields": [
           {
             "name": "window_id",
@@ -1639,8 +1654,47 @@
       },
       {
         "dispatch": true,
-        "name": "keep_alive_clientbound",
-        "id": "0x1F",
+        "name": "initialize_world_border",
+        "id": "0x20",
+        "fields": [
+          {
+            "name": "x",
+            "type": "f64"
+          },
+          {
+            "name": "z",
+            "type": "f64"
+          },
+          {
+            "name": "old_diameter",
+            "type": "f64"
+          },
+          {
+            "name": "new_diameter",
+            "type": "f64"
+          },
+          {
+            "name": "speed",
+            "type": "varlong"
+          },
+          {
+            "name": "portal_teleport_boundary",
+            "type": "varint"
+          },
+          {
+            "name": "warning_blocks",
+            "type": "varint"
+          },
+          {
+            "name": "warning_time",
+            "type": "varint"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "keep_alive",
+        "id": "0x21",
         "fields": [
           {
             "name": "keep_alive_id",
@@ -1651,7 +1705,7 @@
       {
         "dispatch": true,
         "name": "chunk_data",
-        "id": "0x20",
+        "id": "0x22",
         "fields": [
           {
             "name": "chunk_x",
@@ -1662,12 +1716,12 @@
             "type": "i32"
           },
           {
-            "name": "full_chunk",
-            "type": "bool"
+            "name": "bit_mask_length",
+            "type": "varint"
           },
           {
             "name": "primary_bit_mask",
-            "type": "varint"
+            "type": "i64(bit_mask_length as usize)"
           },
           {
             "name": "heightmaps",
@@ -1682,8 +1736,6 @@
           {
             "name": "biomes",
             "type": "varint(biomes_length)",
-            "option": true,
-            "condition": "full_chunk",
             "array": true
           },
           {
@@ -1692,7 +1744,8 @@
           },
           {
             "name": "data",
-            "type": "byte_array"
+            "type": "u8(size as usize)",
+            "array": true
           },
           {
             "name": "number_of_block_entities",
@@ -1708,7 +1761,7 @@
       {
         "dispatch": true,
         "name": "effect",
-        "id": "0x21",
+        "id": "0x23",
         "fields": [
           {
             "name": "effect_id",
@@ -1731,7 +1784,7 @@
       {
         "dispatch": true,
         "name": "particle",
-        "id": "0x22",
+        "id": "0x24",
         "fields": [
           {
             "name": "particle_id",
@@ -1797,29 +1850,53 @@
             "type": "bool"
           },
           {
+            "name": "sky_light_mask_length",
+            "type": "varint"
+          },
+          {
             "name": "sky_light_mask",
+            "type": "i64(sky_light_mask_length as usize)"
+          },
+          {
+            "name": "block_light_mask_length",
             "type": "varint"
           },
           {
             "name": "block_light_mask",
+            "type": "i64(block_light_mask_length as usize)"
+          },
+          {
+            "name": "empty_sky_light_mask_length",
             "type": "varint"
           },
           {
             "name": "empty_sky_light_mask",
+            "type": "i64(empty_sky_light_mask_length as usize)"
+          },
+          {
+            "name": "empty_block_light_mask_length",
             "type": "varint"
           },
           {
             "name": "empty_block_light_mask",
+            "type": "i64(empty_block_light_mask_length as usize)"
+          },
+          {
+            "name": "sky_light_count",
             "type": "varint"
           },
           {
             "name": "sky_light_arrays",
-            "type": "block_lights(18)",
+            "type": "block_lights(sky_light_count as usize)",
             "array": true
           },
           {
+            "name": "block_light_count",
+            "type": "varint"
+          },
+          {
             "name": "block_light_arrays",
-            "type": "block_lights(18)",
+            "type": "block_lights(block_light_count as usize)",
             "array": true
           }
         ]
@@ -1827,7 +1904,7 @@
       {
         "dispatch": true,
         "name": "join_game",
-        "id": "0x24",
+        "id": "0x26",
         "fields": [
           {
             "name": "entity_id",
@@ -1899,7 +1976,7 @@
       {
         "dispatch": true,
         "name": "map_data",
-        "id": "0x25",
+        "id": "0x27",
         "fields": [
           {
             "name": "map_id",
@@ -1910,11 +1987,11 @@
             "type": "i8"
           },
           {
-            "name": "tracking_position",
+            "name": "locked",
             "type": "bool"
           },
           {
-            "name": "locked",
+            "name": "tracking_position",
             "type": "bool"
           },
           {
@@ -1966,7 +2043,7 @@
       {
         "dispatch": true,
         "name": "trade_list",
-        "id": "0x26",
+        "id": "0x28",
         "fields": [
           {
             "name": "window_id",
@@ -2002,7 +2079,7 @@
       {
         "dispatch": true,
         "name": "entity_position",
-        "id": "0x27",
+        "id": "0x29",
         "fields": [
           {
             "name": "entity_id",
@@ -2029,7 +2106,7 @@
       {
         "dispatch": true,
         "name": "entity_position_and_rotation",
-        "id": "0x28",
+        "id": "0x2A",
         "fields": [
           {
             "name": "entity_id",
@@ -2064,7 +2141,7 @@
       {
         "dispatch": true,
         "name": "entity_rotation",
-        "id": "0x29",
+        "id": "0x2B",
         "fields": [
           {
             "name": "entity_id",
@@ -2086,19 +2163,8 @@
       },
       {
         "dispatch": true,
-        "name": "entity_movement",
-        "id": "0x2A",
-        "fields": [
-          {
-            "name": "entity_id",
-            "type": "varint"
-          }
-        ]
-      },
-      {
-        "dispatch": true,
-        "name": "vehicle_move_clientbound",
-        "id": "0x2B",
+        "name": "vehicle_move",
+        "id": "0x2C",
         "fields": [
           {
             "name": "x",
@@ -2125,7 +2191,7 @@
       {
         "dispatch": true,
         "name": "open_book",
-        "id": "0x2C",
+        "id": "0x2D",
         "fields": [
           {
             "name": "hand",
@@ -2136,7 +2202,7 @@
       {
         "dispatch": true,
         "name": "open_window",
-        "id": "0x2D",
+        "id": "0x2E",
         "fields": [
           {
             "name": "window_id",
@@ -2155,7 +2221,7 @@
       {
         "dispatch": true,
         "name": "open_sign_editor",
-        "id": "0x2E",
+        "id": "0x2F",
         "fields": [
           {
             "name": "location",
@@ -2165,8 +2231,19 @@
       },
       {
         "dispatch": true,
+        "name": "ping",
+        "id": "0x30",
+        "fields": [
+          {
+            "name": "id",
+            "type": "i32"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
         "name": "craft_recipe_response",
-        "id": "0x2F",
+        "id": "0x31",
         "fields": [
           {
             "name": "window_id",
@@ -2180,8 +2257,8 @@
       },
       {
         "dispatch": true,
-        "name": "player_abilities_clientbound",
-        "id": "0x30",
+        "name": "player_abilities",
+        "id": "0x32",
         "fields": [
           {
             "name": "flags",
@@ -2199,13 +2276,30 @@
       },
       {
         "dispatch": true,
-        "name": "combat_event",
-        "id": "0x31",
+        "name": "end_combat_event",
+        "id": "0x33",
         "fields": [
           {
-            "name": "event",
+            "name": "duration",
             "type": "varint"
           },
+          {
+            "name": "entity_id",
+            "type": "i32"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "enter_combat_event",
+        "id": "0x34",
+        "fields": []
+      },
+      {
+        "dispatch": true,
+        "name": "death_combat_event",
+        "id": "0x35",
+        "fields": [
           {
             "name": "player_id",
             "type": "varint"
@@ -2223,7 +2317,7 @@
       {
         "dispatch": true,
         "name": "player_info",
-        "id": "0x32",
+        "id": "0x36",
         "fields": [
           {
             "name": "action",
@@ -2243,7 +2337,7 @@
       {
         "dispatch": true,
         "name": "face_player",
-        "id": "0x33",
+        "id": "0x37",
         "fields": [
           {
             "name": "feet_eyes",
@@ -2281,8 +2375,8 @@
       },
       {
         "dispatch": true,
-        "name": "player_position_and_look_clientbound",
-        "id": "0x34",
+        "name": "player_position_and_look",
+        "id": "0x38",
         "fields": [
           {
             "name": "x",
@@ -2311,13 +2405,17 @@
           {
             "name": "teleport_id",
             "type": "varint"
+          },
+          {
+            "name": "dismount_vehicle",
+            "type": "bool"
           }
         ]
       },
       {
         "dispatch": true,
         "name": "unlock_recipes",
-        "id": "0x35",
+        "id": "0x39",
         "fields": [
           {
             "name": "action",
@@ -2340,11 +2438,11 @@
             "type": "bool"
           },
           {
-            "name": "blast_furance_recipe_book_open",
+            "name": "blast_furnace_recipe_book_open",
             "type": "bool"
           },
           {
-            "name": "blast_furance_recipe_book_filter_active",
+            "name": "blast_furnace_recipe_book_filter_active",
             "type": "bool"
           },
           {
@@ -2374,31 +2472,26 @@
             "name": "recipe_ids_2",
             "type": "unlocalized_name(array_size_2)",
             "option": true,
-            "condition": "mode == 0",
+            "condition": "action == 0",
             "array": true
           }
         ]
       },
       {
         "dispatch": true,
-        "name": "destroy_entities",
-        "id": "0x36",
+        "name": "destroy_entity",
+        "id": "0x3A",
         "fields": [
           {
-            "name": "count",
+            "name": "entity_id",
             "type": "varint"
-          },
-          {
-            "name": "entity_ids",
-            "type": "varint(count)",
-            "array": true
           }
         ]
       },
       {
         "dispatch": true,
         "name": "remove_entity_effect",
-        "id": "0x37",
+        "id": "0x3B",
         "fields": [
           {
             "name": "entity_id",
@@ -2413,7 +2506,7 @@
       {
         "dispatch": true,
         "name": "resource_pack_send",
-        "id": "0x38",
+        "id": "0x3C",
         "fields": [
           {
             "name": "url",
@@ -2422,13 +2515,23 @@
           {
             "name": "hash",
             "type": "string"
+          },
+          {
+            "name": "forced",
+            "type": "bool"
+          },
+          {
+            "name": "prompt_message",
+            "type": "chat",
+            "option": true,
+            "condition": "false"
           }
         ]
       },
       {
         "dispatch": true,
         "name": "respawn",
-        "id": "0x39",
+        "id": "0x3D",
         "fields": [
           {
             "name": "dimension",
@@ -2467,7 +2570,7 @@
       {
         "dispatch": true,
         "name": "entity_head_look",
-        "id": "0x3A",
+        "id": "0x3E",
         "fields": [
           {
             "name": "entity_id",
@@ -2482,7 +2585,7 @@
       {
         "dispatch": true,
         "name": "multi_block_change",
-        "id": "0x3B",
+        "id": "0x3F",
         "fields": [
           {
             "name": "chunk_section_position",
@@ -2506,7 +2609,7 @@
       {
         "dispatch": true,
         "name": "select_advancement_tab",
-        "id": "0x3C",
+        "id": "0x40",
         "fields": [
           {
             "name": "has_id",
@@ -2515,79 +2618,92 @@
           {
             "name": "identifier",
             "type": "string",
-            "option": true
+            "option": true,
+            "condition": "has_id"
           }
         ]
       },
       {
         "dispatch": true,
-        "name": "world_border",
-        "id": "0x3D",
+        "name": "action_bar",
+        "id": "0x41",
         "fields": [
           {
-            "name": "action_id",
-            "type": "varint"
-          },
-          {
-            "name": "diameter",
-            "type": "f64",
-            "option": true,
-            "condition": "action_id == 0"
-          },
-          {
-            "name": "old_diameter",
-            "type": "f64",
-            "option": true,
-            "condition": "action_id == 1 || action_id == 3"
-          },
-          {
-            "name": "new_diameter",
-            "type": "f64",
-            "option": true,
-            "condition": "action_id == 1 || action_id == 3"
-          },
-          {
-            "name": "speed",
-            "type": "varlong",
-            "option": true,
-            "condition": "action_id == 1 || action_id == 3"
-          },
+            "name": "text",
+            "type": "chat"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "world_border_center",
+        "id": "0x42",
+        "fields": [
           {
             "name": "x",
-            "type": "f64",
-            "option": true,
-            "condition": "action_id == 2 || action_id == 3"
+            "type": "f64"
           },
           {
             "name": "z",
-            "type": "f64",
-            "option": true,
-            "condition": "action_id == 2 || action_id == 3"
+            "type": "f64"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "world_border_lerp_size",
+        "id": "0x43",
+        "fields": [
+          {
+            "name": "old_diameter",
+            "type": "f64"
           },
           {
-            "name": "portal_teleport_boundry",
-            "type": "varint",
-            "option": true,
-            "condition": "action_id == 3"
+            "name": "new_diameter",
+            "type": "f64"
           },
+          {
+            "name": "speed",
+            "type": "varlong"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "world_border_size",
+        "id": "0x44",
+        "fields": [
+          {
+            "name": "diameter",
+            "type": "f64"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "world_border_warning_delay",
+        "id": "0x45",
+        "fields": [
           {
             "name": "warning_time",
-            "type": "varint",
-            "option": true,
-            "condition": "action_id == 3 || aaction_id == 4"
-          },
+            "type": "varint"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "world_border_warning_reach",
+        "id": "0x46",
+        "fields": [
           {
             "name": "warning_blocks",
-            "type": "varint",
-            "option": true,
-            "condition": "action_id == 3 || action_id == 5"
-          }
+            "type": "varint"          }
         ]
       },
       {
         "dispatch": true,
         "name": "camera",
-        "id": "0x3E",
+        "id": "0x47",
         "fields": [
           {
             "name": "camera_id",
@@ -2597,8 +2713,8 @@
       },
       {
         "dispatch": true,
-        "name": "held_item_change_clientbound",
-        "id": "0x3F",
+        "name": "held_item_change",
+        "id": "0x48",
         "fields": [
           {
             "name": "slot",
@@ -2609,7 +2725,7 @@
       {
         "dispatch": true,
         "name": "update_view_position",
-        "id": "0x40",
+        "id": "0x49",
         "fields": [
           {
             "name": "chunk_x",
@@ -2624,7 +2740,7 @@
       {
         "dispatch": true,
         "name": "update_view_distance",
-        "id": "0x41",
+        "id": "0x4A",
         "fields": [
           {
             "name": "view_distance",
@@ -2635,18 +2751,22 @@
       {
         "dispatch": true,
         "name": "spawn_position",
-        "id": "0x42",
+        "id": "0x4B",
         "fields": [
           {
             "name": "location",
             "type": "position"
+          },
+          {
+            "name": "angle",
+            "type": "f32"
           }
         ]
       },
       {
         "dispatch": true,
         "name": "display_scoreboard",
-        "id": "0x43",
+        "id": "0x4C",
         "fields": [
           {
             "name": "position",
@@ -2661,7 +2781,7 @@
       {
         "dispatch": true,
         "name": "entity_metadata",
-        "id": "0x44",
+        "id": "0x4D",
         "fields": [
           {
             "name": "entity_id",
@@ -2676,7 +2796,7 @@
       {
         "dispatch": true,
         "name": "attach_entity",
-        "id": "0x45",
+        "id": "0x4E",
         "fields": [
           {
             "name": "attached_entity_id",
@@ -2691,7 +2811,7 @@
       {
         "dispatch": true,
         "name": "entity_velocity",
-        "id": "0x46",
+        "id": "0x4F",
         "fields": [
           {
             "name": "entity_id",
@@ -2714,7 +2834,7 @@
       {
         "dispatch": true,
         "name": "entity_equipment",
-        "id": "0x47",
+        "id": "0x50",
         "fields": [
           {
             "name": "entity_id",
@@ -2722,15 +2842,14 @@
           },
           {
             "name": "equipment",
-            "type": "equipment_slot",
-            "array": true
+            "type": "Vec<crate::network::packet::EquipmentSlot>"
           }
         ]
       },
       {
         "dispatch": true,
         "name": "set_experience",
-        "id": "0x48",
+        "id": "0x51",
         "fields": [
           {
             "name": "experience_bar",
@@ -2749,7 +2868,7 @@
       {
         "dispatch": true,
         "name": "update_health",
-        "id": "0x49",
+        "id": "0x52",
         "fields": [
           {
             "name": "health",
@@ -2768,7 +2887,7 @@
       {
         "dispatch": true,
         "name": "scoreboard_objective",
-        "id": "0x4A",
+        "id": "0x53",
         "fields": [
           {
             "name": "objective_name",
@@ -2795,7 +2914,7 @@
       {
         "dispatch": true,
         "name": "set_passengers",
-        "id": "0x4B",
+        "id": "0x54",
         "fields": [
           {
             "name": "entity_id",
@@ -2815,7 +2934,7 @@
       {
         "dispatch": true,
         "name": "teams",
-        "id": "0x4C",
+        "id": "0x55",
         "fields": [
           {
             "name": "team_name",
@@ -2828,55 +2947,64 @@
           {
             "name": "team_display_name",
             "type": "chat",
-            "option": true
+            "option": true,
+            "condition": "mode == 0 || mode == 2"
           },
           {
             "name": "friendly_flags",
             "type": "i8",
-            "option": true
+            "option": true,
+            "condition": "mode == 0 || mode == 2"
           },
           {
             "name": "name_tag_visibility",
             "type": "string",
-            "option": true
+            "option": true,
+            "condition": "mode == 0 || mode == 2"
           },
           {
             "name": "collision_rule",
             "type": "string",
-            "option": true
+            "option": true,
+            "condition": "mode == 0 || mode == 2"
           },
           {
             "name": "team_color",
             "type": "varint",
-            "option": true
+            "option": true,
+            "condition": "mode == 0 || mode == 2"
           },
           {
             "name": "team_prefix",
             "type": "chat",
-            "option": true
+            "option": true,
+            "condition": "mode == 0 || mode == 2"
           },
           {
             "name": "team_suffix",
             "type": "chat",
-            "option": true
+            "option": true,
+            "condition": "mode == 0 || mode == 2"
           },
           {
             "name": "entity_count",
             "type": "varint",
-            "option": true
+            "option": true,
+            "condition": "mode == 0 || mode == 3 || mode == 4"
           },
           {
             "name": "entities",
-            "type": "string",
+            "type": "string(entity_count)",
             "array": true,
-            "option": true
+            "option": true,
+            "condition": "mode == 0 || mode == 3 || mode == 4"
           }
         ]
       },
       {
         "dispatch": true,
         "name": "update_score",
-        "id": "0x4D",
+        "id": "0x56",
         "fields": [
           {
             "name": "entity_name",
@@ -2900,8 +3028,19 @@
       },
       {
         "dispatch": true,
+        "name": "set_title_subtitle",
+        "id": "0x57",
+        "fields": [
+          {
+            "name": "subtitle_text",
+            "type": "chat"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
         "name": "time_update",
-        "id": "0x4E",
+        "id": "0x58",
         "fields": [
           {
             "name": "world_age",
@@ -2915,49 +3054,38 @@
       },
       {
         "dispatch": true,
-        "name": "title",
-        "id": "0x4F",
+        "name": "set_title_text",
+        "id": "0x59",
         "fields": [
           {
-            "name": "action",
-            "type": "varint"
-          },
-          {
             "name": "title_text",
-            "type": "chat",
-            "option": true
-          },
-          {
-            "name": "subtitle_text",
-            "type": "chat",
-            "option": true
-          },
-          {
-            "name": "action_bar_text",
-            "type": "chat",
-            "option": true
-          },
+            "type": "chat"
+          }
+        ]
+      },
+      {
+        "dispatch": true,
+        "name": "set_title_times",
+        "id": "0x5A",
+        "fields": [
           {
             "name": "fade_in",
-            "type": "i32",
-            "option": true
+            "type": "i32"
           },
           {
             "name": "stay",
-            "type": "i32",
-            "option": true
+            "type": "i32"
           },
           {
             "name": "fade_out",
-            "type": "i32",
-            "option": true
+            "type": "i32"
           }
         ]
       },
       {
         "dispatch": true,
         "name": "entity_sound_effect",
-        "id": "0x50",
+        "id": "0x5B",
         "fields": [
           {
             "name": "sound_id",
@@ -2984,7 +3112,7 @@
       {
         "dispatch": true,
         "name": "sound_effect",
-        "id": "0x51",
+        "id": "0x5C",
         "fields": [
           {
             "name": "sound_id",
@@ -3019,7 +3147,7 @@
       {
         "dispatch": true,
         "name": "stop_sound",
-        "id": "0x52",
+        "id": "0x5D",
         "fields": [
           {
             "name": "flags",
@@ -3042,7 +3170,7 @@
       {
         "dispatch": true,
         "name": "player_list_header_and_footer",
-        "id": "0x53",
+        "id": "0x5E",
         "fields": [
           {
             "name": "header",
@@ -3057,7 +3185,7 @@
       {
         "dispatch": true,
         "name": "nbt_query_response",
-        "id": "0x54",
+        "id": "0x5F",
         "fields": [
           {
             "name": "transaction_id",
@@ -3072,7 +3200,7 @@
       {
         "dispatch": true,
         "name": "collect_item",
-        "id": "0x55",
+        "id": "0x60",
         "fields": [
           {
             "name": "collected_entity_id",
@@ -3091,7 +3219,7 @@
       {
         "dispatch": true,
         "name": "entity_teleport",
-        "id": "0x56",
+        "id": "0x61",
         "fields": [
           {
             "name": "entity_id",
@@ -3126,7 +3254,7 @@
       {
         "dispatch": true,
         "name": "advancements",
-        "id": "0x57",
+        "id": "0x62",
         "fields": [
           {
             "name": "reset_clear",
@@ -3164,7 +3292,7 @@
       {
         "dispatch": true,
         "name": "entity_properties",
-        "id": "0x58",
+        "id": "0x63",
         "fields": [
           {
             "name": "entity_id",
@@ -3172,11 +3300,11 @@
           },
           {
             "name": "number_of_properties",
-            "type": "i32"
+            "type": "varint"
           },
           {
             "name": "properties",
-            "type": "entity_property(number_of_properties)",
+            "type": "entity_property(number_of_properties as usize)",
             "array": true
           }
         ]
@@ -3184,7 +3312,7 @@
       {
         "dispatch": true,
         "name": "entity_effect",
-        "id": "0x59",
+        "id": "0x64",
         "fields": [
           {
             "name": "entity_id",
@@ -3211,7 +3339,7 @@
       {
         "dispatch": true,
         "name": "declare_recipes",
-        "id": "0x5A",
+        "id": "0x65",
         "fields": [
           {
             "name": "num_recipes",
@@ -3219,7 +3347,7 @@
           },
           {
             "name": "recipes",
-            "type": "recipe(num_recipes)",
+            "type": "recipe(num_recipes as usize)",
             "array": true
           }
         ]
@@ -3227,39 +3355,16 @@
       {
         "dispatch": true,
         "name": "tags",
-        "id": "0x5B",
+        "id": "0x66",
         "fields": [
           {
-            "name": "block_tags_length",
+            "name": "tag_arr_len",
             "type": "varint"
           },
           {
-            "name": "block_tags",
-            "type": "nbt_tag"
-          },
-          {
-              "name": "item_tags_length",
-              "type": "varint"
-          },
-          {
-              "name": "item_tags",
-              "type": "nbt_tag"
-          },
-          {
-              "name": "fluid_tags_length",
-              "type": "varint"
-          },
-          {
-              "name": "fluid_tags",
-              "type": "nbt_tag"
-          },
-          {
-              "name": "entity_tags_length",
-              "type": "varint"
-          },
-          {
-              "name": "entity_tags",
-              "type": "nbt_tag"
+              "name": "tag_arrays",
+              "type": "tag_array(tag_arr_len as usize)",
+              "array": true
           }
         ]
       }
@@ -3289,20 +3394,24 @@
           {
             "name": "shared_secret_length",
             "unused": true,
+            "referenced": true,
             "type": "varint"
           },
           {
             "name": "shared_secret",
-            "type": "byte_array(shared_secret_length as usize)"
+            "type": "u8(shared_secret_length as usize)",
+            "array": true
           },
           {
             "name": "verify_token_length",
             "unused": true,
+            "referenced": true,
             "type": "varint"
           },
           {
             "name": "verify_token",
-            "type": "byte_array(verify_token_length as usize)"
+            "type": "u8(verify_token_length as usize)",
+            "array": true
           }
         ]
       },
@@ -3322,9 +3431,10 @@
           },
           {
             "name": "data",
-            "type": "byte_array(buffer.remaining())",
+            "type": "u8(buffer.remaining())",
             "option": true,
-            "condition": "successful"
+            "condition": "successful",
+            "array": true
           }
         ]
       }
@@ -3356,7 +3466,8 @@
           },
           {
             "name": "public_key",
-            "type": "byte_array"
+            "type": "u8(public_key_length)",
+            "array": true
           },
           {
             "name": "verify_token_length",
@@ -3364,7 +3475,8 @@
           },
           {
             "name": "verify_token",
-            "type": "byte_array"
+            "type": "u8(verify_token_length)",
+            "array": true
           }
         ]
       },
@@ -3409,7 +3521,8 @@
           },
           {
             "name": "data",
-            "type": "byte_array"
+            "type": "u8(buffer.remaining())",
+            "array": true
           }
         ]
       }
@@ -3510,7 +3623,7 @@
     "server_bound": [
       {
         "sender_independent": true,
-        "name": "Client_Connected",
+        "name": "client_connected",
         "id": "0xFF",
         "fields": [
           {
@@ -3525,7 +3638,7 @@
       },
       {
         "sender_independent": true,
-        "name": "Client_Disconnected",
+        "name": "client_disconnected",
         "id": "0xFF",
         "fields": [
           {
@@ -3535,12 +3648,12 @@
         ]
       },
       {
-        "name": "Login_Success_Server",
+        "name": "login_success_server",
         "id": "0xFF",
         "fields": [
           {
             "name": "uuid",
-            "type": "Uuid"
+            "type": "uuid"
           },
           {
             "name": "username",
@@ -3550,7 +3663,7 @@
       },
       {
         "sender_independent": true,
-        "name": "Handle_Console_Command",
+        "name": "console_command",
         "id": "0xFF",
         "fields": [
           {
@@ -3561,7 +3674,7 @@
       },
       {
         "sender_independent": true,
-        "name": "Handle_Console_Completion",
+        "name": "console_completion",
         "id": "0xFF",
         "fields": [
           {

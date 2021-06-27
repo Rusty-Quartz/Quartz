@@ -1,60 +1,28 @@
 use serde::Deserialize;
 use serde_json;
+use syn::Type;
 use std::{collections::HashMap, env, fs, path::Path};
-
-const INVALID_MACRO: &str = r#"macro_rules! invalid_packet {
-    ($id:expr, $len:expr) => {
-        warn!("Invalid packet received. ID: {}, Len: {}", $id, $len);
-    };
-}"#;
-
-const SERVER_PACKET_START: &str = r#"#[doc = "Packets sent from the client to the server, or packets the server sends internally to itself."]
-#[allow(missing_docs)]
-pub enum ServerBoundPacket {"#;
-
-const CLIENT_PACKET_START: &str = r#"#[doc = "Packets sent from the server to the client."]
-#[allow(missing_docs)]
-pub enum ClientBoundPacket {"#;
-
-const DESERIALIZER_START: &str = r#"#[doc = "Deserializes a packet from the connection's buffer and either handles it immediately or forwards it to the server thread."]
-#[allow(unused_variables)]
-async fn handle_packet(conn: &mut AsyncClientConnection, async_handler: &mut AsyncPacketHandler, _packet_len: usize) {
-    let buffer = &mut conn.read_buffer;
-    let id;
-
-    if conn.connection_state == ConnectionState::Handshake && buffer.peek() == LEGACY_PING_PACKET_ID as u8 {
-        id = LEGACY_PING_PACKET_ID;
-    } else {
-        id = buffer.read_varying();
-    }
-
-    match conn.connection_state {"#;
-
-const SERIALIZER_START: &str = r#"#[doc = "Serializes a client-bound packet to the given buffer. This function does not apply compression or encryption."]
-pub fn serialize(packet: &ClientBoundPacket, buffer: &mut PacketBuffer) {
-    match packet {"#;
-
-const DISPATCHER_START: &str = r#"#[doc = "Dispatches a synchronous packet on the server thread."]
-pub async fn dispatch_sync_packet(wrapped_packet: &WrappedServerBoundPacket, handler: &mut QuartzServer) {
-    match &wrapped_packet.packet {"#;
+use proc_macro2::{Literal, TokenStream};
+use quote::{quote, format_ident};
+use quartz_macros_impl::packet::{Field as CodegenField, gen_serialize_enum_field, gen_deserialize_field};
+use once_cell::unsync::OnceCell;
 
 pub fn gen_packet_handlers() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("packet_output.rs");
+    let packet_enums_dest_path = Path::new(&out_dir).join("packet_def_output.rs");
+    let handler_dest_path = Path::new(&out_dir).join("packet_handler_output.rs");
 
     // Load in json files
     let states_raw: Vec<StatePacketInfo> =
-        serde_json::from_str::<Vec<StatePacketInfo>>(include_str!("./assets/protocol.json"))
+        serde_json::from_str(include_str!("./assets/protocol.json"))
             .expect("Error reading file");
-    let mappings_raw: Mappings =
-        serde_json::from_str::<Mappings>(include_str!("./assets/mappings.json"))
+    let mappings: Mappings =
+        serde_json::from_str(include_str!("./assets/mappings.json"))
             .expect("Error reading mappings.json");
 
     let mut states: Vec<String> = Vec::new();
     let mut server_bound: Vec<Packet> = Vec::new();
     let mut client_bound: Vec<Packet> = Vec::new();
-
-    let mappings = mappings_raw.types.clone();
 
     // gen packet lists
     for state in states_raw.clone() {
@@ -62,7 +30,7 @@ pub fn gen_packet_handlers() {
 
         if state.server_bound.is_some() {
             for packet in state.server_bound.unwrap() {
-                if !packet.asynchronous.unwrap_or(false) {
+                if !packet.asynchronous {
                     server_bound.push(packet);
                 }
             }
@@ -75,305 +43,277 @@ pub fn gen_packet_handlers() {
         }
     }
 
-    let mut server_packet_enum = SERVER_PACKET_START.to_owned();
-    server_packet_enum.push_str(&gen_packet_enum(server_bound.clone(), &mappings));
-
-    let mut client_packet_enum = CLIENT_PACKET_START.to_owned();
-    client_packet_enum.push_str(&gen_packet_enum(client_bound.clone(), &mappings));
-
-    let deserializers = gen_deserializers(&states_raw, &mappings_raw);
-
-    let serlializers = gen_serializers(&client_bound);
-
-    let dispatch = gen_sync_dispatch(&server_bound, &mappings_raw);
+    let client_packet_enum = gen_client_packet_enum(&client_bound, &mappings);
+    let server_packet_enum = gen_server_packet_enum(&states_raw, &mappings);
+    let handle_packet = gen_handle_packet(&states_raw, &mappings);
+    let sync_dispatch = gen_sync_dispatch(&server_bound, &mappings);
 
     ////////////////////////////////////////
     // Write Output
     ////////////////////////////////////////
 
     fs::write(
-        &dest_path,
-        format!(
-            "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}",
-            INVALID_MACRO,
-            server_packet_enum,
-            client_packet_enum,
-            deserializers,
-            serlializers,
-            dispatch
-        ),
+        &packet_enums_dest_path,
+        (quote! {
+            #client_packet_enum
+            #server_packet_enum
+        }).to_string()
     )
     .unwrap();
-    super::format_in_place(dest_path.as_os_str());
+    fs::write(
+        &handler_dest_path,
+        (quote! {
+            #handle_packet
+            #sync_dispatch
+        }).to_string()
+    )
+    .unwrap();
+
+    super::format_in_place(packet_enums_dest_path.as_os_str());
+    super::format_in_place(handler_dest_path.as_os_str());
 
     println!("cargo:rerun-if-changed=./assets/Pickaxe/protocol.json");
     println!("cargo:rerun-if-changed=./assets/Pickaxe/mappings.json");
     println!("cargo:rerun-if-changed=buildscript/packets.rs")
 }
 
-fn gen_packet_enum(packet_arr: Vec<Packet>, mappings: &HashMap<String, String>) -> String {
-    let mut output = String::new();
-
-    for packet in packet_arr {
-        // If no fields are used
-        if used_field_count(&packet) == 0 {
-            output.push_str(&format!("{},", snake_to_camel(&packet.name)));
-            continue;
-        }
-
-        let mut packet_str = format!("{} {{", snake_to_camel(&packet.name));
-
-        for field in packet.fields {
-            if field.unused.unwrap_or(false) {
-                continue;
-            }
-            packet_str.push_str(&field.struct_type(mappings));
-        }
-
-        packet_str.push_str("},");
-        output.push_str(&packet_str);
-    }
-
-    output.push_str("}");
-
-    output
-}
-
-fn gen_deserializers(states_raw: &Vec<StatePacketInfo>, mappings_raw: &Mappings) -> String {
-    let mut deserializers = DESERIALIZER_START.to_owned();
-
-    for state in states_raw {
-        if state.name == "__internal__" {
-            continue;
-        }
-
-        let mut state_str = format!("ConnectionState::{} => {{", state.name);
-
-        if state.server_bound.is_some() {
-            state_str.push_str("match id {");
-
-            for packet in state.server_bound.clone().unwrap() {
-                let mut packet_str = format!("{} => {{", packet.id);
-
-                for field in &packet.fields {
-                    let cut = field
-                        .var_type
-                        .chars()
-                        .position(|ch| ch == '(')
-                        .unwrap_or(field.var_type.len());
-                    let ty = mappings_raw.of(&field.var_type[.. cut]);
-                    packet_str.push_str(&format!("let {}{} = ", field.name, match ty {
-                        Some(ty) =>
-                            if field.option {
-                                format!(": Option<{}>", ty)
-                            } else {
-                                format!(": {}", ty)
-                            },
-                        None => "".to_owned(),
-                    }));
-
-                    if field.option {
-                        packet_str.push_str(&format!(
-                            "if {} {{ Some(buffer.read{}{}) }} else {{None}};",
-                            field.condition,
-                            if field.var_type.starts_with("var") {
-                                "_varying"
-                            } else {
-                                ""
-                            },
-                            if field.var_type.contains("(") {
-                                let cut = field.var_type.chars().position(|ch| ch == '(').unwrap();
-                                format!("_array{}", &field.var_type[cut ..])
-                            } else {
-                                "()".to_owned()
-                            }
-                        ))
-                    } else {
-                        packet_str.push_str(&format!(
-                            "buffer.read{}{};",
-                            if field.var_type.starts_with("var") {
-                                "_varying"
-                            } else {
-                                ""
-                            },
-                            if field.var_type.contains("(") {
-                                let cut = field.var_type.chars().position(|ch| ch == '(').unwrap();
-                                format!("_array{}", &field.var_type[cut ..])
-                            } else {
-                                "()".to_owned()
-                            }
-                        ));
-                    }
-                }
-
-                if packet.is_async() {
-                    packet_str.push_str(&format!(
-                        "async_handler.{}(conn, {}).await;",
-                        packet.name.to_ascii_lowercase(),
-                        packet.format_params(&mappings_raw)
-                    ));
-                    packet_str.push_str("},");
-                } else {
-                    packet_str.push_str(&format!(
-                        "conn.forward_to_server(ServerBoundPacket::{}{}",
-                        snake_to_camel(&packet.name),
-                        if used_field_count(&packet) == 0 {
-                            ");"
-                        } else {
-                            "{"
-                        }
-                    ));
-
-                    if used_field_count(&packet) == 0 {
-                        state_str.push_str(&format!("{}}},", packet_str));
-                        continue;
-                    }
-
-                    for field in &packet.fields {
-                        if !field.is_used() {
-                            continue;
-                        }
-
-                        packet_str.push_str(&format!("{},", field.name))
-                    }
-
-                    packet_str.push_str("});},");
-                }
-
-                state_str.push_str(&packet_str);
-            }
-
-            state_str.push_str("_ => invalid_packet!(id, buffer.len())}");
-        }
-
-        state_str.push_str("},");
-        deserializers.push_str(&state_str);
-    }
-
-    deserializers.push_str("_ => {}}}");
-
-    deserializers
-}
-
-fn gen_serializers(client_bound: &Vec<Packet>) -> String {
-    let mut serlializers = SERIALIZER_START.to_owned();
-
-    for packet in client_bound {
-        let mut packet_str = format!(
-            "ClientBoundPacket::{} {{{}}} => {{",
-            snake_to_camel(&packet.name),
-            packet.struct_params()
-        );
-
-        packet_str.push_str(&format!("buffer.write_varying(&{});", packet.id));
-
-        for field in &packet.fields {
-            if field.option {
-                packet_str.push_str(&format!(
-                    "match {} {{Some({}) => {{{}}},None => {{}}}}",
-                    field.name,
-                    field.name,
-                    if field.array {
-                        array_serializer(field)
-                    } else {
-                        serializer(field)
-                    }
-                ))
-            } else {
-                packet_str.push_str(&if field.array {
-                    array_serializer(field)
-                } else {
-                    serializer(field)
-                });
-            }
-        }
-
-        packet_str.push_str("},");
-
-        serlializers.push_str(&packet_str);
-    }
-
-    serlializers.push_str("}}");
-
-    serlializers
-}
-
-fn serializer(field: &Field) -> String {
-    format!(
-        "buffer.write{}({});",
-        if field.var_type.to_ascii_lowercase().starts_with("var") {
-            "_varying"
-        } else {
-            ""
-        },
-        field.name
-    )
-}
-
-fn array_serializer(field: &Field) -> String {
-    format!(
-        "buffer.write{}({});",
-        if field
-            .var_type
-            .to_ascii_lowercase()
-            .split("(")
-            .next()
-            .unwrap()
-            .starts_with("var")
-        {
-            "_array_varying"
-        } else {
-            ""
-        },
-        field.name,
-    )
-}
-
-fn gen_sync_dispatch(server_bound: &Vec<Packet>, mappings_raw: &Mappings) -> String {
-    let mut dispatch = DISPATCHER_START.to_owned();
-
-    for packet in server_bound.iter().filter(|packet| packet.dispatch) {
-        dispatch.push_str(&format!(
-            "ServerBoundPacket::{} {{{}}} => handler.{}({}).await,",
-            snake_to_camel(&packet.name),
-            packet.struct_params(),
-            packet.name.to_ascii_lowercase(),
-            if packet.sender_independent.unwrap_or(false) {
-                packet.format_params(mappings_raw)
-            } else {
-                format!(
-                    "wrapped_packet.sender, {}",
-                    packet.format_params(mappings_raw)
-                )
-            }
-        ));
-    }
-
-    dispatch.push_str("}}");
-
-    dispatch
-}
-
-fn used_field_count(packet: &Packet) -> usize {
-    packet
-        .fields
+fn gen_client_packet_enum(packet_arr: &[Packet], mappings: &Mappings) -> TokenStream {
+    let variant_names = packet_arr
         .iter()
-        .filter(|field| !field.unused.unwrap_or(false))
-        .count()
-}
+        .map(|packet| format_ident!("{}", snake_to_pascal(&packet.name)))
+        .collect::<Vec<_>>();
+    let variants = packet_arr
+        .iter()
+        .enumerate()
+        .map(|(index, packet)| {
+            let variant_name = &variant_names[index];
+            if packet.fields.is_empty() {
+                quote! { #variant_name }
+            } else {
+                let fields = packet
+                    .fields
+                    .iter()
+                    .map(|field| field.struct_field_def(mappings));
+                quote! {
+                    #variant_name { #( #fields ),* }
+                }
+            }
+        });
+    let write_variants = packet_arr
+        .iter()
+        .enumerate()
+        .map(|(index, packet)| {
+            let variant_name = &variant_names[index];
+            let id = Literal::i32_unsuffixed(
+                i32::from_str_radix(&packet.id[2..], 16)
+                    .expect("Invalid packet ID encountered in JSON.")
+            );
+            let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
+            let unpack_fields = if packet.fields.is_empty() {
+                None
+            } else {
+                Some(quote! { { #( #field_names ),* } })
+            };
+            let write_fields = packet
+                .codegen_fields(mappings)
+                .map(|field| gen_serialize_enum_field(&field, &format_ident!("buffer")));
+            quote! {
+                Self::#variant_name #unpack_fields => {
+                    buffer.write_varying(&#id);
+                    #( #write_fields )*
+                }
+            }
+        });
 
-fn parse_type(field: &str, mappings: &HashMap<String, String>) -> String {
-    let split = field.split("(").collect::<Vec<&str>>();
-    let split = split.get(0).unwrap();
+    quote! {
+        pub enum ClientBoundPacket {
+            #( #variants ),*
+        }
 
-    if mappings.contains_key(split.to_owned()) {
-        mappings.get(split.to_owned()).unwrap().to_owned()
-    } else {
-        split.to_owned().to_owned()
+        impl crate::network::WriteToPacket for ClientBoundPacket {
+            fn write_to(&self, buffer: &mut crate::network::PacketBuffer) {
+                match self {
+                    #( #write_variants ),*
+                }
+            }
+        }
     }
 }
 
-fn snake_to_camel(str: &str) -> String {
+fn gen_server_packet_enum(states: &[StatePacketInfo], mappings: &Mappings) -> TokenStream {
+    let variants = states
+        .iter()
+        .flat_map(|state_info| state_info.server_bound.as_ref().into_iter().flatten())
+        .map(|packet| {
+            let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
+            if packet.fields.is_empty() {
+                quote! { #variant_name }
+            } else {
+                let fields = packet
+                    .fields
+                    .iter()
+                    .map(|field| field.struct_field_def(mappings));
+                quote! {
+                    #variant_name { #( #fields ),* }
+                }
+            }
+        });
+
+    quote! {
+        pub enum ServerBoundPacket {
+            #( #variants ),*
+        }
+    }
+}
+
+fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenStream {
+    let state_deserializers = states
+        .iter()
+        .filter(|state_info| state_info.server_bound.is_some() && state_info.name != "__internal__")
+        .map(|state_info| {
+            let state_name = format_ident!("{}", &state_info.name);
+            let match_arms = state_info
+                .server_bound
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|packet| {
+                    let id = Literal::i32_unsuffixed(
+                        i32::from_str_radix(&packet.id[2..], 16)
+                            .expect("Invalid packet ID encountered in JSON.")
+                    );
+                    let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
+                    let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
+                    let read_fields = packet
+                        .codegen_fields(mappings)
+                        .map(|field| gen_deserialize_field(&field, &format_ident!("buffer")));
+                    let handler = if packet.asynchronous {
+                        let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
+                        let field_borrows = packet.field_borrows(mappings);
+                        quote! { async_handler.#handler_name(conn, #( #field_borrows ),*).await; }
+                    } else {
+                        quote! { conn.forward_to_server(crate::network::packet::ServerBoundPacket::#variant_name { #( #field_names ),* }); }
+                    };
+                    quote! {
+                        #id => {
+                            #( #read_fields )*
+                            #handler
+                            Ok(())
+                        }
+                    }
+                });
+            quote! {
+                crate::network::ConnectionState::#state_name => {
+                    match id {
+                        #( #match_arms, )*
+                        id @ _ => Err(crate::network::PacketSerdeError::InvalidId(id))
+                    }
+                }
+            }
+        });
+
+    quote! {
+        pub(crate) async fn handle_packet(
+            conn: &mut AsyncClientConnection,
+            async_handler: &mut AsyncPacketHandler,
+            packet_len: usize
+        ) -> Result<(), crate::network::PacketSerdeError>
+        {
+            let initial_len = conn.read_buffer.len();
+            let truncated_len = conn.read_buffer.cursor() + packet_len;
+            unsafe {
+                conn.read_buffer.set_len(truncated_len);
+            }
+
+            async fn handle_packet_internal(
+                conn: &mut AsyncClientConnection,
+                async_handler: &mut AsyncPacketHandler,
+            ) -> Result<(), crate::network::PacketSerdeError> {
+                let buffer = &mut conn.read_buffer;
+
+                let id;
+                if conn.connection_state == ConnectionState::Handshake && buffer.peek()? == LEGACY_PING_PACKET_ID as u8 {
+                    id = LEGACY_PING_PACKET_ID;
+                    buffer.read_one()?;
+                } else {
+                    id = buffer.read_varying::<i32>()?;
+                }
+
+                match conn.connection_state {
+                    #( #state_deserializers, )*
+                    _ => {
+                        log::warn!("Attempted to read packet in connection state {:?}", conn.connection_state);
+                        Ok(())
+                    }
+                }
+            }
+            let mut ret = handle_packet_internal(conn, async_handler).await;
+
+            if conn.read_buffer.len() != truncated_len {
+                ret = Err(crate::network::PacketSerdeError::Internal("Packet buffer written to while being read from"));
+            }
+
+            unsafe {
+                conn.read_buffer.set_len(initial_len);
+            }
+
+            ret
+        }
+    }
+}
+
+fn gen_sync_dispatch(server_bound: &[Packet], mappings: &Mappings) -> TokenStream {
+    let match_arms = server_bound
+        .iter()
+        .map(|packet| {
+            let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
+            let field_names = packet
+                .fields
+                .iter()
+                .filter(|field| !field.unused)
+                .map(|field| format_ident!("{}", field.name));
+            let field_derefs = packet.field_derefs(mappings);
+            let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
+            let sender = if packet.sender_independent {
+                None
+            } else {
+                Some(quote! { sender, })
+            };
+            quote! {
+                crate::network::packet::ServerBoundPacket::#variant_name { #( #field_names ),* } =>
+                    handler.#handler_name(#sender #( #field_derefs ),*).await
+            }
+        });
+    
+    quote! {
+        pub async fn dispatch_sync_packet(wrapped_packet: &crate::network::packet::WrappedServerBoundPacket, handler: &mut crate::QuartzServer) {
+            let sender = wrapped_packet.sender;
+            match &wrapped_packet.packet {
+                #( #match_arms, )*
+                _ => {
+                    log::warn!("Async packet sent to sync packet dispatcher");
+                }
+            }
+        }
+    }
+}
+
+fn parse_type<'a>(field: &'a str, mappings: &'a Mappings) -> &'a str {
+    let split = field.split("(").next().unwrap();
+
+    if mappings.types.contains_key(split) {
+        mappings.types.get(split).unwrap()
+    } else {
+        split
+    }
+}
+
+fn parse_type_meta<'a>(field: &'a str) -> Option<&'a str> {
+    let start = field.char_indices().find(|&(_, ch)| ch == '(').map(|(index, _)| index + 1)?;
+    Some(&field[start..field.len() - 1])
+}
+
+fn snake_to_pascal(str: &str) -> String {
     str.split("_").fold(String::new(), |mut i, s| {
         i.push_str(&(s[.. 1].to_ascii_uppercase() + &s[1 ..].to_owned()));
         i
@@ -389,10 +329,12 @@ struct StatePacketInfo {
 
 #[derive(Deserialize, Clone)]
 struct Packet {
-    #[serde(rename = "async")]
-    asynchronous: Option<bool>,
-    unimplemented: Option<bool>,
-    sender_independent: Option<bool>,
+    #[serde(rename = "async", default)]
+    asynchronous: bool,
+    #[serde(default)]
+    unimplemented: bool,
+    #[serde(default)]
+    sender_independent: bool,
     #[serde(default = "Packet::dispatch_default")]
     dispatch: bool,
     name: String,
@@ -401,48 +343,68 @@ struct Packet {
 }
 
 impl Packet {
-    pub fn is_async(&self) -> bool {
-        self.asynchronous.is_some() && self.asynchronous.unwrap()
-    }
-
-    pub fn format_params(&self, mappings: &Mappings) -> String {
-        let mut output = String::new();
-        if self.fields.iter().filter(|f| f.is_used()).count() == 0 {
-            return "".to_owned();
-        }
-        for field in &self.fields {
-            if !field.is_used() {
-                continue;
-            }
-
-            output.push_str(&format!(
-                ",{}{}",
-                if !mappings.primitives.contains(&field.var_type) && !field.pass_raw() {
-                    "&"
+    pub fn codegen_fields<'a>(&'a self, mappings: &'a Mappings) -> impl Iterator<Item = CodegenField> + 'a {
+        self
+            .fields
+            .iter()
+            .map(move |field| {
+                let name = format_ident!(
+                    "{}{}",
+                    if !field.unused || field.referenced {
+                        ""
+                    } else {
+                        "_"
+                    },
+                    &field.name
+                );
+                let ty = field.rust_type(mappings).clone();
+                let condition = if field.option {
+                    Some(syn::parse_str(&field.condition).expect(&format!("Failed to parse condition expression for field {} in packet {}", &field.name, &self.name)))
                 } else {
-                    ""
-                },
-                field.name
-            ))
-        }
-
-        output
-            .chars()
-            .next()
-            .map(|c| &output[c.len_utf8() ..])
-            .unwrap()
-            .to_owned()
+                    None
+                };
+                let is_option = field.option;
+                let varying = mappings.is_varying(&field.var_type);
+                if field.array {
+                    let len = syn::parse_str(
+                        parse_type_meta(&field.var_type).expect(&format!("Expected length metadata for array type for field {} in packet {}", &field.name, &self.name))
+                    ).expect(&format!("Failed to parse length expression for array type for field {} in packet {}", &field.name, &self.name));
+                    CodegenField::array(name, ty, len, condition, is_option, varying, field.var_type.starts_with("u8"))
+                } else {
+                    CodegenField::regular(name, ty, condition, is_option, varying)
+                }
+            })
     }
 
-    pub fn struct_params(&self) -> String {
-        let mut output = String::new();
-        for field in &self.fields {
-            if !field.is_used() {
-                continue;
-            }
-            output.push_str(&format!("{},", field.name))
-        }
-        output
+    pub fn field_borrows<'a>(&'a self, mappings: &'a Mappings) -> impl Iterator<Item = TokenStream> + 'a {
+        self
+            .fields
+            .iter()
+            .filter(|field| !field.unused)
+            .map(move |field| {
+                let field_name = format_ident!("{}", field.name);
+                if !mappings.primitives.contains(&field.var_type) && !field.pass_raw {
+                    quote! { &#field_name }
+                } else {
+                    quote! { #field_name }
+                }
+            })
+    }
+
+    pub fn field_derefs<'a>(&'a self, mappings: &'a Mappings) -> impl Iterator<Item = TokenStream> + 'a {
+        self
+            .fields
+            .iter()
+            .filter(|field| !field.unused)
+            .map(move |field| {
+                let field_name = format_ident!("{}", field.name);
+                // This performs a copy, so ignore the pass raw condition
+                if mappings.primitives.contains(&field.var_type) {
+                    quote! { *#field_name }
+                } else {
+                    quote! { #field_name }
+                }
+            })
     }
 
     #[inline(always)]
@@ -456,36 +418,74 @@ struct Field {
     name: String,
     #[serde(rename = "type")]
     var_type: String,
-    unused: Option<bool>,
-    referenced: Option<bool>,
-    pass_raw: Option<bool>,
+    #[serde(default)]
+    unused: bool,
+    #[serde(default)]
+    referenced: bool,
+    #[serde(default)]
+    pass_raw: bool,
     #[serde(default)]
     option: bool,
     #[serde(default)]
     array: bool,
     #[serde(default)]
     condition: String,
+    #[serde(skip)]
+    cached_type: OnceCell<Type>
 }
 
 impl Field {
-    pub fn is_used(&self) -> bool {
-        self.unused.is_none() || !self.unused.unwrap()
+    pub fn rust_type(&self, mappings: &Mappings) -> &Type {
+        self.cached_type.get_or_init(|| {
+            syn::parse_str(
+                &format!(
+                    "{}{}{}{}{}",
+                    if self.option {
+                        "Option<"
+                    } else {
+                        ""
+                    },
+                    if self.array {
+                        "Vec<"
+                    } else {
+                        ""
+                    },
+                    parse_type(&self.var_type, mappings),
+                    if self.option {
+                        ">"
+                    } else {
+                        ""
+                    },
+                    if self.array {
+                        ">"
+                    } else {
+                        ""
+                    }
+                )
+            ).expect("Invalid type or type mapping encountered in JSON")
+        })
     }
 
-    pub fn pass_raw(&self) -> bool {
-        self.pass_raw.is_some() && self.pass_raw.unwrap()
-    }
-
-    pub fn struct_type(&self, mappings: &HashMap<String, String>) -> String {
-        format!(
-            "{}: {}{}{}{}{},",
-            self.name,
-            if self.option { "Option<" } else { "" },
-            if self.array { "Vec<" } else { "" },
-            parse_type(&self.var_type, mappings),
-            if self.array { ">" } else { "" },
-            if self.option { ">" } else { "" }
-        )
+    pub fn struct_field_def(&self, mappings: &Mappings) -> TokenStream {
+        let name = format_ident!("{}", self.name);
+        let ty: Type = match syn::parse_str(parse_type(&self.var_type, mappings)) {
+            Ok(ty) => ty,
+            Err(e) => return e.to_compile_error()
+        };
+        match (self.option, self.array) {
+            (true, true) => quote! {
+                #name: Option<Vec<#ty>>
+            },
+            (true, false) => quote! {
+                #name: Option<#ty>
+            },
+            (false, true) => quote! {
+                #name: Vec<#ty>
+            },
+            (false, false) => quote! {
+                #name: #ty
+            }
+        }
     }
 }
 
@@ -493,18 +493,11 @@ impl Field {
 struct Mappings {
     types: HashMap<String, String>,
     primitives: Vec<String>,
+    variable_repr: Vec<String>
 }
 
 impl Mappings {
-    fn of(&self, key: &str) -> Option<String> {
-        match self.types.get(key).map(Clone::clone) {
-            mapping @ Some(_) => mapping,
-            None =>
-                if self.primitives.iter().any(|element| element == key) {
-                    Some(key.to_owned())
-                } else {
-                    None
-                },
-        }
+    fn is_varying(&self, key: &str) -> bool {
+        self.variable_repr.iter().any(|varying| key.starts_with(varying))
     }
 }

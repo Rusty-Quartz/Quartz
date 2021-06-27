@@ -1,19 +1,14 @@
 use byteorder::{BigEndian, ByteOrder};
-use chat::{Component, TextComponentBuilder};
+use chat::Component;
+use openssl::error::ErrorStack;
 use quartz_nbt::NbtCompound;
-use std::{
-    fmt::{self, Debug, Formatter},
-    io::Cursor,
-    ops::{Index, IndexMut},
-    ptr,
-    slice::SliceIndex,
-    str::{self, FromStr},
-};
+use std::{fmt::{self, Debug, Display, Formatter}, io::Cursor, ops::{Index, IndexMut}, ptr, slice::SliceIndex, str::{self, FromStr, Utf8Error}};
+use std::error::Error;
+use std::io;
 use util::UnlocalizedName;
 use uuid::Uuid;
 
 use crate::{
-    network::packets::{EntityMetadata, Particle, PlayerInfoAction},
     world::location::BlockPosition,
 };
 
@@ -96,6 +91,11 @@ impl PacketBuffer {
         }
     }
 
+    #[inline]
+    pub unsafe fn set_len(&mut self, new_len: usize) {
+        self.inner.set_len(new_len);
+    }
+
     /// Shifts the remaining bytes after the cursor to the beginning of the buffer.
     #[allow(unsafe_code)]
     pub fn shift_remaining(&mut self) {
@@ -120,7 +120,7 @@ impl PacketBuffer {
     /// Returns the number of bytes remaining in this buffer.
     #[inline]
     pub fn remaining(&self) -> usize {
-        self.inner.len() - self.cursor()
+        self.inner.len() - self.cursor
     }
 
     /// Clears the contents of this buffer and resets the cursor to the beginning of the buffer.
@@ -139,24 +139,20 @@ impl PacketBuffer {
     /// Returns the next byte in the buffer without shifting the cursor. If the cursor is at the end of the
     /// buffer, then `0` is returned.
     #[inline]
-    pub fn peek(&self) -> u8 {
-        if self.cursor >= self.inner.len() {
-            return 0;
-        }
-
-        self.inner[self.cursor]
+    pub fn peek(&self) -> Result<u8, PacketSerdeError> {
+        self.inner.get(self.cursor).copied().ok_or(PacketSerdeError::EndOfBuffer)
     }
 
     /// Reads a byte from the buffer, returning `0` if no bytes remain.
     #[inline]
-    pub fn read_one(&mut self) -> u8 {
-        if self.cursor >= self.inner.len() {
-            return 0;
+    pub fn read_one(&mut self) -> Result<u8, PacketSerdeError> {
+        match self.inner.get(self.cursor).copied() {
+            Some(by) => {
+                self.cursor += 1;
+                Ok(by)
+            },
+            None => Err(PacketSerdeError::EndOfBuffer)
         }
-
-        let byte = self.inner[self.cursor];
-        self.cursor += 1;
-        byte
     }
 
     /// Copies bytes from this buffer to the given buffer, returning the number of bytes copied.
@@ -178,36 +174,44 @@ impl PacketBuffer {
         self.cursor += len;
     }
 
-    pub fn read<T: ReadFromPacket>(&mut self) -> T {
+    #[inline]
+    pub fn read<T: ReadFromPacket>(&mut self) -> Result<T, PacketSerdeError> {
         T::read_from(self)
     }
 
-    pub fn read_varying<T>(&mut self) -> T
-    where
-        T: VariableRepr,
-        <T as VariableRepr>::Wrapper: ReadFromPacket,
-    {
-        <T as VariableRepr>::Wrapper::read_from(self).into()
+    #[inline]
+    pub fn read_varying<T: ReadFromPacket>(&mut self) -> Result<T, PacketSerdeError> {
+        T::varying_read_from(self)
     }
 
-    pub fn read_array<T: ReadFromPacket>(&mut self, len: usize) -> Vec<T> {
+    #[inline]
+    pub fn read_array<T: ReadFromPacket>(&mut self, len: usize) -> Result<Vec<T>, PacketSerdeError> {
         let mut dest = Vec::with_capacity(len);
         for _ in 0 .. len {
-            dest.push(T::read_from(self));
+            dest.push(T::read_from(self)?);
         }
-        dest
+        Ok(dest)
     }
 
-    pub fn read_array_varying<T>(&mut self, len: usize) -> Vec<T>
-    where
-        T: VariableRepr,
-        <T as VariableRepr>::Wrapper: ReadFromPacket,
-    {
+    #[inline]
+    pub fn read_array_varying<T: ReadFromPacket>(&mut self, len: usize) -> Result<Vec<T>, PacketSerdeError> {
         let mut dest = Vec::with_capacity(len);
         for _ in 0 .. len {
-            dest.push(<T as VariableRepr>::Wrapper::read_from(self).into());
+            dest.push(T::varying_read_from(self)?);
         }
-        dest
+        Ok(dest)
+    }
+
+    #[inline]
+    pub fn read_mc_str(&mut self) -> Result<&str, PacketSerdeError> {
+        let byte_len = self.read_varying::<i32>()? as usize;
+        if byte_len > self.remaining() {
+            return Err(PacketSerdeError::EndOfBuffer);
+        }
+
+        let ret = str::from_utf8(&self.inner[self.cursor .. self.cursor + byte_len]).map_err(Into::into);
+        self.cursor += byte_len;
+        ret
     }
 
     /// Writes a byte to this buffer, expanding the buffer if needed.
@@ -216,7 +220,9 @@ impl PacketBuffer {
         if self.cursor >= self.inner.len() {
             self.inner.push(byte);
         } else {
-            self.inner[self.cursor] = byte;
+            unsafe {
+                *self.inner.get_unchecked_mut(self.cursor) = byte;
+            }
         }
         self.cursor += 1;
     }
@@ -253,25 +259,27 @@ impl PacketBuffer {
         self.cursor += len;
     }
 
+    #[inline]
     pub fn write<T: WriteToPacket>(&mut self, value: &T) {
-        value.write_to(self)
+        value.write_to(self);
     }
 
-    pub fn write_varying<T>(&mut self, value: &T)
-    where
-        T: VariableRepr + Clone,
-        <T as VariableRepr>::Wrapper: WriteToPacket,
-    {
-        <T as VariableRepr>::Wrapper::from(value.clone()).write_to(self)
+    #[inline]
+    pub fn write_varying<T: WriteToPacket>(&mut self, value: &T) {
+        value.varying_write_to(self);
     }
 
-    pub fn write_array_varying<T>(&mut self, value: &[T])
-    where
-        T: VariableRepr + Clone,
-        <T as VariableRepr>::Wrapper: WriteToPacket,
-    {
+    #[inline]
+    pub fn write_array<T: WriteToPacket>(&mut self, value: &[T]) {
         for element in value {
-            self.write_varying(element);
+            element.write_to(self);
+        }
+    }
+
+    #[inline]
+    pub fn write_array_varying<T: WriteToPacket>(&mut self, value: &[T]) {
+        for element in value {
+            element.varying_write_to(self);
         }
     }
 
@@ -279,7 +287,7 @@ impl PacketBuffer {
     /// Varible length integer can take up anywhere from one to five bytes. If the integer is less than
     /// zero, it will always use five bytes.
     #[inline]
-    pub fn varint_size(value: i32) -> usize {
+    pub const fn varint_size(value: i32) -> usize {
         match value {
             0 ..= 127 => 1,
             128 ..= 16383 => 2,
@@ -314,145 +322,44 @@ impl Debug for PacketBuffer {
     }
 }
 
-pub trait VariableRepr: From<Self::Wrapper> {
-    type Wrapper: From<Self>;
-}
+pub trait ReadFromPacket: Sized {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError>;
 
-impl VariableRepr for i32 {
-    type Wrapper = Var<i32>;
-}
-
-impl From<Var<i32>> for i32 {
-    fn from(wrapper: Var<i32>) -> Self {
-        wrapper.0
+    fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        Self::read_from(buffer)
     }
-}
-
-impl VariableRepr for i64 {
-    type Wrapper = Var<i64>;
-}
-
-impl From<Var<i64>> for i64 {
-    fn from(wrapper: Var<i64>) -> Self {
-        wrapper.0
-    }
-}
-
-#[repr(transparent)]
-pub struct Var<T>(pub T);
-
-impl<T> From<T> for Var<T> {
-    fn from(inner: T) -> Self {
-        Var(inner)
-    }
-}
-
-impl ReadFromPacket for Var<i32> {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
-        let mut next = buffer.read_one();
-        let mut result: i32 = (next & 0x7F) as i32;
-        let mut num_read = 1;
-
-        while next & 0x80 != 0 {
-            next = buffer.read_one();
-            result |= ((next & 0x7F) as i32) << (7 * num_read);
-            num_read += 1;
-        }
-
-        result.into()
-    }
-}
-
-impl WriteToPacket for Var<i32> {
-    fn write_to(&self, buffer: &mut PacketBuffer) {
-        let mut value = self.0;
-
-        if value == 0 {
-            buffer.write_one(0);
-            return;
-        }
-
-        let mut next_byte: u8;
-
-        while value != 0 {
-            next_byte = (value & 0x7F) as u8;
-            value >>= 7;
-            if value != 0 {
-                next_byte |= 0x80;
-            }
-            buffer.write_one(next_byte);
-        }
-    }
-}
-
-impl ReadFromPacket for Var<i64> {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
-        let mut next = buffer.read_one();
-        let mut result: i64 = (next & 0x7F) as i64;
-        let mut num_read = 1;
-
-        while next & 0x80 != 0 {
-            next = buffer.read_one();
-            result |= ((next & 0x7F) as i64) << (7 * num_read);
-            num_read += 1;
-        }
-
-        result.into()
-    }
-}
-
-impl WriteToPacket for Var<i64> {
-    fn write_to(&self, buffer: &mut PacketBuffer) {
-        let mut value = self.0;
-
-        if value == 0 {
-            buffer.write_one(0);
-            return;
-        }
-
-        let mut next_byte: u8;
-
-        while value != 0 {
-            next_byte = (value & 0x7F) as u8;
-            value >>= 7;
-            if value != 0 {
-                next_byte |= 0x80;
-            }
-            buffer.write_one(next_byte);
-        }
-    }
-}
-
-pub trait ReadFromPacket {
-    fn read_from(buffer: &mut PacketBuffer) -> Self;
 }
 
 pub trait WriteToPacket {
     fn write_to(&self, buffer: &mut PacketBuffer);
+
+    fn varying_write_to(&self, buffer: &mut PacketBuffer) {
+        self.write_to(buffer);
+    }
 }
 
 impl ReadFromPacket for u8 {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         buffer.read_one()
     }
 }
 
 impl ReadFromPacket for bool {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
-        buffer.read_one() != 0
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        Ok(buffer.read_one()? != 0)
     }
 }
 
 impl ReadFromPacket for i8 {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
-        buffer.read_one() as i8
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        Ok(buffer.read_one()? as i8)
     }
 }
 
 impl ReadFromPacket for u16 {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         if buffer.cursor + 1 >= buffer.inner.len() {
-            return 0;
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         let mut buf = [0; 2];
@@ -461,14 +368,14 @@ impl ReadFromPacket for u16 {
             buffer.read_bytes_unchecked(&mut buf);
         }
 
-        BigEndian::read_u16(&buf)
+        Ok(BigEndian::read_u16(&buf))
     }
 }
 
 impl ReadFromPacket for i16 {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         if buffer.cursor + 1 >= buffer.inner.len() {
-            return 0;
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         let mut buf = [0; 2];
@@ -477,14 +384,14 @@ impl ReadFromPacket for i16 {
             buffer.read_bytes_unchecked(&mut buf);
         }
 
-        BigEndian::read_i16(&buf)
+        Ok(BigEndian::read_i16(&buf))
     }
 }
 
 impl ReadFromPacket for i32 {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         if buffer.cursor + 3 >= buffer.inner.len() {
-            return 0;
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         let mut buf = [0; 4];
@@ -493,14 +400,45 @@ impl ReadFromPacket for i32 {
             buffer.read_bytes_unchecked(&mut buf);
         }
 
-        BigEndian::read_i32(&buf)
+        Ok(BigEndian::read_i32(&buf))
+    }
+
+    fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let mut buf = [0u8; 5];
+        
+        let len = buffer.remaining().min(buf.len());
+        unsafe {
+            let src = buffer.inner.as_ptr().add(buffer.cursor);
+            ptr::copy_nonoverlapping(src, buf.as_mut_ptr(), len);
+        }
+
+        let mut result = 0i32;
+        let mut by;
+        let mut i = 0;
+
+        while i < buf.len() {
+            by = buf[i];
+            result |= ((by & 0x7F) as i32) << (7 * i);
+            i += 1;
+
+            if (by & 0x80) == 0 {
+                buffer.cursor += i;
+                return Ok(result.into());
+            }
+
+            if i == len {
+                return Err(PacketSerdeError::EndOfBuffer);
+            }
+        }
+
+        Err(PacketSerdeError::VarIntOverflow)
     }
 }
 
 impl ReadFromPacket for i64 {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         if buffer.cursor + 7 >= buffer.inner.len() {
-            return 0;
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         let mut buf = [0; 8];
@@ -509,14 +447,45 @@ impl ReadFromPacket for i64 {
             buffer.read_bytes_unchecked(&mut buf);
         }
 
-        BigEndian::read_i64(&buf)
+        Ok(BigEndian::read_i64(&buf))
+    }
+
+    fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let mut buf = [0u8; 10];
+        
+        let len = buffer.remaining().min(buf.len());
+        unsafe {
+            let src = buffer.inner.as_ptr().add(buffer.cursor);
+            ptr::copy_nonoverlapping(src, buf.as_mut_ptr(), len);
+        }
+
+        let mut result = 0i64;
+        let mut by;
+        let mut i = 0;
+
+        while i < buf.len() {
+            by = buf[i];
+            result |= ((by & 0x7F) as i64) << (7 * i);
+            i += 1;
+
+            if (by & 0x80) == 0 {
+                buffer.cursor += i;
+                return Ok(result.into());
+            }
+
+            if i == len {
+                return Err(PacketSerdeError::EndOfBuffer);
+            }
+        }
+
+        Err(PacketSerdeError::VarIntOverflow)
     }
 }
 
 impl ReadFromPacket for u128 {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         if buffer.cursor + 15 >= buffer.inner.len() {
-            return 0;
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         let mut buf = [0; 16];
@@ -525,14 +494,14 @@ impl ReadFromPacket for u128 {
             buffer.read_bytes_unchecked(&mut buf);
         }
 
-        BigEndian::read_u128(&buf)
+        Ok(BigEndian::read_u128(&buf))
     }
 }
 
 impl ReadFromPacket for f32 {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         if buffer.cursor + 3 >= buffer.inner.len() {
-            return 0.0;
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         let mut buf = [0; 4];
@@ -541,14 +510,14 @@ impl ReadFromPacket for f32 {
             buffer.read_bytes_unchecked(&mut buf);
         }
 
-        BigEndian::read_f32(&buf)
+        Ok(BigEndian::read_f32(&buf))
     }
 }
 
 impl ReadFromPacket for f64 {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         if buffer.cursor + 7 >= buffer.inner.len() {
-            return 0.0;
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         let mut buf = [0; 8];
@@ -557,59 +526,50 @@ impl ReadFromPacket for f64 {
             buffer.read_bytes_unchecked(&mut buf);
         }
 
-        BigEndian::read_f64(&buf)
+        Ok(BigEndian::read_f64(&buf))
     }
 }
 
 impl ReadFromPacket for String {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
-        let mut bytes: Vec<u8> =
-            vec![0; (buffer.read_varying::<i32>() as usize).min(buffer.remaining())];
-
-        // Safety: amount of bytes read is limited above
-        unsafe {
-            buffer.read_bytes_unchecked(&mut bytes);
-        }
-
-        match str::from_utf8(&bytes) {
-            Ok(string) => string.to_owned(),
-            Err(_reason) => String::new(),
-        }
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        buffer.read_mc_str().map(ToOwned::to_owned)
     }
 }
 
 impl ReadFromPacket for BlockPosition {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
-        let long = buffer.read::<i64>() as u64;
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let long = buffer.read::<i64>()? as u64;
 
         let x = (long >> 38) as i32;
         let y = (long & 0xFFF) as i16;
         let z = (long << 26 >> 38) as i32;
 
-        BlockPosition { x, y, z }
+        Ok(BlockPosition { x, y, z })
     }
 }
 
 impl ReadFromPacket for Uuid {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
-        Uuid::from_bytes(buffer.read::<u128>().to_be_bytes())
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        Ok(Uuid::from_bytes(buffer.read::<u128>()?.to_be_bytes()))
     }
 }
 
 impl ReadFromPacket for UnlocalizedName {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
-        UnlocalizedName::from_str(&buffer.read::<String>())
-            .unwrap_or(UnlocalizedName::minecraft("air"))
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        match UnlocalizedName::from_str(buffer.read_mc_str()?) {
+            Ok(string) => Ok(string.to_owned()),
+            Err(error) => Err(PacketSerdeError::InvalidUnlocalizedName(error))
+        }
     }
 }
 
 impl ReadFromPacket for NbtCompound {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut cursor = Cursor::new(&buffer.inner);
         cursor.set_position(buffer.cursor as u64);
         let ret = match quartz_nbt::read::read_nbt_uncompressed(&mut cursor) {
-            Ok((nbt, _)) => nbt,
-            Err(_) => NbtCompound::new(),
+            Ok((nbt, _)) => Ok(nbt),
+            Err(error) => Err(PacketSerdeError::Nbt(error)),
         };
         buffer.cursor = cursor.position() as usize;
         ret
@@ -617,9 +577,8 @@ impl ReadFromPacket for NbtCompound {
 }
 
 impl ReadFromPacket for Component {
-    fn read_from(buffer: &mut PacketBuffer) -> Self {
-        serde_json::from_str(&buffer.read::<String>())
-            .unwrap_or(TextComponentBuilder::new(String::new()).build())
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        serde_json::from_str(buffer.read_mc_str()?).map_err(Into::into)
     }
 }
 
@@ -667,6 +626,29 @@ impl WriteToPacket for i32 {
         BigEndian::write_i32(&mut buf, *self);
         buffer.write_bytes(&buf);
     }
+
+    fn varying_write_to(&self, buffer: &mut PacketBuffer) {
+        let mut value = *self as u32;
+        let mut next_byte: u8;
+        let mut buf = [0u8; 5];
+        let mut i = 0;
+
+        while i < 5 {
+            next_byte = (value & 0x7F) as u8;
+            value >>= 7;
+            if value != 0 {
+                next_byte |= 0x80;
+            }
+            buf[i] = next_byte;
+            i += 1;
+
+            if value == 0 {
+                break;
+            }
+        }
+        
+        buffer.write_bytes(&buf[..i]);
+    }
 }
 
 impl WriteToPacket for i64 {
@@ -674,6 +656,29 @@ impl WriteToPacket for i64 {
         let mut buf = [0; 8];
         BigEndian::write_i64(&mut buf, *self);
         buffer.write_bytes(&buf);
+    }
+
+    fn varying_write_to(&self, buffer: &mut PacketBuffer) {
+        let mut value = *self as u64;
+        let mut next_byte: u8;
+        let mut buf = [0u8; 10];
+        let mut i = 0;
+
+        while i < 10 {
+            next_byte = (value & 0x7F) as u8;
+            value >>= 7;
+            if value != 0 {
+                next_byte |= 0x80;
+            }
+            buf[i] = next_byte;
+            i += 1;
+
+            if value == 0 {
+                break;
+            }
+        }
+        
+        buffer.write_bytes(&buf[..i]);
     }
 }
 
@@ -709,14 +714,6 @@ impl WriteToPacket for String {
     }
 }
 
-impl<T: WriteToPacket> WriteToPacket for Vec<T> {
-    fn write_to(&self, buffer: &mut PacketBuffer) {
-        for element in self {
-            element.write_to(buffer);
-        }
-    }
-}
-
 impl WriteToPacket for BlockPosition {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         buffer.write(
@@ -748,121 +745,70 @@ impl WriteToPacket for NbtCompound {
     }
 }
 
-impl WriteToPacket for EntityMetadata {
-    fn write_to(&self, buffer: &mut PacketBuffer) {
-        match self {
-            EntityMetadata::Byte(v) => buffer.write(v),
-            EntityMetadata::VarInt(v) => buffer.write_varying(v),
-            EntityMetadata::Float(v) => buffer.write(v),
-            EntityMetadata::String(v) => buffer.write(v),
-            EntityMetadata::Chat(v) => buffer.write(v),
-            EntityMetadata::OptChat(b, c) => {
-                buffer.write(b);
-                match c {
-                    Some(c) => buffer.write(c),
-                    None => {}
-                }
-            }
-            EntityMetadata::Slot(v) => buffer.write(v),
-            EntityMetadata::Boolean(v) => buffer.write(v),
-            EntityMetadata::Rotation(x, y, z) => {
-                buffer.write(x);
-                buffer.write(y);
-                buffer.write(z);
-            }
-            EntityMetadata::Position(v) => buffer.write(v),
-            EntityMetadata::OptPosition(b, p) => {
-                buffer.write(b);
-                match p {
-                    Some(p) => buffer.write(p),
-                    None => {}
-                }
-            }
-            EntityMetadata::Direction(v) => buffer.write_varying(v),
-            EntityMetadata::OptUUID(b, u) => {
-                buffer.write(b);
-                match u {
-                    Some(u) => buffer.write(u),
-                    None => {}
-                }
-            }
-            EntityMetadata::OptBlockId(v) => buffer.write_varying(v),
-            EntityMetadata::NBT(v) => buffer.write(v),
-            EntityMetadata::Particle(v) => buffer.write(v),
-            EntityMetadata::VillagerData(a, b, c) => {
-                buffer.write(a);
-                buffer.write(b);
-                buffer.write(c);
-            }
-            EntityMetadata::OptVarInt(v) => buffer.write_varying(v),
-            EntityMetadata::Pose(v) => buffer.write_varying(v),
-        }
-    }
-}
-
-impl WriteToPacket for Particle {
-    fn write_to(&self, buffer: &mut PacketBuffer) {
-        match self {
-            Particle::Block(v) => buffer.write_varying(v),
-            Particle::Dust(x, y, z, s) => {
-                buffer.write(x);
-                buffer.write(y);
-                buffer.write(z);
-                buffer.write(s);
-            }
-            Particle::FallingDust(v) => buffer.write_varying(v),
-            Particle::Item(v) => buffer.write(v),
-            _ => {}
-        }
-    }
-}
-
-impl WriteToPacket for PlayerInfoAction {
-    fn write_to(&self, buffer: &mut PacketBuffer) {
-        match self {
-            PlayerInfoAction::AddPlayer {
-                name,
-                number_of_properties,
-                properties,
-                gamemode,
-                ping,
-                has_display_name,
-                display_name,
-            } => {
-                buffer.write(name);
-                buffer.write_varying(number_of_properties);
-                buffer.write(properties);
-                buffer.write_varying(gamemode);
-                buffer.write_varying(ping);
-                buffer.write(has_display_name);
-                match display_name {
-                    Some(v) => buffer.write(v),
-                    None => {}
-                }
-            }
-            PlayerInfoAction::UpdateGamemode { gamemode } => {
-                buffer.write_varying(gamemode);
-            }
-            PlayerInfoAction::UpdateLatency { ping } => {
-                buffer.write_varying(ping);
-            }
-            PlayerInfoAction::UpdateDisplayName {
-                has_display_name,
-                display_name,
-            } => {
-                buffer.write(has_display_name);
-                match display_name {
-                    Some(v) => buffer.write(v),
-                    None => {}
-                }
-            }
-            PlayerInfoAction::RemovePlayer => {}
-        }
-    }
-}
-
 impl WriteToPacket for Component {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         buffer.write(&serde_json::to_string(self).unwrap_or(String::new()));
+    }
+}
+
+#[derive(Debug)]
+pub enum PacketSerdeError {
+    EndOfBuffer,
+    VarIntOverflow,
+    InvalidId(i32),
+    Utf8Error(Utf8Error),
+    InvalidUnlocalizedName(<UnlocalizedName as FromStr>::Err),
+    SerdeJson(serde_json::Error),
+    Nbt(io::Error),
+    Network(io::Error),
+    OpenSSL(ErrorStack),
+    Internal(&'static str)
+}
+
+impl Display for PacketSerdeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            PacketSerdeError::EndOfBuffer => write!(f, "Unexpectedly reached end of packet buffer"),
+            PacketSerdeError::VarIntOverflow => write!(f, "Variable-length integer or long overflowed while reading"),
+            PacketSerdeError::InvalidId(id) => write!(f, "Invalid packet ID encountered: {}", id),
+            PacketSerdeError::Utf8Error(e) => Display::fmt(e, f),
+            PacketSerdeError::InvalidUnlocalizedName(uln) => write!(f, "Invalid unlocalized name encountered while reading: \"{}\"", uln),
+            PacketSerdeError::SerdeJson(e) => Display::fmt(e, f),
+            PacketSerdeError::Nbt(e) => Display::fmt(e, f),
+            PacketSerdeError::Network(e) => Display::fmt(e, f),
+            PacketSerdeError::OpenSSL(e) => Display::fmt(e, f),
+            PacketSerdeError::Internal(msg) => Display::fmt(msg, f)
+        }
+    }
+}
+
+impl Error for PacketSerdeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            PacketSerdeError::Utf8Error(e) => Some(e),
+            PacketSerdeError::SerdeJson(e) => Some(e),
+            PacketSerdeError::Nbt(e) => Some(e),
+            PacketSerdeError::Network(e) => Some(e),
+            PacketSerdeError::OpenSSL(e) => Some(e),
+            _ => None
+        }
+    }
+}
+
+impl From<Utf8Error> for PacketSerdeError {
+    fn from(error: Utf8Error) -> Self {
+        PacketSerdeError::Utf8Error(error)
+    }
+}
+
+impl From<serde_json::Error> for PacketSerdeError {
+    fn from(error: serde_json::Error) -> Self {
+        PacketSerdeError::SerdeJson(error)
+    }
+}
+
+impl From<ErrorStack> for PacketSerdeError {
+    fn from(error: ErrorStack) -> Self {
+        PacketSerdeError::OpenSSL(error)
     }
 }

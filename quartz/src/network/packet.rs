@@ -1,14 +1,45 @@
-use crate::world::location::BlockPosition;
+use crate::{network::{PacketBuffer, ReadFromPacket, WriteToPacket, PacketSerdeError}, world::location::BlockPosition};
 use chat::Component;
-use quartz_macros::*;
+use quartz_macros::{WriteToPacket, ReadFromPacket};
 use quartz_nbt::NbtCompound;
 use util::UnlocalizedName;
 use uuid::Uuid;
 
-#[allow(missing_docs)]
+include!(concat!(env!("OUT_DIR"), "/packet_def_output.rs"));
+
+/// A wraper for a server-bound packet which includes the sender ID.
+pub struct WrappedServerBoundPacket {
+    /// The ID of the packet sender.
+    pub sender: usize,
+    /// The packet that was sent.
+    pub packet: ServerBoundPacket,
+}
+
+impl WrappedServerBoundPacket {
+    /// Creates a new wrapper with the given parameters.
+    #[inline]
+    pub fn new(sender: usize, packet: ServerBoundPacket) -> Self {
+        WrappedServerBoundPacket { sender, packet }
+    }
+}
+
+/// A wraper for client-bound packets used internally for sending packets to the connection thread.
+pub enum WrappedClientBoundPacket {
+    /// A wrapped packet.
+    Packet(ClientBoundPacket),
+    /// A raw byte-buffer.
+    Buffer(PacketBuffer),
+    /// Specifies that the connection should be forcefully terminated.
+    Disconnect,
+}
+
+#[derive(WriteToPacket)]
 pub enum EntityMetadata {
     Byte(i8),
-    VarInt(i32),
+    VarInt(
+        #[packet_serde(varying)]
+        i32
+    ),
     Float(f32),
     String(String),
     Chat(Component),
@@ -18,22 +49,37 @@ pub enum EntityMetadata {
     Rotation(f32, f32, f32),
     Position(BlockPosition),
     OptPosition(bool, Option<BlockPosition>),
-    Direction(i32),
-    OptUUID(bool, Option<Uuid>),
-    OptBlockId(i32),
-    NBT(NbtCompound),
+    Direction(
+        #[packet_serde(varying)]
+        i32
+    ),
+    OptUuid(bool, Option<Uuid>),
+    OptBlockId(
+        #[packet_serde(varying)]
+        i32
+    ),
+    Nbt(NbtCompound),
     Particle(WrappedParticle),
     VillagerData(i32, i32, i32),
-    OptVarInt(i32),
-    Pose(i32),
+    OptVarInt(
+        #[packet_serde(varying)]
+        i32
+    ),
+    Pose(
+        #[packet_serde(varying)]
+        i32
+    ),
 }
 
-#[allow(missing_docs)]
-pub enum Particle {
+#[derive(WriteToPacket)]
+pub enum ParticleData {
     AmbientEntityEffect,
     AngryVillager,
     Barrier,
-    Block(i32),
+    Block(
+        #[packet_serde(varying)]
+        i32
+    ),
     Bubble,
     Cloud,
     Crit,
@@ -53,7 +99,10 @@ pub enum Particle {
     EntityEffect,
     ExplosionEmitter,
     Explosion,
-    FallingDust(i32),
+    FallingDust(
+        #[packet_serde(varying)]
+        i32
+    ),
     Firework,
     Fishing,
     Flame,
@@ -94,21 +143,27 @@ pub enum Particle {
     FallingNectar,
 }
 
-#[allow(missing_docs)]
+#[derive(WriteToPacket)]
 pub enum PlayerInfoAction {
     AddPlayer {
         name: String,
+        #[packet_serde(varying)]
         number_of_properties: i32,
+        #[packet_serde(len = "number_of_properties")]
         properties: Vec<PlayerProperty>,
+        #[packet_serde(varying)]
         gamemode: i32,
+        #[packet_serde(varying)]
         ping: i32,
         has_display_name: bool,
         display_name: Option<Component>,
     },
     UpdateGamemode {
+        #[packet_serde(varying)]
         gamemode: i32,
     },
     UpdateLatency {
+        #[packet_serde(varying)]
         ping: i32,
     },
     UpdateDisplayName {
@@ -196,6 +251,42 @@ pub struct EntityMetadataWrapper {
 pub struct EquipmentSlot {
     slot: u8,
     item: Slot,
+}
+
+impl WriteToPacket for Vec<EquipmentSlot> {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        for (index, slot) in self.iter().enumerate() {
+            if index + 1 < self.len() {
+                buffer.write_one(slot.slot | 128);
+                buffer.write(&slot.item);
+            } else {
+                buffer.write(slot);
+            }
+        }
+    }
+}
+
+impl ReadFromPacket for Vec<EquipmentSlot> {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let mut ret = Vec::new();
+        let mut slot: EquipmentSlot;
+        loop {
+            slot = buffer.read()?;
+            let continues = slot.slot > 127;
+
+            if continues {
+                slot.slot &= 127;
+            }
+
+            ret.push(slot);
+
+            if !continues {
+                break;
+            }
+        }
+
+        Ok(ret)
+    }
 }
 
 #[derive(WriteToPacket, ReadFromPacket)]
@@ -294,7 +385,7 @@ pub struct Recipe {
 pub struct WrappedParticle {
     #[packet_serde(varying)]
     id: i32,
-    data: Particle,
+    data: ParticleData,
 }
 
 #[derive(WriteToPacket, ReadFromPacket)]
@@ -310,4 +401,20 @@ pub struct PlayerProperty {
 pub struct WrappedPlayerInfoAction {
     uuid: Uuid,
     action: PlayerInfoAction,
+}
+
+#[derive(WriteToPacket)]
+pub struct TagArray {
+    #[packet_serde(varying)]
+    length: i32,
+    data: Vec<Tag>
+}
+
+#[derive(WriteToPacket)]
+pub struct Tag {
+    name: UnlocalizedName,
+    #[packet_serde(varying)]
+    count: i32,
+    #[packet_serde(varying)]
+    entries: Vec<i32>
 }

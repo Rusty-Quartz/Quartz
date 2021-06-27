@@ -1,13 +1,13 @@
 use crate::{
     command::{CommandContext, CommandSender},
-    network::{packets::*, AsyncClientConnection, ConnectionState, PacketBuffer},
+    network::{packet::*, AsyncClientConnection, ConnectionState, PacketBuffer},
     server::{self, QuartzServer},
     world::location::BlockPosition,
 };
 use chat::{color::PredefinedColor, Component};
 use hex::ToHex;
 use lazy_static::lazy_static;
-use log::{debug, error, warn};
+use log::{debug, error};
 use openssl::{
     pkey::Private,
     rsa::{Padding, Rsa},
@@ -28,39 +28,13 @@ use uuid::Uuid;
 use super::AsyncWriteHandle;
 
 /// The numeric protocol version the server uses.
-pub const PROTOCOL_VERSION: i32 = 736;
+pub const PROTOCOL_VERSION: i32 = 755;
 /// The ID for the legacy ping packet.
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
-include!(concat!(env!("OUT_DIR"), "/packet_output.rs"));
+include!(concat!(env!("OUT_DIR"), "/packet_handler_output.rs"));
 
-/// A wraper for a server-bound packet which includes the sender ID.
-pub struct WrappedServerBoundPacket {
-    /// The ID of the packet sender.
-    pub sender: usize,
-    /// The packet that was sent.
-    pub packet: ServerBoundPacket,
-}
-
-impl WrappedServerBoundPacket {
-    /// Creates a new wrapper with the given parameters.
-    #[inline]
-    pub fn new(sender: usize, packet: ServerBoundPacket) -> Self {
-        WrappedServerBoundPacket { sender, packet }
-    }
-}
-
-/// A wraper for client-bound packets used internally for sending packets to the connection thread.
-pub enum WrappedClientBoundPacket {
-    /// A wrapped packet.
-    Packet(ClientBoundPacket),
-    /// A raw byte-buffer.
-    Buffer(PacketBuffer),
-    /// Specifies that the connection should be forcefully terminated.
-    Disconnect,
-}
-
-struct AsyncPacketHandler {
+pub(crate) struct AsyncPacketHandler {
     key_pair: Arc<Rsa<Private>>,
     username: String,
     verify_token: Vec<u8>,
@@ -77,7 +51,7 @@ impl AsyncPacketHandler {
 }
 
 impl AsyncPacketHandler {
-    async fn handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, next_state: i32) {
+    async fn handle_handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, next_state: i32) {
         if version != PROTOCOL_VERSION {
             conn.connection_state = ConnectionState::Disconnected;
             return;
@@ -90,11 +64,11 @@ impl AsyncPacketHandler {
         }
     }
 
-    async fn ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
+    async fn handle_ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
         conn.send_packet(&ClientBoundPacket::Pong { payload }).await;
     }
 
-    async fn login_start(&mut self, conn: &mut AsyncClientConnection, name: &str) {
+    async fn handle_login_start(&mut self, conn: &mut AsyncClientConnection, name: &String) {
         // Store username for later
         self.username = name.to_owned();
 
@@ -124,7 +98,7 @@ impl AsyncPacketHandler {
         .await;
     }
 
-    async fn encryption_response(
+    async fn handle_encryption_response(
         &mut self,
         conn: &mut AsyncClientConnection,
         shared_secret: &Vec<u8>,
@@ -246,7 +220,7 @@ impl AsyncPacketHandler {
             properties: [Properties; 1],
         }
 
-        // Currently disabled cause no need rn, will enable via config later
+        // TODO: Currently disabled cause no need rn, will enable via config later
         // conn.send_packet(&ClientBoundPacket::SetCompression{threshhold: /* maximum size of uncompressed packet */})
 
         // Make a get request
@@ -275,7 +249,7 @@ impl AsyncPacketHandler {
         }
     }
 
-    async fn login_plugin_response(
+    async fn handle_login_plugin_response(
         &mut self,
         _conn: &mut AsyncClientConnection,
         _message_id: i32,
@@ -287,7 +261,7 @@ impl AsyncPacketHandler {
 }
 
 impl QuartzServer {
-    async fn login_success_server(&mut self, _sender: usize, _uuid: &Uuid, _username: &str) {
+    async fn handle_login_success_server(&mut self, _sender: usize, _uuid: Uuid, _username: &str) {
         // TODO: Implement login_success_server
     }
 
@@ -325,7 +299,7 @@ impl QuartzServer {
         };
     }
 
-    async fn legacy_server_list_ping(&mut self, sender: usize, _payload: &u8) {
+    async fn handle_legacy_server_list_ping(&mut self, sender: usize, _payload: u8) {
         // Load in all needed values from server object
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
@@ -371,7 +345,7 @@ impl QuartzServer {
         self.client_list.send_buffer(sender, buffer).await;
     }
 
-    async fn status_request(&mut self, sender: usize) {
+    async fn handle_status_request(&mut self, sender: usize) {
         let json_response = json!({
             "version": {
                 "name": server::VERSION,
@@ -395,36 +369,36 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn client_disconnected(&mut self, id: &usize) {}
+    async fn handle_client_disconnected(&mut self, id: usize) {}
 
     #[allow(unused_variables)]
-    async fn client_connected(&mut self, id: &usize, write_handle: &&AsyncWriteHandle) {}
+    async fn handle_client_connected(&mut self, id: usize, write_handle: &AsyncWriteHandle) {}
 
     #[allow(unused_variables)]
-    async fn use_item(&mut self, sender: usize, hand: &i32) {}
+    async fn handle_use_item(&mut self, sender: usize, hand: i32) {}
 
     #[allow(unused_variables)]
-    async fn player_block_placement(
+    async fn handle_player_block_placement(
         &mut self,
         sender: usize,
-        hand: &i32,
+        hand: i32,
         location: &BlockPosition,
-        face: &i32,
-        cursor_position_x: &f32,
-        cursor_position_y: &f32,
-        cursor_position_z: &f32,
-        inside_block: &bool,
+        face: i32,
+        cursor_position_x: f32,
+        cursor_position_y: f32,
+        cursor_position_z: f32,
+        inside_block: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn spectate(&mut self, sender: usize, target_player: &Uuid) {}
+    async fn handle_spectate(&mut self, sender: usize, target_player: Uuid) {}
 
     #[allow(unused_variables)]
-    async fn animation_serverbound(&mut self, sender: usize, hand: &i32) {}
+    async fn handle_animation(&mut self, sender: usize, hand: i32) {}
 
     #[allow(unused_variables)]
-    async fn update_sign(
+    async fn handle_update_sign(
         &mut self,
         sender: usize,
         location: &BlockPosition,
@@ -436,33 +410,33 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn update_structure_block(
+    async fn handle_update_structure_block(
         &mut self,
         sender: usize,
         location: &BlockPosition,
-        action: &i32,
-        mode: &i32,
+        action: i32,
+        mode: i32,
         name: &String,
-        offset_x: &i8,
-        offset_y: &i8,
-        offset_z: &i8,
-        size_x: &i8,
-        size_y: &i8,
-        size_z: &i8,
-        mirror: &i32,
-        rotation: &i32,
+        offset_x: i8,
+        offset_y: i8,
+        offset_z: i8,
+        size_x: i8,
+        size_y: i8,
+        size_z: i8,
+        mirror: i32,
+        rotation: i32,
         metadate: &str,
-        integrity: &f32,
-        seed: &i64,
-        flags: &i8,
+        integrity: f32,
+        seed: i64,
+        flags: i8,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn creative_inventory_action(&mut self, sender: usize, slot: &i16, clicked_item: &Slot) {}
+    async fn handle_creative_inventory_action(&mut self, sender: usize, slot: i16, clicked_item: &Slot) {}
 
     #[allow(unused_variables)]
-    async fn update_jigsaw_block(
+    async fn handle_update_jigsaw_block(
         &mut self,
         sender: usize,
         location: &BlockPosition,
@@ -475,194 +449,197 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn update_command_block_minecart(
+    async fn handle_update_command_block_minecart(
         &mut self,
         sender: usize,
-        entity_id: &i32,
+        entity_id: i32,
         command: &str,
-        track_output: &bool,
+        track_output: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn update_command_block(
+    async fn handle_update_command_block(
         &mut self,
         sender: usize,
         location: &BlockPosition,
         command: &str,
-        mode: &i32,
-        flags: &i8,
+        mode: i32,
+        flags: i8,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn held_item_change_serverbound(&mut self, sender: usize, slot: &i16) {}
+    async fn handle_held_item_change(&mut self, sender: usize, slot: i16) {}
 
     #[allow(unused_variables)]
-    async fn set_beacon_effect(
+    async fn handle_set_beacon_effect(
         &mut self,
         sender: usize,
-        primary_effect: &i32,
-        secondary_effect: &i32,
+        primary_effect: i32,
+        secondary_effect: i32,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn select_trade(&mut self, sender: usize, selected_slod: &i32) {}
+    async fn handle_select_trade(&mut self, sender: usize, selected_slod: i32) {}
 
     #[allow(unused_variables)]
-    async fn advancement_tab(
+    async fn handle_advancement_tab(
         &mut self,
         sender: usize,
-        action: &i32,
+        action: i32,
         tab_id: &Option<UnlocalizedName>,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn resource_pack_status(&mut self, sender: usize, result: &i32) {}
+    async fn handle_resource_pack_status(&mut self, sender: usize, result: i32) {}
 
     #[allow(unused_variables)]
-    async fn name_item(&mut self, sender: usize, item_name: &str) {}
+    async fn handle_name_item(&mut self, sender: usize, item_name: &str) {}
 
     #[allow(unused_variables)]
-    async fn set_recipe_book_state(
+    async fn handle_set_recipe_book_state(
         &mut self,
         sender: usize,
-        book_id: &i32,
-        book_open: &bool,
-        filter_active: &bool,
+        book_id: i32,
+        book_open: bool,
+        filter_active: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn set_displayed_recipe(&mut self, sender: usize, recipe_id: &UnlocalizedName) {}
+    async fn handle_set_displayed_recipe(&mut self, sender: usize, recipe_id: &UnlocalizedName) {}
 
     #[allow(unused_variables)]
-    async fn steer_vehicle(&mut self, sender: usize, sideways: &f32, forward: &f32, flags: &u8) {}
+    async fn handle_steer_vehicle(&mut self, sender: usize, sideways: f32, forward: f32, flags: u8) {}
 
     #[allow(unused_variables)]
-    async fn entity_action(
+    async fn handle_pong(&mut self, sender: usize, id: i32) {}
+
+    #[allow(unused_variables)]
+    async fn handle_entity_action(
         &mut self,
         sender: usize,
-        entity_id: &i32,
-        action_id: &i32,
-        jump_boost: &i32,
+        entity_id: i32,
+        action_id: i32,
+        jump_boost: i32,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn player_digging(
+    async fn handle_player_digging(
         &mut self,
         sender: usize,
-        status: &i32,
+        status: i32,
         location: &BlockPosition,
-        face: &i8,
+        face: i8,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn player_abilities_serverbound(&mut self, sender: usize, flags: &i8) {}
+    async fn handle_player_abilities(&mut self, sender: usize, flags: i8) {}
 
     #[allow(unused_variables)]
-    async fn craft_recipe_request(
+    async fn handle_craft_recipe_request(
         &mut self,
         sender: usize,
-        window_id: &i8,
+        window_id: i8,
         recipe: &UnlocalizedName,
-        make_all: &bool,
+        make_all: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn pick_item(&mut self, sender: usize, slot_to_use: &i32) {}
+    async fn handle_pick_item(&mut self, sender: usize, slot_to_use: i32) {}
 
     #[allow(unused_variables)]
-    async fn steer_boat(
+    async fn handle_steer_boat(
         &mut self,
         sender: usize,
-        left_paddle_turning: &bool,
-        right_paddle_turning: &bool,
+        left_paddle_turning: bool,
+        right_paddle_turning: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn player_movement(&mut self, sender: usize, on_ground: &bool) {}
+    async fn handle_player_movement(&mut self, sender: usize, on_ground: bool) {}
 
     #[allow(unused_variables)]
-    async fn player_rotation(&mut self, sender: usize, yaw: &f32, pitch: &f32, on_ground: &bool) {}
+    async fn handle_player_rotation(&mut self, sender: usize, yaw: f32, pitch: f32, on_ground: bool) {}
 
     #[allow(unused_variables)]
-    async fn vehicle_move_serverbound(
+    async fn handle_vehicle_move(
         &mut self,
         sender: usize,
-        x: &f64,
-        y: &f64,
-        z: &f64,
-        yaw: &f32,
-        pitch: &f32,
+        x: f64,
+        y: f64,
+        z: f64,
+        yaw: f32,
+        pitch: f32,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn player_position(
+    async fn handle_player_position(
         &mut self,
         sender: usize,
-        x: &f64,
-        feet_y: &f64,
-        z: &f64,
-        on_ground: &bool,
+        x: f64,
+        feet_y: f64,
+        z: f64,
+        on_ground: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn player_position_and_rotation_serverbound(
+    async fn handle_player_position_and_rotation(
         &mut self,
         sender: usize,
-        x: &f64,
-        feet_y: &f64,
-        z: &f64,
-        yaw: &f32,
-        pitch: &f32,
-        on_ground: &bool,
+        x: f64,
+        feet_y: f64,
+        z: f64,
+        yaw: f32,
+        pitch: f32,
+        on_ground: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn lock_difficulty(&mut self, sender: usize, locked: &bool) {}
+    async fn handle_lock_difficulty(&mut self, sender: usize, locked: bool) {}
 
     #[allow(unused_variables)]
-    async fn keep_alive_serverbound(&mut self, sender: usize, keep_alive_id: &i64) {}
+    async fn handle_keep_alive(&mut self, sender: usize, keep_alive_id: i64) {}
 
     #[allow(unused_variables)]
-    async fn generate_structure(
+    async fn handle_generate_structure(
         &mut self,
         sender: usize,
         location: &BlockPosition,
-        levels: &i32,
-        keep_jigsaws: &bool,
+        levels: i32,
+        keep_jigsaws: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn interact_entity(
+    async fn handle_interact_entity(
         &mut self,
         sender: usize,
-        entity_id: &i32,
-        r#type: &i32,
-        target_x: &Option<f32>,
-        target_y: &Option<f32>,
-        target_z: &Option<f32>,
-        hand: &Option<i32>,
-        sneaking: &bool,
+        entity_id: i32,
+        r#type: i32,
+        target_x: Option<f32>,
+        target_y: Option<f32>,
+        target_z: Option<f32>,
+        hand: Option<i32>,
+        sneaking: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn edit_book(&mut self, sender: usize, new_book: &Slot, is_signing: &bool, hand: &i32) {}
+    async fn handle_edit_book(&mut self, sender: usize, new_book: &Slot, is_signing: bool, hand: i32) {}
 
     #[allow(unused_variables)]
-    async fn plugin_message_serverbound(
+    async fn handle_plugin_message(
         &mut self,
         sender: usize,
         channel: &UnlocalizedName,
@@ -671,73 +648,65 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn close_window_serverbound(&mut self, sender: usize, window_id: &u8) {}
+    async fn handle_close_window(&mut self, sender: usize, window_id: u8) {}
 
     #[allow(unused_variables)]
-    async fn click_window(
+    async fn handle_click_window(
         &mut self,
         sender: usize,
-        window_id: &u8,
-        slot: &i16,
-        button: &i8,
-        action_number: &i16,
-        mode: &i32,
-        clicked_item: &Slot,
+        window_id: u8,
+        slot: i16,
+        button: i8,
+        mode: i32,
+        slots_len: i32,
+        slots: &Vec<Slot>,
+        clicked_slot: &Slot,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn click_window_button(&mut self, sender: usize, window_id: &i8, button_id: &i8) {}
+    async fn handle_click_window_button(&mut self, sender: usize, window_id: i8, button_id: i8) {}
 
     #[allow(unused_variables)]
-    async fn window_confirmation_serverbound(
-        &mut self,
-        sender: usize,
-        window_id: &i8,
-        action_number: &i16,
-        accepted: &bool,
-    ) {
-    }
+    async fn handle_tab_complete(&mut self, sender: usize, trasaction_id: i32, text: &str) {}
 
     #[allow(unused_variables)]
-    async fn tab_complete_serverbound(&mut self, sender: usize, trasaction_id: &i32, text: &str) {}
-
-    #[allow(unused_variables)]
-    async fn client_settings(
+    async fn handle_client_settings(
         &mut self,
         sender: usize,
         locale: &str,
-        view_distance: &i8,
-        chat_mode: &i32,
-        chat_colors: &bool,
-        displayed_skin_parts: &u8,
-        main_hand: &i32,
+        view_distance: i8,
+        chat_mode: i32,
+        chat_colors: bool,
+        displayed_skin_parts: u8,
+        main_hand: i32,
+        disable_text_filtering: bool
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn client_status(&mut self, sender: usize, action_id: &i32) {}
+    async fn handle_client_status(&mut self, sender: usize, action_id: i32) {}
 
     #[allow(unused_variables)]
-    async fn chat_message_serverbound(&mut self, sender: usize, messag: &str) {}
+    async fn handle_chat_message(&mut self, sender: usize, messag: &str) {}
 
     #[allow(unused_variables)]
-    async fn set_difficulty(&mut self, sender: usize, new_difficulty: &i8) {}
+    async fn handle_set_difficulty(&mut self, sender: usize, new_difficulty: i8) {}
 
     #[allow(unused_variables)]
-    async fn query_entity_nbt(&mut self, sender: usize, trasaction_id: &i32, entity_id: &i32) {}
+    async fn handle_query_entity_nbt(&mut self, sender: usize, trasaction_id: i32, entity_id: i32) {}
 
     #[allow(unused_variables)]
-    async fn query_block_nbt(
+    async fn handle_query_block_nbt(
         &mut self,
         sender: usize,
-        trasaction_id: &i32,
+        trasaction_id: i32,
         location: &BlockPosition,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn teleport_confirm(&mut self, sender: usize, teleport_id: &i32) {}
+    async fn handle_teleport_confirm(&mut self, sender: usize, teleport_id: i32) {}
 }
 
 /// Handles the given asynchronos connecting using blocking I/O opperations.
@@ -756,7 +725,11 @@ pub async fn handle_async_connection(
                 }
                 // Handle the packet
                 else {
-                    handle_packet(&mut conn, &mut async_handler, packet_len).await;
+                    if let Err(e) = handle_packet(&mut conn, &mut async_handler, packet_len).await {
+                        error!("Failed to handle packet: {}", e);
+                        conn.shutdown();
+                        break;
+                    }
                 }
             }
             Err(e) => {

@@ -1,8 +1,8 @@
 mod connection;
 mod netutil;
 mod packet_handler;
-pub mod packets;
+pub mod packet;
 
 pub use connection::*;
-pub use netutil::{PacketBuffer, ReadFromPacket, VariableRepr, WriteToPacket};
+pub use netutil::*;
 pub use packet_handler::*;

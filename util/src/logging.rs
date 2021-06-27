@@ -124,7 +124,7 @@ impl CrateFilter {
 impl Filter for CrateFilter {
     #[cfg(debug_assertions)]
     fn filter(&self, record: &Record) -> Response {
-        if record.level() != Level::Debug && record.level() != Level::Trace {
+        if record.level() == Level::Warn || record.level() == Level::Error {
             return Response::Accept;
         }
 

@@ -1,4 +1,4 @@
-use crate::network::{packet_handler::*, PacketBuffer};
+use crate::network::{*, packet::{WrappedServerBoundPacket, WrappedClientBoundPacket, ServerBoundPacket, ClientBoundPacket}};
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use futures_lite::*;
 use log::*;
@@ -12,13 +12,14 @@ use smol::{
     net::TcpStream,
 };
 use std::{
+    result::Result as StdResult,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result, Write},
     net::Shutdown,
     sync::{mpsc::Sender as StdSender, Arc},
 };
 
 /// All possible states of a client's connection to the server.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ConnectionState {
     /// The handshake state of the connection in which the client selects the next state to enter:
     /// either the `Status` state or `Login` state.
@@ -197,7 +198,7 @@ impl IOHandle {
         packet_buffer: &mut PacketBuffer,
         stream: &mut TcpStream,
         decrypt: bool,
-    ) -> Result<usize> {
+    ) -> StdResult<usize, PacketSerdeError> {
         if decrypt {
             self.decrypt_buffer(&mut *packet_buffer, 0);
         }
@@ -205,15 +206,15 @@ impl IOHandle {
         // Read the packet header
 
         // Length of the packet in its raw, unaltered form
-        let raw_len = packet_buffer.read_varying::<i32>() as usize;
-        // Length of the uncompressed packet data exluding the raw length header
+        let raw_len = packet_buffer.read_varying::<i32>()? as usize;
+        // Length of the uncompressed packet data excluding the raw length header
         let mut data_len: usize;
         let compressed: bool;
 
         // Compression is active
         if self.compression_threshold >= 0 {
             // Read the length of the uncompressed packet data
-            data_len = packet_buffer.read_varying::<i32>() as usize;
+            data_len = packet_buffer.read_varying::<i32>()? as usize;
 
             // If that length is zero, the packet was not compressed
             if data_len == 0 {
@@ -237,7 +238,7 @@ impl IOHandle {
             packet_buffer.resize(raw_len);
             match stream.read_exact(&mut packet_buffer[end ..]).await {
                 Ok(_) => self.decrypt_buffer(&mut *packet_buffer, end),
-                Err(e) => return Err(e),
+                Err(e) => return Err(PacketSerdeError::Network(e)),
             }
         }
 
@@ -259,12 +260,12 @@ impl IOHandle {
             match decoder.read(&mut packet_buffer[..]) {
                 Ok(read) =>
                     if read != data_len {
-                        return Err(IoError::new(
+                        return Err(PacketSerdeError::Network(IoError::new(
                             IoErrorKind::InvalidData,
                             "Failed to decompress packet",
-                        ));
+                        ).into()));
                     },
-                Err(e) => return Err(e),
+                Err(e) => return Err(PacketSerdeError::Network(e.into())),
             };
 
             // Copy any bytes at the end of the buffer that were not part of this packet
@@ -364,7 +365,7 @@ impl AsyncClientConnection {
                 match wrapped_packet {
                     WrappedClientBoundPacket::Packet(packet) => {
                         packet_buffer.clear();
-                        serialize(&packet, &mut packet_buffer);
+                        packet_buffer.write(&packet);
 
                         if let Err(e) = io_handle
                             .lock()
@@ -400,7 +401,7 @@ impl AsyncClientConnection {
     /// Sends the given packet to the client.
     pub async fn send_packet(&mut self, packet: &ClientBoundPacket) {
         self.write_buffer.clear();
-        serialize(packet, &mut self.write_buffer);
+        self.write_buffer.write(packet);
 
         if let Err(e) = self
             .io_handle
@@ -427,13 +428,13 @@ impl AsyncClientConnection {
     pub async fn initiate_encryption(
         &mut self,
         shared_secret: &[u8],
-    ) -> std::result::Result<(), ErrorStack> {
-        self.io_handle.lock().await.enable_encryption(shared_secret)
+    ) -> StdResult<(), PacketSerdeError> {
+        self.io_handle.lock().await.enable_encryption(shared_secret).map_err(Into::into)
     }
 
     /// Reads packet data from the underlying stream, blocking the current thread. After the initial read,
     /// the rest of the packet will be collected and read, with the number of bytes in the packet returned.
-    pub async fn read_packet(&mut self) -> Result<usize> {
+    pub async fn read_packet(&mut self) -> StdResult<usize, PacketSerdeError> {
         // More than one packet was read at once, collect the remaining packet and handle it
         if self.read_buffer.remaining() > 0 {
             // Move the remaining bytes to the beginning of the buffer
@@ -456,7 +457,10 @@ impl AsyncClientConnection {
         self.read_buffer.inflate();
 
         // Read the first chunk, this is what blocks the thread
-        let read = self.stream.read(&mut self.read_buffer[..]).await?;
+        let read = self.stream
+            .read(&mut self.read_buffer[..])
+            .await
+            .map_err(|error| PacketSerdeError::Network(error))?;
 
         // A read of zero bytes means the stream has closed
         if read == 0 {
@@ -470,7 +474,7 @@ impl AsyncClientConnection {
 
             // The legacy ping packet has no length prefix, so only collect the packet if it's not legacy
             if !(self.connection_state == ConnectionState::Handshake
-                && self.read_buffer.peek() as i32 == LEGACY_PING_PACKET_ID)
+                && self.read_buffer.peek().unwrap_or(0) as i32 == LEGACY_PING_PACKET_ID)
             {
                 return self
                     .io_handle
@@ -481,6 +485,7 @@ impl AsyncClientConnection {
             }
         }
 
+        // This is only reached if read == 0 or it's a legacy packet
         Ok(read)
     }
 
