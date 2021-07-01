@@ -1,14 +1,16 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, format_ident};
+use quote::{format_ident, quote};
 use syn::{DeriveInput, Ident};
 
-use crate::the_crate;
 use super::parse::{EnumStructVariant, Field, FieldType};
+use crate::the_crate;
 
 pub fn gen_struct_serializer_impl(input: DeriveInput, fields: &[Field]) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = &input.ident;
-    let serialize_fields = fields.iter().map(|field| gen_serialize_struct_field(field, &format_ident!("__buffer")));
+    let serialize_fields = fields
+        .iter()
+        .map(|field| gen_serialize_struct_field(field, &format_ident!("__buffer")));
     let the_crate = the_crate();
 
     quote! {
@@ -31,10 +33,7 @@ pub fn gen_enum_serializer_impl(input: DeriveInput, variants: &[EnumStructVarian
         .filter(|variant| !variant.fields.is_empty())
         .map(|variant| {
             let var_name = &variant.name;
-            let field_names = variant
-                .fields
-                .iter()
-                .map(|field| &field.name);
+            let field_names = variant.fields.iter().map(|field| &field.name);
             let serialize_fields = variant
                 .fields
                 .iter()
@@ -49,7 +48,7 @@ pub fn gen_enum_serializer_impl(input: DeriveInput, variants: &[EnumStructVarian
             }
         });
     let default_branch = if any_unit {
-        Some(quote!{ _ => {} })
+        Some(quote! { _ => {} })
     } else {
         None
     };
@@ -69,7 +68,9 @@ pub fn gen_enum_serializer_impl(input: DeriveInput, variants: &[EnumStructVarian
 pub fn gen_struct_deserializer_impl(input: DeriveInput, fields: &[Field]) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = &input.ident;
-    let deserialize_fields = fields.iter().map(|field| gen_deserialize_field(field, &format_ident!("__buffer")));
+    let deserialize_fields = fields
+        .iter()
+        .map(|field| gen_deserialize_field(field, &format_ident!("__buffer")));
     let field_names = fields.iter().map(|field| &field.name);
     let the_crate = the_crate();
 

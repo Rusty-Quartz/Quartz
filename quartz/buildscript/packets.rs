@@ -1,11 +1,15 @@
+use once_cell::unsync::OnceCell;
+use proc_macro2::{Literal, TokenStream};
+use quartz_macros_impl::packet::{
+    gen_deserialize_field,
+    gen_serialize_enum_field,
+    Field as CodegenField,
+};
+use quote::{format_ident, quote};
 use serde::Deserialize;
 use serde_json;
-use syn::Type;
 use std::{collections::HashMap, env, fs, path::Path};
-use proc_macro2::{Literal, TokenStream};
-use quote::{quote, format_ident};
-use quartz_macros_impl::packet::{Field as CodegenField, gen_serialize_enum_field, gen_deserialize_field};
-use once_cell::unsync::OnceCell;
+use syn::Type;
 
 pub fn gen_packet_handlers() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
@@ -14,11 +18,9 @@ pub fn gen_packet_handlers() {
 
     // Load in json files
     let states_raw: Vec<StatePacketInfo> =
-        serde_json::from_str(include_str!("./assets/protocol.json"))
-            .expect("Error reading file");
-    let mappings: Mappings =
-        serde_json::from_str(include_str!("./assets/mappings.json"))
-            .expect("Error reading mappings.json");
+        serde_json::from_str(include_str!("./assets/protocol.json")).expect("Error reading file");
+    let mappings: Mappings = serde_json::from_str(include_str!("./assets/mappings.json"))
+        .expect("Error reading mappings.json");
 
     let mut states: Vec<String> = Vec::new();
     let mut server_bound: Vec<Packet> = Vec::new();
@@ -57,7 +59,8 @@ pub fn gen_packet_handlers() {
         (quote! {
             #client_packet_enum
             #server_packet_enum
-        }).to_string()
+        })
+        .to_string(),
     )
     .unwrap();
     fs::write(
@@ -65,7 +68,8 @@ pub fn gen_packet_handlers() {
         (quote! {
             #handle_packet
             #sync_dispatch
-        }).to_string()
+        })
+        .to_string(),
     )
     .unwrap();
 
@@ -82,48 +86,46 @@ fn gen_client_packet_enum(packet_arr: &[Packet], mappings: &Mappings) -> TokenSt
         .iter()
         .map(|packet| format_ident!("{}", snake_to_pascal(&packet.name)))
         .collect::<Vec<_>>();
-    let variants = packet_arr
-        .iter()
-        .enumerate()
-        .map(|(index, packet)| {
-            let variant_name = &variant_names[index];
-            if packet.fields.is_empty() {
-                quote! { #variant_name }
-            } else {
-                let fields = packet
-                    .fields
-                    .iter()
-                    .map(|field| field.struct_field_def(mappings));
-                quote! {
-                    #variant_name { #( #fields ),* }
-                }
-            }
-        });
-    let write_variants = packet_arr
-        .iter()
-        .enumerate()
-        .map(|(index, packet)| {
-            let variant_name = &variant_names[index];
-            let id = Literal::i32_unsuffixed(
-                i32::from_str_radix(&packet.id[2..], 16)
-                    .expect("Invalid packet ID encountered in JSON.")
-            );
-            let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
-            let unpack_fields = if packet.fields.is_empty() {
-                None
-            } else {
-                Some(quote! { { #( #field_names ),* } })
-            };
-            let write_fields = packet
-                .codegen_fields(mappings)
-                .map(|field| gen_serialize_enum_field(&field, &format_ident!("buffer")));
+    let variants = packet_arr.iter().enumerate().map(|(index, packet)| {
+        let variant_name = &variant_names[index];
+        if packet.fields.is_empty() {
+            quote! { #variant_name }
+        } else {
+            let fields = packet
+                .fields
+                .iter()
+                .map(|field| field.struct_field_def(mappings));
             quote! {
-                Self::#variant_name #unpack_fields => {
-                    buffer.write_varying(&#id);
-                    #( #write_fields )*
-                }
+                #variant_name { #( #fields ),* }
             }
-        });
+        }
+    });
+    let write_variants = packet_arr.iter().enumerate().map(|(index, packet)| {
+        let variant_name = &variant_names[index];
+        let id = Literal::i32_unsuffixed(
+            i32::from_str_radix(&packet.id[2 ..], 16)
+                .expect("Invalid packet ID encountered in JSON."),
+        );
+        let field_names = packet
+            .fields
+            .iter()
+            .map(|field| format_ident!("{}", &field.name))
+            .collect::<Vec<_>>();
+        let unpack_fields = if packet.fields.is_empty() {
+            None
+        } else {
+            Some(quote! { { #( #field_names ),* } })
+        };
+        let write_fields = packet
+            .codegen_fields(mappings)
+            .map(|field| gen_serialize_enum_field(&field, &format_ident!("buffer")));
+        quote! {
+            Self::#variant_name #unpack_fields => {
+                buffer.write_varying(&#id);
+                #( #write_fields )*
+            }
+        }
+    });
 
     quote! {
         pub enum ClientBoundPacket {
@@ -263,28 +265,26 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
 }
 
 fn gen_sync_dispatch(server_bound: &[Packet], mappings: &Mappings) -> TokenStream {
-    let match_arms = server_bound
-        .iter()
-        .map(|packet| {
-            let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
-            let field_names = packet
-                .fields
-                .iter()
-                .filter(|field| !field.unused)
-                .map(|field| format_ident!("{}", field.name));
-            let field_derefs = packet.field_derefs(mappings);
-            let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
-            let sender = if packet.sender_independent {
-                None
-            } else {
-                Some(quote! { sender, })
-            };
-            quote! {
-                crate::network::packet::ServerBoundPacket::#variant_name { #( #field_names ),* } =>
-                    handler.#handler_name(#sender #( #field_derefs ),*).await
-            }
-        });
-    
+    let match_arms = server_bound.iter().map(|packet| {
+        let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
+        let field_names = packet
+            .fields
+            .iter()
+            .filter(|field| !field.unused)
+            .map(|field| format_ident!("{}", field.name));
+        let field_derefs = packet.field_derefs(mappings);
+        let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
+        let sender = if packet.sender_independent {
+            None
+        } else {
+            Some(quote! { sender, })
+        };
+        quote! {
+            crate::network::packet::ServerBoundPacket::#variant_name { #( #field_names ),* } =>
+                handler.#handler_name(#sender #( #field_derefs ),*).await
+        }
+    });
+
     quote! {
         pub async fn dispatch_sync_packet(wrapped_packet: &crate::network::packet::WrappedServerBoundPacket, handler: &mut crate::QuartzServer) {
             let sender = wrapped_packet.sender;
@@ -309,8 +309,11 @@ fn parse_type<'a>(field: &'a str, mappings: &'a Mappings) -> &'a str {
 }
 
 fn parse_type_meta<'a>(field: &'a str) -> Option<&'a str> {
-    let start = field.char_indices().find(|&(_, ch)| ch == '(').map(|(index, _)| index + 1)?;
-    Some(&field[start..field.len() - 1])
+    let start = field
+        .char_indices()
+        .find(|&(_, ch)| ch == '(')
+        .map(|(index, _)| index + 1)?;
+    Some(&field[start .. field.len() - 1])
 }
 
 fn snake_to_pascal(str: &str) -> String {
@@ -343,42 +346,60 @@ struct Packet {
 }
 
 impl Packet {
-    pub fn codegen_fields<'a>(&'a self, mappings: &'a Mappings) -> impl Iterator<Item = CodegenField> + 'a {
-        self
-            .fields
-            .iter()
-            .map(move |field| {
-                let name = format_ident!(
-                    "{}{}",
-                    if !field.unused || field.referenced {
-                        ""
-                    } else {
-                        "_"
-                    },
-                    &field.name
-                );
-                let ty = field.rust_type(mappings).clone();
-                let condition = if field.option {
-                    Some(syn::parse_str(&field.condition).expect(&format!("Failed to parse condition expression for field {} in packet {}", &field.name, &self.name)))
+    pub fn codegen_fields<'a>(
+        &'a self,
+        mappings: &'a Mappings,
+    ) -> impl Iterator<Item = CodegenField> + 'a {
+        self.fields.iter().map(move |field| {
+            let name = format_ident!(
+                "{}{}",
+                if !field.unused || field.referenced {
+                    ""
                 } else {
-                    None
-                };
-                let is_option = field.option;
-                let varying = mappings.is_varying(&field.var_type);
-                if field.array {
-                    let len = syn::parse_str(
-                        parse_type_meta(&field.var_type).expect(&format!("Expected length metadata for array type for field {} in packet {}", &field.name, &self.name))
-                    ).expect(&format!("Failed to parse length expression for array type for field {} in packet {}", &field.name, &self.name));
-                    CodegenField::array(name, ty, len, condition, is_option, varying, field.var_type.starts_with("u8"))
-                } else {
-                    CodegenField::regular(name, ty, condition, is_option, varying)
-                }
-            })
+                    "_"
+                },
+                &field.name
+            );
+            let ty = field.rust_type(mappings).clone();
+            let condition = if field.option {
+                Some(syn::parse_str(&field.condition).expect(&format!(
+                    "Failed to parse condition expression for field {} in packet {}",
+                    &field.name, &self.name
+                )))
+            } else {
+                None
+            };
+            let is_option = field.option;
+            let varying = mappings.is_varying(&field.var_type);
+            if field.array {
+                let len = syn::parse_str(parse_type_meta(&field.var_type).expect(&format!(
+                    "Expected length metadata for array type for field {} in packet {}",
+                    &field.name, &self.name
+                )))
+                .expect(&format!(
+                    "Failed to parse length expression for array type for field {} in packet {}",
+                    &field.name, &self.name
+                ));
+                CodegenField::array(
+                    name,
+                    ty,
+                    len,
+                    condition,
+                    is_option,
+                    varying,
+                    field.var_type.starts_with("u8"),
+                )
+            } else {
+                CodegenField::regular(name, ty, condition, is_option, varying)
+            }
+        })
     }
 
-    pub fn field_borrows<'a>(&'a self, mappings: &'a Mappings) -> impl Iterator<Item = TokenStream> + 'a {
-        self
-            .fields
+    pub fn field_borrows<'a>(
+        &'a self,
+        mappings: &'a Mappings,
+    ) -> impl Iterator<Item = TokenStream> + 'a {
+        self.fields
             .iter()
             .filter(|field| !field.unused)
             .map(move |field| {
@@ -391,9 +412,11 @@ impl Packet {
             })
     }
 
-    pub fn field_derefs<'a>(&'a self, mappings: &'a Mappings) -> impl Iterator<Item = TokenStream> + 'a {
-        self
-            .fields
+    pub fn field_derefs<'a>(
+        &'a self,
+        mappings: &'a Mappings,
+    ) -> impl Iterator<Item = TokenStream> + 'a {
+        self.fields
             .iter()
             .filter(|field| !field.unused)
             .map(move |field| {
@@ -431,38 +454,21 @@ struct Field {
     #[serde(default)]
     condition: String,
     #[serde(skip)]
-    cached_type: OnceCell<Type>
+    cached_type: OnceCell<Type>,
 }
 
 impl Field {
     pub fn rust_type(&self, mappings: &Mappings) -> &Type {
         self.cached_type.get_or_init(|| {
-            syn::parse_str(
-                &format!(
-                    "{}{}{}{}{}",
-                    if self.option {
-                        "Option<"
-                    } else {
-                        ""
-                    },
-                    if self.array {
-                        "Vec<"
-                    } else {
-                        ""
-                    },
-                    parse_type(&self.var_type, mappings),
-                    if self.option {
-                        ">"
-                    } else {
-                        ""
-                    },
-                    if self.array {
-                        ">"
-                    } else {
-                        ""
-                    }
-                )
-            ).expect("Invalid type or type mapping encountered in JSON")
+            syn::parse_str(&format!(
+                "{}{}{}{}{}",
+                if self.option { "Option<" } else { "" },
+                if self.array { "Vec<" } else { "" },
+                parse_type(&self.var_type, mappings),
+                if self.option { ">" } else { "" },
+                if self.array { ">" } else { "" }
+            ))
+            .expect("Invalid type or type mapping encountered in JSON")
         })
     }
 
@@ -470,7 +476,7 @@ impl Field {
         let name = format_ident!("{}", self.name);
         let ty: Type = match syn::parse_str(parse_type(&self.var_type, mappings)) {
             Ok(ty) => ty,
-            Err(e) => return e.to_compile_error()
+            Err(e) => return e.to_compile_error(),
         };
         match (self.option, self.array) {
             (true, true) => quote! {
@@ -484,7 +490,7 @@ impl Field {
             },
             (false, false) => quote! {
                 #name: #ty
-            }
+            },
         }
     }
 }
@@ -493,11 +499,13 @@ impl Field {
 struct Mappings {
     types: HashMap<String, String>,
     primitives: Vec<String>,
-    variable_repr: Vec<String>
+    variable_repr: Vec<String>,
 }
 
 impl Mappings {
     fn is_varying(&self, key: &str) -> bool {
-        self.variable_repr.iter().any(|varying| key.starts_with(varying))
+        self.variable_repr
+            .iter()
+            .any(|varying| key.starts_with(varying))
     }
 }

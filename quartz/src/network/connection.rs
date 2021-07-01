@@ -1,4 +1,12 @@
-use crate::network::{*, packet::{WrappedServerBoundPacket, WrappedClientBoundPacket, ServerBoundPacket, ClientBoundPacket}};
+use crate::network::{
+    packet::{
+        ClientBoundPacket,
+        ServerBoundPacket,
+        WrappedClientBoundPacket,
+        WrappedServerBoundPacket,
+    },
+    *,
+};
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use futures_lite::*;
 use log::*;
@@ -12,9 +20,9 @@ use smol::{
     net::TcpStream,
 };
 use std::{
-    result::Result as StdResult,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result, Write},
     net::Shutdown,
+    result::Result as StdResult,
     sync::{mpsc::Sender as StdSender, Arc},
 };
 
@@ -260,10 +268,10 @@ impl IOHandle {
             match decoder.read(&mut packet_buffer[..]) {
                 Ok(read) =>
                     if read != data_len {
-                        return Err(PacketSerdeError::Network(IoError::new(
-                            IoErrorKind::InvalidData,
-                            "Failed to decompress packet",
-                        ).into()));
+                        return Err(PacketSerdeError::Network(
+                            IoError::new(IoErrorKind::InvalidData, "Failed to decompress packet")
+                                .into(),
+                        ));
                     },
                 Err(e) => return Err(PacketSerdeError::Network(e.into())),
             };
@@ -429,7 +437,11 @@ impl AsyncClientConnection {
         &mut self,
         shared_secret: &[u8],
     ) -> StdResult<(), PacketSerdeError> {
-        self.io_handle.lock().await.enable_encryption(shared_secret).map_err(Into::into)
+        self.io_handle
+            .lock()
+            .await
+            .enable_encryption(shared_secret)
+            .map_err(Into::into)
     }
 
     /// Reads packet data from the underlying stream, blocking the current thread. After the initial read,
@@ -457,7 +469,8 @@ impl AsyncClientConnection {
         self.read_buffer.inflate();
 
         // Read the first chunk, this is what blocks the thread
-        let read = self.stream
+        let read = self
+            .stream
             .read(&mut self.read_buffer[..])
             .await
             .map_err(|error| PacketSerdeError::Network(error))?;

@@ -1,8 +1,11 @@
-use crate::{network::{PacketBuffer, ReadFromPacket, WriteToPacket, PacketSerdeError}, world::location::BlockPosition};
-use chat::Component;
-use quartz_macros::{WriteToPacket, ReadFromPacket};
+use crate::{
+    network::{PacketBuffer, PacketSerdeError, ReadFromPacket, WriteToPacket},
+    world::location::BlockPosition,
+};
+use quartz_chat::Component;
+use quartz_macros::{ReadFromPacket, WriteToPacket};
 use quartz_nbt::NbtCompound;
-use util::UnlocalizedName;
+use quartz_util::UnlocalizedName;
 use uuid::Uuid;
 
 include!(concat!(env!("OUT_DIR"), "/packet_def_output.rs"));
@@ -36,10 +39,7 @@ pub enum WrappedClientBoundPacket {
 #[derive(WriteToPacket)]
 pub enum EntityMetadata {
     Byte(i8),
-    VarInt(
-        #[packet_serde(varying)]
-        i32
-    ),
+    VarInt(#[packet_serde(varying)] i32),
     Float(f32),
     String(String),
     Chat(Component),
@@ -49,26 +49,14 @@ pub enum EntityMetadata {
     Rotation(f32, f32, f32),
     Position(BlockPosition),
     OptPosition(bool, Option<BlockPosition>),
-    Direction(
-        #[packet_serde(varying)]
-        i32
-    ),
+    Direction(#[packet_serde(varying)] i32),
     OptUuid(bool, Option<Uuid>),
-    OptBlockId(
-        #[packet_serde(varying)]
-        i32
-    ),
+    OptBlockId(#[packet_serde(varying)] i32),
     Nbt(NbtCompound),
     Particle(WrappedParticle),
     VillagerData(i32, i32, i32),
-    OptVarInt(
-        #[packet_serde(varying)]
-        i32
-    ),
-    Pose(
-        #[packet_serde(varying)]
-        i32
-    ),
+    OptVarInt(#[packet_serde(varying)] i32),
+    Pose(#[packet_serde(varying)] i32),
 }
 
 #[derive(WriteToPacket)]
@@ -76,10 +64,7 @@ pub enum ParticleData {
     AmbientEntityEffect,
     AngryVillager,
     Barrier,
-    Block(
-        #[packet_serde(varying)]
-        i32
-    ),
+    Block(#[packet_serde(varying)] i32),
     Bubble,
     Cloud,
     Crit,
@@ -99,10 +84,7 @@ pub enum ParticleData {
     EntityEffect,
     ExplosionEmitter,
     Explosion,
-    FallingDust(
-        #[packet_serde(varying)]
-        i32
-    ),
+    FallingDust(#[packet_serde(varying)] i32),
     Firework,
     Fishing,
     Flame,
@@ -189,7 +171,7 @@ pub struct TabCompleteMatch {
     tab_match: String,
     has_tooltip: bool,
     #[packet_serde(condition = "has_tooltip")]
-    tooltip: Option<chat::Component>,
+    tooltip: Option<Component>,
 }
 
 #[derive(WriteToPacket, ReadFromPacket)]
@@ -219,7 +201,7 @@ pub struct MapIcon {
     direction: i8,
     has_display_name: bool,
     #[packet_serde(condition = "has_display_name")]
-    display_name: Option<chat::Component>,
+    display_name: Option<Component>,
 }
 
 #[derive(WriteToPacket, ReadFromPacket)]
@@ -349,8 +331,8 @@ pub struct CriteriaProgress {
 
 #[derive(WriteToPacket, ReadFromPacket)]
 pub struct AdvancementDisplay {
-    title: chat::Component,
-    description: chat::Component,
+    title: Component,
+    description: Component,
     icon: Slot,
     #[packet_serde(varying)]
     frame_type: i32,
@@ -407,7 +389,7 @@ pub struct WrappedPlayerInfoAction {
 pub struct TagArray {
     #[packet_serde(varying)]
     length: i32,
-    data: Vec<Tag>
+    data: Vec<Tag>,
 }
 
 #[derive(WriteToPacket)]
@@ -416,5 +398,5 @@ pub struct Tag {
     #[packet_serde(varying)]
     count: i32,
     #[packet_serde(varying)]
-    entries: Vec<i32>
+    entries: Vec<i32>,
 }

@@ -9,7 +9,7 @@ use std::{
 pub enum ChunkIOError {
     IO(IOError),
     NbtStructure(NbtStructureError),
-    InvalidNbtData,
+    InvalidNbtData(String),
 }
 
 impl Display for ChunkIOError {
@@ -17,7 +17,7 @@ impl Display for ChunkIOError {
         match self {
             ChunkIOError::IO(error) => Display::fmt(error, f),
             ChunkIOError::NbtStructure(error) => Display::fmt(error, f),
-            ChunkIOError::InvalidNbtData => write!(f, "Invalid NBT Data"),
+            ChunkIOError::InvalidNbtData(msg) => write!(f, "Invalid NBT Data: {}", msg),
         }
     }
 }
@@ -27,7 +27,7 @@ impl Error for ChunkIOError {
         match self {
             ChunkIOError::IO(error) => Some(error),
             ChunkIOError::NbtStructure(error) => Some(error),
-            ChunkIOError::InvalidNbtData => None,
+            ChunkIOError::InvalidNbtData(_) => None,
         }
     }
 }

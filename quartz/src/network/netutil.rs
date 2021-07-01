@@ -1,16 +1,21 @@
 use byteorder::{BigEndian, ByteOrder};
-use chat::Component;
 use openssl::error::ErrorStack;
+use quartz_chat::Component;
 use quartz_nbt::NbtCompound;
-use std::{fmt::{self, Debug, Display, Formatter}, io::Cursor, ops::{Index, IndexMut}, ptr, slice::SliceIndex, str::{self, FromStr, Utf8Error}};
-use std::error::Error;
-use std::io;
-use util::UnlocalizedName;
+use quartz_util::UnlocalizedName;
+use std::{
+    error::Error,
+    fmt::{self, Debug, Display, Formatter},
+    io,
+    io::Cursor,
+    ops::{Index, IndexMut},
+    ptr,
+    slice::SliceIndex,
+    str::{self, FromStr, Utf8Error},
+};
 use uuid::Uuid;
 
-use crate::{
-    world::location::BlockPosition,
-};
+use crate::world::location::BlockPosition;
 
 /// A wrapper around a vec used for reading/writing packet data efficiently.
 pub struct PacketBuffer {
@@ -140,7 +145,10 @@ impl PacketBuffer {
     /// buffer, then `0` is returned.
     #[inline]
     pub fn peek(&self) -> Result<u8, PacketSerdeError> {
-        self.inner.get(self.cursor).copied().ok_or(PacketSerdeError::EndOfBuffer)
+        self.inner
+            .get(self.cursor)
+            .copied()
+            .ok_or(PacketSerdeError::EndOfBuffer)
     }
 
     /// Reads a byte from the buffer, returning `0` if no bytes remain.
@@ -150,8 +158,8 @@ impl PacketBuffer {
             Some(by) => {
                 self.cursor += 1;
                 Ok(by)
-            },
-            None => Err(PacketSerdeError::EndOfBuffer)
+            }
+            None => Err(PacketSerdeError::EndOfBuffer),
         }
     }
 
@@ -185,7 +193,10 @@ impl PacketBuffer {
     }
 
     #[inline]
-    pub fn read_array<T: ReadFromPacket>(&mut self, len: usize) -> Result<Vec<T>, PacketSerdeError> {
+    pub fn read_array<T: ReadFromPacket>(
+        &mut self,
+        len: usize,
+    ) -> Result<Vec<T>, PacketSerdeError> {
         let mut dest = Vec::with_capacity(len);
         for _ in 0 .. len {
             dest.push(T::read_from(self)?);
@@ -194,7 +205,10 @@ impl PacketBuffer {
     }
 
     #[inline]
-    pub fn read_array_varying<T: ReadFromPacket>(&mut self, len: usize) -> Result<Vec<T>, PacketSerdeError> {
+    pub fn read_array_varying<T: ReadFromPacket>(
+        &mut self,
+        len: usize,
+    ) -> Result<Vec<T>, PacketSerdeError> {
         let mut dest = Vec::with_capacity(len);
         for _ in 0 .. len {
             dest.push(T::varying_read_from(self)?);
@@ -209,7 +223,8 @@ impl PacketBuffer {
             return Err(PacketSerdeError::EndOfBuffer);
         }
 
-        let ret = str::from_utf8(&self.inner[self.cursor .. self.cursor + byte_len]).map_err(Into::into);
+        let ret =
+            str::from_utf8(&self.inner[self.cursor .. self.cursor + byte_len]).map_err(Into::into);
         self.cursor += byte_len;
         ret
     }
@@ -405,7 +420,7 @@ impl ReadFromPacket for i32 {
 
     fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut buf = [0u8; 5];
-        
+
         let len = buffer.remaining().min(buf.len());
         unsafe {
             let src = buffer.inner.as_ptr().add(buffer.cursor);
@@ -452,7 +467,7 @@ impl ReadFromPacket for i64 {
 
     fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut buf = [0u8; 10];
-        
+
         let len = buffer.remaining().min(buf.len());
         unsafe {
             let src = buffer.inner.as_ptr().add(buffer.cursor);
@@ -538,13 +553,7 @@ impl ReadFromPacket for String {
 
 impl ReadFromPacket for BlockPosition {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        let long = buffer.read::<i64>()? as u64;
-
-        let x = (long >> 38) as i32;
-        let y = (long & 0xFFF) as i16;
-        let z = (long << 26 >> 38) as i32;
-
-        Ok(BlockPosition { x, y, z })
+        Ok(BlockPosition::from_u64(buffer.read::<i64>()? as u64))
     }
 }
 
@@ -558,7 +567,7 @@ impl ReadFromPacket for UnlocalizedName {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         match UnlocalizedName::from_str(buffer.read_mc_str()?) {
             Ok(string) => Ok(string.to_owned()),
-            Err(error) => Err(PacketSerdeError::InvalidUnlocalizedName(error))
+            Err(error) => Err(PacketSerdeError::InvalidUnlocalizedName(error)),
         }
     }
 }
@@ -646,8 +655,8 @@ impl WriteToPacket for i32 {
                 break;
             }
         }
-        
-        buffer.write_bytes(&buf[..i]);
+
+        buffer.write_bytes(&buf[.. i]);
     }
 }
 
@@ -677,8 +686,8 @@ impl WriteToPacket for i64 {
                 break;
             }
         }
-        
-        buffer.write_bytes(&buf[..i]);
+
+        buffer.write_bytes(&buf[.. i]);
     }
 }
 
@@ -716,11 +725,7 @@ impl WriteToPacket for String {
 
 impl WriteToPacket for BlockPosition {
     fn write_to(&self, buffer: &mut PacketBuffer) {
-        buffer.write(
-            &((((self.x as u64 & 0x3FFFFFF) << 38)
-                | ((self.z as u64 & 0x3FFFFFF) << 12)
-                | (self.y as u64 & 0xFFF)) as i64),
-        );
+        buffer.write(&(self.as_u64() as i64));
     }
 }
 
@@ -762,22 +767,29 @@ pub enum PacketSerdeError {
     Nbt(io::Error),
     Network(io::Error),
     OpenSSL(ErrorStack),
-    Internal(&'static str)
+    Internal(&'static str),
 }
 
 impl Display for PacketSerdeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             PacketSerdeError::EndOfBuffer => write!(f, "Unexpectedly reached end of packet buffer"),
-            PacketSerdeError::VarIntOverflow => write!(f, "Variable-length integer or long overflowed while reading"),
+            PacketSerdeError::VarIntOverflow => write!(
+                f,
+                "Variable-length integer or long overflowed while reading"
+            ),
             PacketSerdeError::InvalidId(id) => write!(f, "Invalid packet ID encountered: {}", id),
             PacketSerdeError::Utf8Error(e) => Display::fmt(e, f),
-            PacketSerdeError::InvalidUnlocalizedName(uln) => write!(f, "Invalid unlocalized name encountered while reading: \"{}\"", uln),
+            PacketSerdeError::InvalidUnlocalizedName(uln) => write!(
+                f,
+                "Invalid unlocalized name encountered while reading: \"{}\"",
+                uln
+            ),
             PacketSerdeError::SerdeJson(e) => Display::fmt(e, f),
             PacketSerdeError::Nbt(e) => Display::fmt(e, f),
             PacketSerdeError::Network(e) => Display::fmt(e, f),
             PacketSerdeError::OpenSSL(e) => Display::fmt(e, f),
-            PacketSerdeError::Internal(msg) => Display::fmt(msg, f)
+            PacketSerdeError::Internal(msg) => Display::fmt(msg, f),
         }
     }
 }
@@ -790,7 +802,7 @@ impl Error for PacketSerdeError {
             PacketSerdeError::Nbt(e) => Some(e),
             PacketSerdeError::Network(e) => Some(e),
             PacketSerdeError::OpenSSL(e) => Some(e),
-            _ => None
+            _ => None,
         }
     }
 }

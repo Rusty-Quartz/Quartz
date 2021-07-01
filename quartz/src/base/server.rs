@@ -1,4 +1,13 @@
-use crate::{item::init_items, network::{*, packet::{WrappedServerBoundPacket, ServerBoundPacket, ClientBoundPacket}}, CommandExecutor, Config, Registry};
+use crate::{
+    item::init_items,
+    network::{
+        packet::{ClientBoundPacket, ServerBoundPacket, WrappedServerBoundPacket},
+        *,
+    },
+    CommandExecutor,
+    Config,
+    Registry,
+};
 use futures_lite::future;
 use linefeed::{
     complete::{Completer, Completion, Suffix},
@@ -24,11 +33,11 @@ use std::{
         Mutex,
     },
     thread::{self, JoinHandle},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant},
 };
 
 /// The string form of the minecraft version quartz currently supports.
-pub const VERSION: &str = "1.16.1";
+pub const VERSION: &str = "1.17";
 /// The state variable that controls whether or not the server and its various sub-processes are running.
 /// If set to false then the server will gracefully stop.
 pub(crate) static RUNNING: AtomicBool = AtomicBool::new(false);
@@ -40,11 +49,10 @@ pub fn is_running() -> bool {
 }
 
 /// The main struct containing all relevant data to the quartz server instance.
+// TODO: consider boxing some fields
 pub struct QuartzServer {
     /// The server config.
     pub config: Config,
-    /// The server registry, containing an API to access types, block data, item data, etc.
-    pub registry: Option<Registry>,
     /// The list of connected clients.
     pub(crate) client_list: ClientList,
     /// A handle to interact with the console.
@@ -75,7 +83,6 @@ impl QuartzServer {
 
         QuartzServer {
             config,
-            registry: Some(Registry::new()),
             client_list: ClientList::new(),
             console_interface,
             sync_packet_sender: sender,
@@ -108,22 +115,13 @@ impl QuartzServer {
             return false;
         }
 
-        // Extract the registry
-        let registry = match self.registry.take() {
-            Some(registry) => registry,
-            None => {
-                error!("Internal error: could not extract registry object during initialization.");
-                return false;
+        match Registry::init() {
+            Ok(()) => true,
+            Err(()) => {
+                error!("Failed to initialize registry. Was it already initialized?");
+                false
             }
-        };
-
-        // Initialize the global registry
-        if let Err(_) = Registry::set_global(registry) {
-            error!("Internal error: attempted to overwrite initialized global registry.");
-            return false;
         }
-
-        true
     }
 
     fn init_command_handler(&mut self) {
@@ -228,11 +226,16 @@ impl QuartzServer {
 
         let sync_packet_sender = self.sync_packet_sender.clone();
 
+        // TODO: consider adding more threads
         self.add_join_handle(
             "TCP Server Thread",
             thread::spawn(move || {
-                let executor = LocalExecutor::new();
-                future::block_on(executor.run(Self::tcp_server(listener, sync_packet_sender)));
+                let executor = Rc::new(LocalExecutor::new());
+                future::block_on(executor.run(Self::tcp_server(
+                    executor.clone(),
+                    listener,
+                    sync_packet_sender,
+                )));
             }),
         );
 
@@ -240,6 +243,7 @@ impl QuartzServer {
     }
 
     async fn tcp_server(
+        executor: Rc<LocalExecutor<'static>>,
         listener: TcpListener,
         sync_packet_sender: Sender<WrappedServerBoundPacket>,
     ) {
@@ -283,7 +287,8 @@ impl QuartzServer {
 
                     // Spawn a thread to handle the connection asynchronously
                     let key_pair_clone = key_pair.clone();
-                    smol::spawn(async move { handle_async_connection(conn, key_pair_clone).await })
+                    executor
+                        .spawn(async move { handle_async_connection(conn, key_pair_clone).await })
                         .detach();
 
                     next_connection_id += 1;
@@ -363,39 +368,32 @@ pub struct ServerClock {
     micros_ema: f32,
     full_tick_millis: u128,
     full_tick: Duration,
-    time: SystemTime,
+    time: Instant,
 }
 
 impl ServerClock {
     /// Creates a new clock with the given tick length in milliseconds.
     pub fn new(tick_length: u128) -> Self {
         ServerClock {
-            micros_ema: 0_f32,
+            micros_ema: 0f32,
             full_tick_millis: tick_length,
             full_tick: Duration::from_millis(tick_length as u64),
-            time: SystemTime::now(),
+            time: Instant::now(),
         }
     }
 
     /// Called at the start of a server tick.
     fn start(&mut self) {
-        self.time = SystemTime::now();
+        self.time = Instant::now();
     }
 
     /// The tick code has finished executing, so record the time and sleep if extra time remains.
     async fn finish_tick(&mut self) {
-        match self.time.elapsed() {
-            Ok(duration) => {
-                self.micros_ema =
-                    (99_f32 * self.micros_ema + duration.as_micros() as f32) / 100_f32;
+        let elapsed = self.time.elapsed();
+        self.micros_ema = (99f32 * self.micros_ema + elapsed.as_micros() as f32) / 100f32;
 
-                if duration.as_millis() < self.full_tick_millis {
-                    Timer::after(self.full_tick - duration).await;
-                }
-            }
-            Err(_) => {
-                Timer::after(self.full_tick).await;
-            }
+        if elapsed.as_millis() < self.full_tick_millis {
+            Timer::after(self.full_tick - elapsed).await;
         }
     }
 
@@ -403,23 +401,23 @@ impl ServerClock {
     /// tick cycles.
     #[inline]
     pub fn mspt(&self) -> f32 {
-        self.micros_ema / 1000_f32
+        self.micros_ema / 1000f32
     }
 
     /// Converts a milliseconds pet tick value to ticks per second.
     #[inline]
     pub fn as_tps(&self, mspt: f32) -> f32 {
         if mspt < self.full_tick_millis as f32 {
-            1000_f32 / (self.full_tick_millis as f32)
+            1000f32 / (self.full_tick_millis as f32)
         } else {
-            1000_f32 / mspt
+            1000f32 / mspt
         }
     }
 
     /// The maximum tps the server will tick at.
     #[inline]
     pub fn max_tps(&self) -> f32 {
-        1000_f32 / self.full_tick_millis as f32
+        1000f32 / self.full_tick_millis as f32
     }
 }
 

@@ -4,10 +4,10 @@ use crate::{
 };
 use log::info;
 use once_cell::sync::OnceCell;
+use quartz_util::UnlocalizedName;
 use serde::Deserialize;
 use serde_json::from_str;
 use std::{collections::HashMap, str::FromStr};
-use util::UnlocalizedName;
 
 static ITEM_LIST: OnceCell<HashMap<UnlocalizedName, Item>> = OnceCell::new();
 

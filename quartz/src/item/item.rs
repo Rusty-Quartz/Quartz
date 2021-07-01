@@ -1,7 +1,7 @@
 use crate::item::{get_item, ItemInfo};
 use quartz_nbt::NbtCompound;
+use quartz_util::UnlocalizedName;
 use std::str::FromStr;
-use util::UnlocalizedName;
 
 /// Represents a minecraft item
 #[derive(Debug)]

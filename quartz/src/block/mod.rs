@@ -16,9 +16,9 @@ pub use state::*;
 
 use crate::base::StateID;
 use behavior::BlockBehaviorSMT;
+use quartz_util::UnlocalizedName;
 use std::fmt::{self, Debug, Display, Formatter};
 use tinyvec::ArrayVec;
-use util::UnlocalizedName;
 
 /// A specific block type, not to be confused with a block state which specifies variants of a type. This
 /// is used as a data handle for block states.

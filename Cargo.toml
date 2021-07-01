@@ -2,7 +2,7 @@
 members = [
     "chat",
     "quartz",
-    "quartz_macros",
-    "quartz_macros_impl",
+    "macros",
+    "macros_impl",
     "util"
 ]

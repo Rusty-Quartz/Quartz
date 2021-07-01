@@ -4,7 +4,6 @@ use crate::{
     server::{self, QuartzServer},
     world::location::BlockPosition,
 };
-use chat::{color::PredefinedColor, Component};
 use hex::ToHex;
 use lazy_static::lazy_static;
 use log::{debug, error};
@@ -13,7 +12,9 @@ use openssl::{
     rsa::{Padding, Rsa},
     sha,
 };
+use quartz_chat::{color::PredefinedColor, Component};
 use quartz_commands::CommandModule;
+use quartz_util::UnlocalizedName;
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use serde::Deserialize;
@@ -22,7 +23,6 @@ use std::{
     str::FromStr,
     sync::{mpsc::Sender, Arc},
 };
-use util::UnlocalizedName;
 use uuid::Uuid;
 
 use super::AsyncWriteHandle;
@@ -51,7 +51,12 @@ impl AsyncPacketHandler {
 }
 
 impl AsyncPacketHandler {
-    async fn handle_handshake(&mut self, conn: &mut AsyncClientConnection, version: i32, next_state: i32) {
+    async fn handle_handshake(
+        &mut self,
+        conn: &mut AsyncClientConnection,
+        version: i32,
+        next_state: i32,
+    ) {
         if version != PROTOCOL_VERSION {
             conn.connection_state = ConnectionState::Disconnected;
             return;
@@ -433,7 +438,13 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_creative_inventory_action(&mut self, sender: usize, slot: i16, clicked_item: &Slot) {}
+    async fn handle_creative_inventory_action(
+        &mut self,
+        sender: usize,
+        slot: i16,
+        clicked_item: &Slot,
+    ) {
+    }
 
     #[allow(unused_variables)]
     async fn handle_update_jigsaw_block(
@@ -513,7 +524,14 @@ impl QuartzServer {
     async fn handle_set_displayed_recipe(&mut self, sender: usize, recipe_id: &UnlocalizedName) {}
 
     #[allow(unused_variables)]
-    async fn handle_steer_vehicle(&mut self, sender: usize, sideways: f32, forward: f32, flags: u8) {}
+    async fn handle_steer_vehicle(
+        &mut self,
+        sender: usize,
+        sideways: f32,
+        forward: f32,
+        flags: u8,
+    ) {
+    }
 
     #[allow(unused_variables)]
     async fn handle_pong(&mut self, sender: usize, id: i32) {}
@@ -567,7 +585,14 @@ impl QuartzServer {
     async fn handle_player_movement(&mut self, sender: usize, on_ground: bool) {}
 
     #[allow(unused_variables)]
-    async fn handle_player_rotation(&mut self, sender: usize, yaw: f32, pitch: f32, on_ground: bool) {}
+    async fn handle_player_rotation(
+        &mut self,
+        sender: usize,
+        yaw: f32,
+        pitch: f32,
+        on_ground: bool,
+    ) {
+    }
 
     #[allow(unused_variables)]
     async fn handle_vehicle_move(
@@ -636,7 +661,14 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_edit_book(&mut self, sender: usize, new_book: &Slot, is_signing: bool, hand: i32) {}
+    async fn handle_edit_book(
+        &mut self,
+        sender: usize,
+        new_book: &Slot,
+        is_signing: bool,
+        hand: i32,
+    ) {
+    }
 
     #[allow(unused_variables)]
     async fn handle_plugin_message(
@@ -680,7 +712,7 @@ impl QuartzServer {
         chat_colors: bool,
         displayed_skin_parts: u8,
         main_hand: i32,
-        disable_text_filtering: bool
+        disable_text_filtering: bool,
     ) {
     }
 
@@ -694,7 +726,8 @@ impl QuartzServer {
     async fn handle_set_difficulty(&mut self, sender: usize, new_difficulty: i8) {}
 
     #[allow(unused_variables)]
-    async fn handle_query_entity_nbt(&mut self, sender: usize, trasaction_id: i32, entity_id: i32) {}
+    async fn handle_query_entity_nbt(&mut self, sender: usize, trasaction_id: i32, entity_id: i32) {
+    }
 
     #[allow(unused_variables)]
     async fn handle_query_block_nbt(

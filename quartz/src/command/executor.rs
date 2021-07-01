@@ -1,5 +1,5 @@
 use crate::{command::CommandContext, server::RUNNING};
-use chat::{color::PredefinedColor, TextComponentBuilder};
+use quartz_chat::{color::PredefinedColor, TextComponentBuilder};
 use quartz_commands::{self, module, CommandModule};
 use std::sync::atomic::Ordering;
 

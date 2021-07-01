@@ -7,6 +7,7 @@ use crate::{
     },
 };
 use itertools::Itertools;
+use quartz_util::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::{
@@ -14,7 +15,6 @@ use std::{
     str::FromStr,
 };
 use tinyvec::ArrayVec;
-use util::UnlocalizedName;
 
 pub(crate) fn load_raw_block_data<'de>() -> HashMap<String, RawBlockInfo> {
     serde_json::from_str::<HashMap<String, RawBlockInfo>>(assets::BLOCK_INFO)

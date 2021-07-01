@@ -3,6 +3,8 @@
 
 //! Provides generic utilities for quartz, the minecraft server implementation in rust.
 
+/// Defines a fast hasher for numeric types.
+pub mod hash;
 /// Configures log4rs to copy minecraft's logging style.
 pub mod logging;
 /// Contains optimized maps where hash maps are insufficient.
@@ -55,9 +57,17 @@ mod tests {
         let value3 = Identifiable::new(3);
 
         let mut id_list: IdList<Identifiable> = IdList::with_capacity(5);
-        assert_eq!(id_list.add(value1), 0, "Incorrect ID assigned.");
-        assert_eq!(id_list.add(value2), 1, "Incorrect ID assigned (value 2).");
-        assert_eq!(id_list.add(value3), 2, "Incorrect ID assigned (value 3).");
+        assert_eq!(id_list.insert(value1), 0, "Incorrect ID assigned.");
+        assert_eq!(
+            id_list.insert(value2),
+            1,
+            "Incorrect ID assigned (value 2)."
+        );
+        assert_eq!(
+            id_list.insert(value3),
+            2,
+            "Incorrect ID assigned (value 3)."
+        );
         assert!(id_list.get(1).is_some(), "ID lookup failed.");
         let value2 = id_list.remove(1);
         assert!(
@@ -72,12 +82,12 @@ mod tests {
         let value4 = Identifiable::new(4);
 
         assert_eq!(
-            id_list.add(value2.unwrap()),
+            id_list.insert(value2.unwrap()),
             1,
             "Incorrect ID assigned after element removal."
         );
         assert_eq!(
-            id_list.add(value4),
+            id_list.insert(value4),
             3,
             "Incorrect ID assigned after element removal and readdition."
         );

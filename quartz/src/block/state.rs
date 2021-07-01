@@ -2,8 +2,8 @@ use crate::{
     base::*,
     block::{states::BlockStateData, Block},
 };
+use quartz_util::UnlocalizedName;
 use std::fmt::Debug;
-use util::UnlocalizedName;
 
 pub trait BlockStateImpl: Sized {
     type Builder: StateBuilder<Self>;

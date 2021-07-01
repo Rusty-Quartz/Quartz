@@ -10,7 +10,7 @@ use crate::{
 };
 use log::info;
 use once_cell::sync::OnceCell;
-use util::UnlocalizedName;
+use quartz_util::UnlocalizedName;
 
 static GLOBAL_STATIC_REGISTRY: OnceCell<StaticRegistry> = OnceCell::new();
 
@@ -26,7 +26,7 @@ pub struct StaticRegistry {
 }
 
 impl StaticRegistry {
-    pub fn new() -> Self {
+    pub(crate) fn init() -> Result<(), ()> {
         info!("Initializing static registry");
 
         info!("Initializing blocks");
@@ -35,15 +35,12 @@ impl StaticRegistry {
         let blocks = make_block_list(&raw).leak();
         let global_palette = make_static_global_palette(&raw, blocks).into_boxed_slice();
 
-        StaticRegistry {
-            blocks,
-            global_palette,
-        }
-    }
-
-    #[inline]
-    pub(crate) fn set_global(registry: Self) -> Result<(), Self> {
-        GLOBAL_STATIC_REGISTRY.set(registry)
+        GLOBAL_STATIC_REGISTRY
+            .set(StaticRegistry {
+                blocks,
+                global_palette,
+            })
+            .map_err(|_| ())
     }
 
     #[inline]

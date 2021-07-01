@@ -1,5 +1,5 @@
-use chat::{cfmt::parse_cfmt, Component};
 use log::*;
+use quartz_chat::{cfmt::parse_cfmt, Component};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     fs::{File, OpenOptions},

@@ -7,33 +7,38 @@ use crate::{
     base::{BlockState, StateID, BlockEntity},
     Registry
 };
-use array_init::array_init;
-use log::{error, warn};
+use log::warn;
 use num_traits::Zero;
-use quartz_nbt::{NbtCompound, NbtList};
+use quartz_nbt::{NbtCompound, NbtList, NbtStructureError, NbtReprError};
 use std::{
     collections::HashMap,
     fmt::{self, Debug, Formatter},
     str::FromStr,
 };
-use util::{
+use quartz_util::{
     math::fast_log2_64,
     single_access::{AccessGuard, SingleAccessor},
     UnlocalizedName,
+    hash::NumHasher
 };
+use std::ptr;
+
+pub const MAX_SECTION_COUNT: usize = 32;
 
 pub struct Chunk {
     block_offset: CoordinatePair,
-    sections: [Section<StateID>; 16],
-    block_entities: HashMap<BlockPosition, SingleAccessor<BlockEntity>>,
+    section_mapping: [u8; MAX_SECTION_COUNT],
+    sections: Vec<Section>,
+    block_entities: HashMap<u64, SingleAccessor<BlockEntity>, NumHasher>,
 }
 
 impl Chunk {
     pub fn from_nbt(nbt: &NbtCompound) -> Result<Chunk, ChunkIOError> {
         let mut chunk = Chunk {
             block_offset: CoordinatePair::new(0, 0),
-            sections: array_init(|_index| Section::default()),
-            block_entities: HashMap::new(),
+            section_mapping: [0u8; MAX_SECTION_COUNT],
+            sections: Vec::new(),
+            block_entities: HashMap::with_hasher(NumHasher),
         };
 
         // All of the actual data is stored in the inner "Level" tag
@@ -65,14 +70,12 @@ impl Chunk {
                 let state_name: &str = state.get("Name")?;
 
                 // Initialize the state builder
-                let mut state_builder = match BlockState::builder(
-                    &UnlocalizedName::from_str(state_name)
-                        .map_err(|_| ChunkIOError::InvalidNbtData)?,
-                ) {
+                let block_name = UnlocalizedName::from_str(state_name)
+                    .map_err(|error| ChunkIOError::InvalidNbtData(error.to_owned()))?;
+                let mut state_builder = match BlockState::builder(&block_name) {
                     Some(builder) => builder,
                     None => {
-                        error!("Unknown block state encountered: {}", state_name);
-                        return Err(ChunkIOError::InvalidNbtData);
+                        return Err(ChunkIOError::InvalidNbtData(format!("Unknown block state encountered: {}", state_name)));
                     }
                 };
 
@@ -89,30 +92,69 @@ impl Chunk {
                 index += 1;
             }
 
-            // TODO: Make sure that there aren't any bounds checks here, and consider putting data on the stack
-            let mut block_states = vec![StateID::zero(); 4096].into_boxed_slice();
             let mut state_reader =
                 CompactStateBuffer::from(section.get::<_, &[i64]>("BlockStates")?);
             let bits_per_index = Self::bits_for_palette_size(palette.len());
 
-            for state in block_states.iter_mut() {
-                *state = state_reader
+            // The following construction of the section is done using unsafe code to avoid blowing the
+            // cache due to the large size of Section.
+
+            // Reserve an additional section and grab a pointer to it
+            chunk.sections.reserve(1);
+            // Safety: we just allocated and additional section
+            let raw_section = unsafe { chunk.sections.as_mut_ptr().add(chunk.sections.len()) };
+
+            // Safety: we are only dereferencing so that the proc macro can find the appropriate field
+            let block_states = unsafe { ptr::addr_of_mut!((*raw_section).block_states) as *mut StateID };
+
+            // Write the states to the array
+            for offset in 0..4096 {
+                let state = state_reader
                     .read_index(bits_per_index)
                     .map(|index| palette.get(index))
                     .flatten()
                     .copied()
-                    .ok_or(ChunkIOError::InvalidNbtData)?;
+                    .ok_or(ChunkIOError::InvalidNbtData("Failed to map state index to palette.".to_owned()))?;
+                unsafe {
+                    ptr::write(block_states.add(offset), state);
+                }
             }
 
-            chunk.sections[section.get::<_, i8>("Y")? as usize] = Section {
-                block_states: Some(block_states),
-                lighting: section
-                    .get::<_, &[i8]>("SkyLight")
-                    .map(|lighting| lighting.iter().copied().map(|b| b as u8).collect())
-                    .ok(),
-            };
+            // Safety: same as for block_states
+            let lighting_raw = unsafe { ptr::addr_of_mut!((*raw_section).lighting) as *mut u8 };
+
+            match section.get::<_, &[i8]>("SkyLight") {
+                // If the lighting section exists, verify its length and copy it
+                Ok(lighting) => {
+                    if lighting.len() != 2048 {
+                        return Err(ChunkIOError::InvalidNbtData(format!("Invalid SkyLight field length: {}", lighting.len())));
+                    }
+
+                    // Safety: i8 and u8 have equivalent representations, and the length was asserted above
+                    unsafe {
+                        let src = lighting.as_ptr() as *const u8;
+                        ptr::copy_nonoverlapping(src, lighting_raw, 2048);
+                    }
+                },
+                // If the tag was missing, when write all zeroes
+                Err(NbtReprError::Structure(NbtStructureError::MissingTag)) => {
+                    unsafe {
+                        ptr::write_bytes(lighting_raw, 0, 2048);
+                    }
+                },
+                // Any other error is a hard error
+                Err(e) => return Err(e.into())
+            }
+
+            chunk.section_mapping[section.get::<_, i8>("Y")? as usize] = chunk.sections.len() as u8;
+
+            // Safety: section has been fully initialized
+            unsafe {
+                chunk.sections.set_len(chunk.sections.len() + 1);
+            }
         }
 
+        chunk.sections.shrink_to_fit();
         Ok(chunk)
     }
 
@@ -137,7 +179,7 @@ impl Chunk {
         absolute_position: BlockPosition,
     ) -> Option<&'static BlockState>
     {
-        match self.sections.get((absolute_position.y as usize) >> 4) {
+        match self.section_mapping.get((absolute_position.y as usize) >> 4).map(|&index| &self.sections[index as usize]) {
             Some(section) =>
                 Registry::state_for_id(section.block_id(self.section_index_absolute(absolute_position))),
             None => None,
@@ -149,7 +191,7 @@ impl Chunk {
         absolute_position: BlockPosition,
     ) -> Option<AccessGuard<'_, BlockEntity>>
     {
-        self.block_entities.get(&absolute_position)?.take()
+        self.block_entities.get(&absolute_position.as_u64())?.take()
     }
 }
 
@@ -159,36 +201,14 @@ impl Debug for Chunk {
     }
 }
 
-struct Section<T> {
-    block_states: Option<Box<[T]>>,
-    lighting: Option<Box<[u8]>>,
+struct Section {
+    block_states: [StateID; 4096],
+    lighting: [u8; 2048],
 }
 
-impl<T> Section<T> {
-    const fn new() -> Self {
-        Section {
-            block_states: None,
-            lighting: None,
-        }
+impl Section {
+    fn block_id(&self, index: usize) -> StateID {
+        self.block_states.get(index).copied().unwrap_or(StateID::zero())
     }
 }
 
-impl<T: Zero + Copy> Section<T> {
-    fn init(&mut self) {
-        self.block_states = Some(vec![T::zero(); 4096].into_boxed_slice());
-        self.lighting = Some(vec![0u8; 2048].into_boxed_slice());
-    }
-
-    fn block_id(&self, index: usize) -> T {
-        match self.block_states.as_ref() {
-            Some(block_states) => block_states.get(index).copied().unwrap_or(T::zero()),
-            None => T::zero(),
-        }
-    }
-}
-
-impl<T> Default for Section<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}

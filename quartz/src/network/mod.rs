@@ -1,8 +1,8 @@
 mod connection;
+mod handler;
 mod netutil;
-mod packet_handler;
 pub mod packet;
 
 pub use connection::*;
+pub use handler::*;
 pub use netutil::*;
-pub use packet_handler::*;

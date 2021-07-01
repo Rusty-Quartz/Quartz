@@ -1,9 +1,9 @@
 pub mod packet;
 
-use quote::quote;
 use proc_macro2::{Span, TokenStream};
-use syn::{Ident, Error, Type, Result, PathArguments, GenericArgument};
 use proc_macro_crate::{crate_name, FoundCrate};
+use quote::quote;
+use syn::{Error, GenericArgument, Ident, PathArguments, Result, Type};
 
 pub fn the_crate() -> TokenStream {
     match crate_name("quartz") {

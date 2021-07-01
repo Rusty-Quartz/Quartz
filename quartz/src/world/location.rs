@@ -1,5 +1,6 @@
 use std::{
     fmt::{self, Debug, Display, Formatter},
+    hash::{Hash, Hasher},
     ops::{Shl, Shr},
 };
 
@@ -8,6 +9,22 @@ pub struct BlockPosition {
     pub x: i32,
     pub y: i16,
     pub z: i32,
+}
+
+impl BlockPosition {
+    pub fn from_u64(value: u64) -> Self {
+        let x = (value >> 38) as i32;
+        let y = (value & 0xFFF) as i16;
+        let z = (value << 26 >> 38) as i32;
+
+        BlockPosition { x, y, z }
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        ((self.x as u64 & 0x3FFFFFF) << 38)
+            | ((self.z as u64 & 0x3FFFFFF) << 12)
+            | (self.y as u64 & 0xFFF)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -30,35 +47,27 @@ impl Coordinate {
         Self::Region(CoordinatePair::new(x, z))
     }
 
-    pub const fn into_block(self) -> Self {
+    pub const fn as_block(&self) -> Self {
         match self {
-            Coordinate::Block(_) => self,
-            Coordinate::Chunk(pair) => Self::block(pair.x << 4, pair.z << 4),
-            Coordinate::Region(pair) => Self::block(pair.x << 9, pair.z << 9),
+            Coordinate::Block(_) => *self,
+            &Coordinate::Chunk(pair) => Self::block(pair.x << 4, pair.z << 4),
+            &Coordinate::Region(pair) => Self::block(pair.x << 9, pair.z << 9),
         }
     }
 
-    pub const fn into_chunk(self) -> Self {
+    pub const fn as_chunk(&self) -> Self {
         match self {
-            Coordinate::Block(pair) => Self::chunk(pair.x >> 4, pair.z >> 4),
-            Coordinate::Chunk(_) => self,
-            Coordinate::Region(pair) => Self::chunk(pair.x << 5, pair.z << 5),
+            &Coordinate::Block(pair) => Self::chunk(pair.x >> 4, pair.z >> 4),
+            Coordinate::Chunk(_) => *self,
+            &Coordinate::Region(pair) => Self::chunk(pair.x << 5, pair.z << 5),
         }
     }
 
-    pub const fn into_region(self) -> Self {
+    pub const fn as_region(&self) -> Self {
         match self {
-            Coordinate::Block(pair) => Self::region(pair.x >> 9, pair.z >> 9),
-            Coordinate::Chunk(pair) => Self::region(pair.x >> 5, pair.z >> 5),
-            Coordinate::Region(_) => self,
-        }
-    }
-
-    pub const fn into_inner(self) -> CoordinatePair {
-        match self {
-            Coordinate::Block(pair) => pair,
-            Coordinate::Chunk(pair) => pair,
-            Coordinate::Region(pair) => pair,
+            &Coordinate::Block(pair) => Self::region(pair.x >> 9, pair.z >> 9),
+            &Coordinate::Chunk(pair) => Self::region(pair.x >> 5, pair.z >> 5),
+            Coordinate::Region(_) => *self,
         }
     }
 }
@@ -83,7 +92,7 @@ impl Debug for Coordinate {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct CoordinatePair {
     pub x: i32,
     pub z: i32,
@@ -107,6 +116,16 @@ impl Debug for CoordinatePair {
     }
 }
 
+impl From<Coordinate> for CoordinatePair {
+    fn from(coords: Coordinate) -> Self {
+        match coords {
+            Coordinate::Block(pair) => pair,
+            Coordinate::Chunk(pair) => pair,
+            Coordinate::Region(pair) => pair,
+        }
+    }
+}
+
 impl Shl<usize> for CoordinatePair {
     type Output = CoordinatePair;
 
@@ -124,5 +143,11 @@ impl Shr<usize> for CoordinatePair {
         self.x >>= shift;
         self.z >>= shift;
         self
+    }
+}
+
+impl Hash for CoordinatePair {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64((self.x as u64) << 32 | self.z as u64);
     }
 }

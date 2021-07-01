@@ -1,7 +1,7 @@
 use crate::{CommandExecutor, QuartzServer};
-use chat::component::Component;
 use linefeed::{terminal::DefaultTerminal, Interface};
 use log::error;
+use quartz_chat::component::Component;
 use std::sync::Arc;
 
 /// The context in which a command is executed. This has no use outside the lifecycle of a command.

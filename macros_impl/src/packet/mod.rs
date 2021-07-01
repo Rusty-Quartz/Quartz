@@ -5,17 +5,17 @@ pub use gen::*;
 pub use parse::*;
 
 use proc_macro2::TokenStream;
-use syn::{DeriveInput, Data};
+use syn::{Data, DeriveInput};
 
 pub fn derive_write_to_packet_impl(input: DeriveInput) -> TokenStream {
     match &input.data {
         Data::Enum(data) => {
             let variants = match parse_enum(data, Side::Write) {
                 Ok(variants) => variants,
-                Err(e) => return e.to_compile_error().into()
+                Err(e) => return e.to_compile_error().into(),
             };
             gen_enum_serializer_impl(input, &variants).into()
-        },
+        }
         _ => {
             let fields = match parse_fields(&input, Side::Write) {
                 Ok(fields) => fields,
@@ -37,5 +37,5 @@ pub fn derive_read_from_packet_impl(input: DeriveInput) -> TokenStream {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Side {
     Read,
-    Write
+    Write,
 }
