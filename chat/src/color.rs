@@ -7,7 +7,7 @@ use termion::{color, style};
 
 /// Highest level definition of a chat color which can either be predefined or custom as of minecraft
 /// 1.16.
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Color {
     /// A predefined color.
@@ -35,10 +35,10 @@ impl Color {
         match self {
             Color::Predefined(color) => color.apply(f),
             // Dividing by 43 maps the color to the correct ANSI range of [0,5]
-            Color::Custom(r, g, b) => write!(
+            &Color::Custom(r, g, b) => write!(
                 f,
                 "{}",
-                color::Fg(color::AnsiValue::rgb(*r / 43, *g / 43, *b / 43))
+                color::Fg(color::AnsiValue::rgb(r / 43, g / 43, b / 43))
             ),
         }
     }
@@ -86,7 +86,7 @@ impl From<PredefinedColor> for Color {
 }
 
 /// All predefined color types.
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[allow(missing_docs)]
 pub enum PredefinedColor {

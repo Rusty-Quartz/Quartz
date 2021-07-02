@@ -1,9 +1,10 @@
 use crate::{
-    builder::TextComponentBuilder,
+    builder::ComponentBuilder,
     color::{Color, PredefinedColor},
 };
 use quartz_nbt::{NbtCompound, NbtList, NbtTag};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use serde_with::skip_serializing_none;
 use std::{
     fmt::{self, Display, Formatter},
@@ -13,109 +14,17 @@ use std::{
 #[cfg(unix)]
 use termion::style;
 
-/// The generalized component type, including: text, translate, selector, keybind, and nbt components.
+/// A chat component. All type-specific information is stored in the field `component_type`.
 #[skip_serializing_none]
-#[derive(Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Component {
-    /// A text component.
-    Text(TextComponent),
-    /// A translate component which requires values to be inserted into a predefined format.
-    Translate {
-        /// The unlocalized translation ID to use for this component.
-        translate: String,
-        /// The components to insert into the translation.
-        with: Option<Vec<Component>>,
-    },
-    /// A component consisting of an entity selector, such as `@a` or `@e[distance=..3]`.
-    Selector {
-        /// The selector in string-form.
-        selector: String,
-    },
-    /// Used to display the client's current keybind for the specified key.
-    Keybind {
-        /// They key whose binding should be specified.
-        keybind: String,
-    }, // TODO: Add score components
-}
-
-impl Component {
-    /// Creates a text component with the given text and no color.
-    pub fn text(text: String) -> Self {
-        Component::Text(TextComponent::new(text, None))
-    }
-
-    /// Creates a component with the given text and predefined color.
-    pub fn colored<C: Into<Color>>(text: String, color: C) -> Self {
-        Component::Text(TextComponent::new(text, Some(color.into())))
-    }
-
-    /// Converts this component into plain, uncolored text.
-    pub fn as_plain_text(&self) -> String {
-        match self {
-            Component::Text(text_component) => text_component.as_plain_text(),
-            // TODO: Implement this for other component types
-            _ => serde_json::to_string(self).unwrap_or("{}".to_owned()),
-        }
-    }
-}
-
-impl From<TextComponent> for Component {
-    fn from(text_component: TextComponent) -> Self {
-        Component::Text(text_component)
-    }
-}
-
-impl Default for Component {
-    fn default() -> Self {
-        Component::Text(TextComponent::new(String::new(), None))
-    }
-}
-
-impl Display for Component {
-    // Display the component
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            // Handled by the text component struct
-            Component::Text(inner) => inner.fmt(f),
-            // TODO: implement the translate component
-            _ => match serde_json::to_string(self) {
-                Ok(string) => write!(f, "{}", string),
-                Err(_) => write!(f, "{{}}"),
-            },
-        }
-    }
-}
-
-/// A type which can be displayed by a series of components. These components should present data in a friendly,
-/// user-facing format.
-pub trait ToComponentParts {
-    /// Creates a series of components representing the data in this object.
-    fn to_component_parts(&self) -> Vec<Component>;
-}
-
-/// A type which can be converted into a single component to be displayed. This trait requires `ToComponentParts`,
-/// and by default will create an empty text component color white whose children are the components produced by
-/// `to_component_parts`.
-pub trait ToComponent: ToComponentParts {
-    /// Creates a component representing the data in this object.
-    fn to_component(&self) -> Component {
-        let mut text_component =
-            TextComponent::new(String::new(), Some(PredefinedColor::White.into()));
-        text_component.extra = Some(self.to_component_parts());
-        Component::Text(text_component)
-    }
-}
-
-/// A component with text, color, formatting, click/hover events, etc.
-#[skip_serializing_none]
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TextComponent {
-    /// The raw text in the component.
-    pub text: String,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Component {
+    /// The type of this component and its type-specific data.
+    #[serde(flatten)]
+    pub component_type: ComponentType,
     /// The color of the component.
     pub color: Option<Color>,
+    /// The font of the component.
+    pub font: Option<String>,
     /// Whether or not the component should be obfuscated.
     pub obfuscated: Option<bool>,
     /// Whether or not the component should be bolded.
@@ -136,12 +45,15 @@ pub struct TextComponent {
     pub extra: Option<Vec<Component>>,
 }
 
-impl TextComponent {
-    /// Creates a new text component with the given text and color.
-    pub fn new(text: String, color: Option<Color>) -> Self {
-        TextComponent {
-            text,
-            color,
+impl Component {
+    /// Creates an empty text component with no color, formatting, etc.
+    pub const fn empty() -> Self {
+        Component {
+            component_type: ComponentType::Text {
+                text: String::new(),
+            },
+            color: None,
+            font: None,
             obfuscated: None,
             bold: None,
             strikethrough: None,
@@ -154,45 +66,36 @@ impl TextComponent {
         }
     }
 
-    /// Creates a text component with the given text, copying the color and formatting of the given component.
-    pub fn copy_formatting(text: String, component: &TextComponent) -> Self {
-        TextComponent {
-            text,
-            color: component.color,
-            obfuscated: component.obfuscated,
-            bold: component.bold,
-            strikethrough: component.strikethrough,
-            underline: component.underline,
-            italic: component.italic,
-            insertion: None,
-            click_event: None,
-            hover_event: None,
-            extra: None,
+    /// Creates a text component with the given text and no color.
+    pub fn text<T: ToString>(text: T) -> Self {
+        Component {
+            component_type: ComponentType::Text {
+                text: text.to_string(),
+            },
+            ..Default::default()
         }
     }
 
-    /// Returns whether or not the text is empty.
-    pub fn is_empty(&self) -> bool {
-        self.text.is_empty()
+    /// Creates a component with the given text and predefined color.
+    pub fn colored<C: Into<Color>>(text: String, color: C) -> Self {
+        Component {
+            component_type: ComponentType::Text { text },
+            color: Some(color.into()),
+            ..Default::default()
+        }
     }
 
-    /// Converts this component into plain text by concatenating this component's text field with its children's text
-    /// fields.
+    /// Converts this component into plain, uncolored text.
     pub fn as_plain_text(&self) -> String {
-        let mut text = self.text.clone();
-
-        // Append children's text
-        if let Some(children) = &self.extra {
-            for child in children.iter() {
-                text.push_str(&child.as_plain_text());
-            }
+        match &self.component_type {
+            ComponentType::Text { text } => text.clone(),
+            // TODO: Implement this for other component types
+            _ => serde_json::to_string(self).unwrap_or("{}".to_owned()),
         }
-
-        text
     }
 
     /// Adds the given child, creating the children vec if needed.
-    pub fn add_child(&mut self, component: Component) {
+    pub fn add_child(&mut self, component: Self) {
         match &mut self.extra {
             Some(children) => children.push(component),
             None => self.extra = Some(vec![component]),
@@ -205,6 +108,18 @@ impl TextComponent {
             .as_ref()
             .map(|extra| !extra.is_empty())
             .unwrap_or(false)
+    }
+
+    fn write_text(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.component_type {
+            ComponentType::Text { text } => write!(f, "{}", text),
+            // TODO: Implement this for other component types
+            _ => write!(
+                f,
+                "{}",
+                serde_json::to_string(self).unwrap_or("{}".to_owned())
+            ),
+        }
     }
 
     // Apply just the formatting of this component
@@ -238,7 +153,13 @@ impl TextComponent {
     }
 }
 
-impl Display for TextComponent {
+impl Default for Component {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl Display for Component {
     #[cfg(unix)]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Gnome supports hyperlinks, so if we have a link as the click event, apply it
@@ -255,7 +176,7 @@ impl Display for TextComponent {
         self.apply_format(f)?;
 
         // Write the text
-        write!(f, "{}", self.text)?;
+        self.write_text(f)?;
 
         // Write the children
         if let Some(children) = &self.extra {
@@ -280,7 +201,7 @@ impl Display for TextComponent {
 
     #[cfg(not(unix))]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.text)?;
+        self.write_text(f)?;
         if let Some(children) = &self.extra {
             for child in children.iter() {
                 child.fmt(f)?;
@@ -290,8 +211,103 @@ impl Display for TextComponent {
     }
 }
 
+/// The type of a component and all fields pertinent to that component type.
+#[skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ComponentType {
+    /// A text component.
+    Text {
+        /// The text in the component.
+        text: String,
+    },
+    /// A translate component which requires values to be inserted into a predefined format.
+    Translate {
+        /// The unlocalized translation ID to use for this component.
+        translate: String,
+        /// The components to insert into the translation.
+        with: Option<Vec<Component>>,
+    },
+    /// Used to display the client's current keybind for the specified key.
+    Keybind {
+        /// They key whose binding should be specified.
+        keybind: String,
+    },
+    /// A component consisting of an entity selector, such as `@a` or `@e[distance=..3]`.
+    Selector {
+        /// The selector in string-form.
+        selector: String,
+    },
+    /// A score component consisting of data about a scoreboard.
+    Score {
+        /// The score data.
+        score: ScoreComponentData,
+    },
+}
+
+impl ComponentType {
+    /// Creates a new text component type with the given text.
+    pub fn text<T: ToString>(text: T) -> Self {
+        ComponentType::Text {
+            text: text.to_string(),
+        }
+    }
+
+    /// Creates a new translate component type with the given `translate` and `with` fields.
+    pub fn translate(translate: String, with: Option<Vec<Component>>) -> Self {
+        ComponentType::Translate { translate, with }
+    }
+
+    /// Creates a new keybind component type with the given keybing string.
+    pub fn keybind(keybind: String) -> Self {
+        ComponentType::Keybind { keybind }
+    }
+
+    /// Creates a new selector component type with the given selector string.
+    pub fn selector(selector: String) -> Self {
+        ComponentType::Selector { selector }
+    }
+
+    /// Creates a new score component type with the given fields.
+    pub fn score(name: String, value: Option<Value>, objective: String) -> Self {
+        ComponentType::Score {
+            score: ScoreComponentData {
+                name,
+                value,
+                objective,
+            },
+        }
+    }
+}
+
+/// The data for the `Score` component type.
+#[skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScoreComponentData {
+    /// The name or selector of the entity to which this data pertains.
+    pub name: String,
+    /// The resolved value of the scoreboard data.
+    pub value: Option<Value>,
+    /// The name of the objective of the associated scoreboard.
+    pub objective: String,
+}
+
+/// A type which can be displayed by a component or series of components. These components should present data in a friendly,
+/// user-facing format.
+pub trait ToComponent {
+    /// Creates a series of components representing the data in this object.
+    fn to_component_parts(&self) -> Vec<Component>;
+
+    /// Creates a component representing the data in this object.
+    fn to_component(&self) -> Component {
+        let mut component = Component::colored(String::new(), PredefinedColor::White);
+        component.extra = Some(self.to_component_parts());
+        component
+    }
+}
+
 /// Defines click events for text components.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ClickEvent {
     action: ClickEventType,
     value: EventArgument,
@@ -329,20 +345,29 @@ impl ClickEvent {
             value: EventArgument::Index(index),
         }
     }
+
+    /// Creates a click even which copies the given data to the client's clipboard.
+    pub fn copy_to_clipboard(data: String) -> Self {
+        ClickEvent {
+            action: ClickEventType::CopyToClipboard,
+            value: EventArgument::Text(data),
+        }
+    }
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum ClickEventType {
     OpenUrl,
     RunCommand,
     SuggestCommand,
     ChangePage,
+    CopyToClipboard,
 }
 
 /// Defines hover events for text components.
 #[skip_serializing_none]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HoverEvent {
     action: HoverEventType,
     contents: Option<HoverContents>,
@@ -411,7 +436,7 @@ impl HoverEvent {
     }
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum HoverEventType {
     ShowText,
@@ -421,7 +446,7 @@ enum HoverEventType {
 
 // The contents variable in the hover event
 #[skip_serializing_none]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum HoverContents {
     Component(Component),
@@ -432,7 +457,7 @@ enum HoverContents {
 
 /// Defines an item profile which can be displayed through hover events.
 #[skip_serializing_none]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HoverItem {
     id: String,
     count: u8,
@@ -441,7 +466,7 @@ pub struct HoverItem {
 
 /// Defines an entity profile which can be displayed through hover events.
 #[skip_serializing_none]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HoverEntity {
     id: String,
     name: Option<Component>,
@@ -450,7 +475,7 @@ pub struct HoverEntity {
 }
 
 // The generalized event argument
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum EventArgument {
     Component(Component),
@@ -458,17 +483,16 @@ enum EventArgument {
     Index(u32),
 }
 
-impl ToComponentParts for NbtTag {
+impl ToComponent for NbtTag {
     fn to_component_parts(&self) -> Vec<Component> {
         macro_rules! primitive_to_component {
             ($value:expr) => {
-                TextComponentBuilder::empty()
-                    .add()
-                    .text(format!("{}", $value))
-                    .predef_color(PredefinedColor::Gold)
-                    .add()
-                    .text(self.type_specifier().to_owned())
-                    .predef_color(PredefinedColor::Red)
+                ComponentBuilder::new()
+                    .add_empty()
+                    .color(PredefinedColor::Gold)
+                    .add_text(format!("{}", $value))
+                    .color(PredefinedColor::Red)
+                    .add_text(self.type_specifier())
                     .build_children()
             };
         }
@@ -477,41 +501,33 @@ impl ToComponentParts for NbtTag {
             ($list:expr) => {{
                 // Handle the empty case
                 if $list.is_empty() {
-                    return TextComponentBuilder::empty()
-                        .add()
-                        .text("[".to_owned())
-                        .add()
-                        .text(self.type_specifier().to_owned())
-                        .predef_color(PredefinedColor::Red)
-                        .add()
-                        .text(";]".to_owned())
+                    return ComponentBuilder::new()
+                        .add_empty()
+                        .color(PredefinedColor::Red)
+                        .add_text(self.type_specifier())
+                        .add_text(";]")
                         .build_children();
                 }
 
                 // 1+ elements
 
-                let mut builder = TextComponentBuilder::empty()
-                    .add()
-                    .text("[".to_owned())
-                    .add()
-                    .text(self.type_specifier().to_owned())
-                    .predef_color(PredefinedColor::Red)
-                    .add()
-                    .text("; ".to_owned())
-                    .add()
-                    .text(format!("{}", $list[0]))
-                    .predef_color(PredefinedColor::Gold);
+                let mut builder = ComponentBuilder::new()
+                    .add_empty()
+                    .add_text("[")
+                    .color(PredefinedColor::Red)
+                    .add_text(self.type_specifier())
+                    .add_text("; ")
+                    .color(PredefinedColor::Gold)
+                    .add_text(format!("{}", $list[0]));
 
                 for element in $list.iter().skip(1) {
                     builder = builder
-                        .add()
-                        .text(", ".to_owned())
-                        .add()
-                        .text(format!("{}", element))
-                        .predef_color(PredefinedColor::Gold);
+                        .add_text(", ")
+                        .color(PredefinedColor::Gold)
+                        .add_text(format!("{}", element));
                 }
 
-                builder.add().text("]".to_owned()).build_children()
+                builder.add_text("]").build_children()
             }};
         }
 
@@ -545,14 +561,12 @@ impl ToComponentParts for NbtTag {
                     snbt_string.push(ch);
                 }
 
-                TextComponentBuilder::empty()
-                    .add()
-                    .text(surrounding.to_string())
-                    .add()
-                    .text(snbt_string)
-                    .predef_color(PredefinedColor::Green)
-                    .add()
-                    .text(surrounding.to_string())
+                ComponentBuilder::new()
+                    .add_empty()
+                    .add_text(surrounding)
+                    .color(PredefinedColor::Green)
+                    .add_text(snbt_string)
+                    .add_text(surrounding)
                     .build_children()
             }
             NbtTag::List(value) => value.to_component_parts(),
@@ -563,9 +577,7 @@ impl ToComponentParts for NbtTag {
     }
 }
 
-impl ToComponent for NbtTag {}
-
-impl ToComponentParts for NbtList {
+impl ToComponent for NbtList {
     fn to_component_parts(&self) -> Vec<Component> {
         if self.is_empty() {
             return vec![Component::text("[]".to_owned())];
@@ -585,19 +597,17 @@ impl ToComponentParts for NbtList {
     }
 }
 
-impl ToComponent for NbtList {}
-
-impl ToComponentParts for NbtCompound {
+impl ToComponent for NbtCompound {
     fn to_component_parts(&self) -> Vec<Component> {
         if self.is_empty() {
-            return vec![Component::text("{}".to_owned())];
+            return vec![Component::text("{}")];
         }
 
         let mut components = Vec::with_capacity(2 + 3 * self.len());
 
         // Grab the elements and push the first one
         let elements = self.as_ref().iter().collect::<Vec<(&String, &NbtTag)>>();
-        components.push(Component::text("{".to_owned()));
+        components.push(Component::text("{"));
 
         // Push the rest of the elements
         for element in elements.iter() {
@@ -620,22 +630,20 @@ impl ToComponentParts for NbtCompound {
             // They key can be pushed as-is
             else {
                 if components.len() > 1 {
-                    components.push(Component::text(", ".to_owned()));
+                    components.push(Component::text(", "));
                 }
                 components.push(Component::colored(
                     element.0.to_owned(),
                     PredefinedColor::Aqua,
                 ));
-                components.push(Component::text(": ".to_owned()));
+                components.push(Component::text(": "));
             }
 
             // Add the tag's components
             components.extend(element.1.to_component_parts());
         }
 
-        components.push(Component::text("}".to_owned()));
+        components.push(Component::text("}"));
         components
     }
 }
-
-impl ToComponent for NbtCompound {}

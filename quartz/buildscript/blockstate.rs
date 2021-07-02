@@ -1,8 +1,14 @@
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::{Ident, Literal, TokenStream};
 use quote::{format_ident, quote};
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::{BTreeMap, HashMap},
+    env,
+    fs,
+    path::Path,
+    slice::Iter,
+};
 use syn::Expr;
-use std::{collections::{BTreeMap, HashMap}, slice::Iter, env, fs, path::Path};
 
 pub fn gen_blockstates() {
     // set the output file
@@ -24,13 +30,18 @@ pub fn gen_blockstates() {
     let struct_enum = gen_struct_enum(&data);
     let lookup = gen_name_lookup(&data);
 
-    fs::write(&dest_path, quote! {
-        use phf::{phf_map};
-        #enums
-        #structs
-        #struct_enum
-        #lookup
-    }.to_string()).unwrap();
+    fs::write(
+        &dest_path,
+        quote! {
+            use phf::{phf_map};
+            #enums
+            #structs
+            #struct_enum
+            #lookup
+        }
+        .to_string(),
+    )
+    .unwrap();
     super::format_in_place(dest_path.as_os_str());
 
     println!("cargo:rerun-if-changed=./assets/blocks.json");
@@ -224,9 +235,10 @@ fn update_block_property_names(
 
             let vals = block_properties.properties.get(&og_name).unwrap().clone();
             block_properties.properties.remove(&og_name);
-            block_properties
-                .properties
-                .insert(property.name.clone()/*.replace("Type", "r#type")*/, vals);
+            block_properties.properties.insert(
+                property.name.clone(), /*.replace("Type", "r#type")*/
+                vals,
+            );
         }
     }
 }
@@ -288,7 +300,7 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
             let mut vecs = (Vec::new(), Vec::new(), Vec::new());
             let (field_names, field_names_str, type_names) = block_info.properties.iter().fold(&mut vecs, |vecs, (property_name, values)| {
                 let (field_names, field_names_str, type_names) = vecs;
-                
+
                 let lowercase_name = get_original_property_name(&PropertyData {
                     name: property_name.to_owned(),
                     values: values.to_owned(),
@@ -303,7 +315,7 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
                 } else {
                     property_name.replace('_', "")
                 })));
-                
+
                 vecs
             });
 
@@ -348,8 +360,8 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
             }
         })
         .collect::<Vec<_>>();
-    
-    quote!{
+
+    quote! {
         #(#structs)*
     }
 }
@@ -360,10 +372,10 @@ fn gen_id_eq(states: &mut Iter<(&Ident, &Ident)>) -> Option<TokenStream> {
 
     Some(match last {
         Some(prev) => {
-            quote!{
+            quote! {
                 (#prev) * #type_name::count() + self.#field as u16
             }
-        },
+        }
         None => {
             quote! {
                 self.#field as u16
@@ -373,43 +385,54 @@ fn gen_id_eq(states: &mut Iter<(&Ident, &Ident)>) -> Option<TokenStream> {
 }
 
 fn gen_struct_enum(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
+    let output = block_data
+        .iter()
+        .map(|(uln_name, block_data)| {
+            let block_str = snake_to_camel(&get_block_name(uln_name));
+            let block = format_ident!("{}", block_str);
+            let block_state = format_ident!("{}State", block_str);
 
-    let output = block_data.iter().map(|(uln_name, block_data)| {
-        let block_str = snake_to_camel(&get_block_name(uln_name));
-        let block = format_ident!("{}", block_str);
-        let block_state = format_ident!("{}State", block_str);
-
-        if block_data.properties.len() == 0 {
-            (quote!{
-                Self::#block => None
-            }, quote!{
-                #block
-            })
-        } else {
-            (quote!{
-                Self::#block(data) => Some(Self::#block(data.with_property(name, value)?))
-            }, quote!{
-                #block(#block_state)
-            })
-        }
-    }).unzip();
+            if block_data.properties.len() == 0 {
+                (
+                    quote! {
+                        Self::#block => None
+                    },
+                    quote! {
+                        #block
+                    },
+                )
+            } else {
+                (
+                    quote! {
+                        Self::#block(data) => Some(Self::#block(data.with_property(name, value)?))
+                    },
+                    quote! {
+                        #block(#block_state)
+                    },
+                )
+            }
+        })
+        .unzip();
 
     let block_names: Vec<TokenStream> = output.1;
     let with_properties: Vec<TokenStream> = output.0;
 
-    let ids = block_data.iter().map(|(uln_name, block_data) | {
-        let name = format_ident!("{}", snake_to_camel(&get_block_name(uln_name)));
-        if block_data.properties.len() == 0 {
-            let id = block_data.states[0].id;
-            quote!{
-                Self::#name => #id
+    let ids = block_data
+        .iter()
+        .map(|(uln_name, block_data)| {
+            let name = format_ident!("{}", snake_to_camel(&get_block_name(uln_name)));
+            if block_data.properties.len() == 0 {
+                let id = block_data.states[0].id;
+                quote! {
+                    Self::#name => #id
+                }
+            } else {
+                quote! {
+                    Self::#name(data) => data.id()
+                }
             }
-        } else {
-            quote!{
-                Self::#name(data) => data.id()
-            }
-        }
-    }).collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
 
     quote! {
         #[derive(Clone, Copy, Debug)]
@@ -436,20 +459,27 @@ fn gen_struct_enum(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
 }
 
 fn gen_name_lookup(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
-
     let lookups = block_data.iter().map(|(uln_name, block_data)| {
+        let identifier = Literal::string(&uln_name[
+            uln_name
+                .char_indices()
+                .find(|&(_, ch)| ch == ':')
+                .map(|(index, _)| index + 1)
+                .unwrap()
+                ..
+        ]);
         let block_str = snake_to_camel(&get_block_name(uln_name));
         let block = format_ident!("{}", block_str);
         let block_state = format_ident!("{}State", block_str);
         let internal_id = block_data.interm_id;
-        
+
         if block_data.properties.len() == 0 {
             quote! {
-                #uln_name => BlockStateMetadata::new(BlockStateData::#block, #internal_id)
+                #identifier => BlockStateMetadata::new(BlockStateData::#block, #internal_id)
             }
         } else {
             quote! {
-                #uln_name => BlockStateMetadata::new(BlockStateData::#block(#block_state::const_default()), #internal_id)
+                #identifier => BlockStateMetadata::new(BlockStateData::#block(#block_state::const_default()), #internal_id)
             }
         }
     }).collect::<Vec<_>>();

@@ -1,6 +1,6 @@
 use crate::{
     color::{Color, PredefinedColor},
-    component::{ClickEvent, Component, HoverEvent, TextComponent},
+    component::{ClickEvent, Component, ComponentType, HoverEvent},
 };
 
 /// Utility struct for building text components. Components can have children, and those children
@@ -8,8 +8,8 @@ use crate::{
 /// standalone child components. A new child with different formatting can be appended via the `add`
 /// method, and the same methods for adjusting color and formatting can be used to modify that child
 /// component.
-pub struct TextComponentBuilder {
-    component: TextComponent,
+pub struct ComponentBuilder {
+    component: Component,
     current_empty: bool,
 }
 
@@ -23,8 +23,11 @@ macro_rules! component_format {
     };
 }
 
-impl TextComponentBuilder {
-    component_format!(obfuscated, "obfuscated (quickly chaning, fixed-width text)");
+impl ComponentBuilder {
+    component_format!(
+        obfuscated,
+        "obfuscated (quickly changing, fixed-width text)"
+    );
 
     component_format!(bold, "bolded");
 
@@ -35,55 +38,63 @@ impl TextComponentBuilder {
     component_format!(italic, "italicized");
 
     /// Creates a builder whose base component has no color and an empty text field.
-    pub fn empty() -> Self {
-        TextComponentBuilder {
-            component: TextComponent::new(String::new(), None),
+    pub const fn empty() -> Self {
+        ComponentBuilder {
+            component: Component::empty(),
             current_empty: false,
         }
     }
 
-    /// Creates a builder whose base component has the given text and no color.
-    pub fn new(text: String) -> Self {
-        TextComponentBuilder {
-            component: TextComponent::new(text.to_owned(), None),
+    /// Creates a builder whose base component has no text and the color white.
+    pub fn new() -> Self {
+        ComponentBuilder {
+            component: Component::colored(String::new(), PredefinedColor::White),
             current_empty: false,
         }
     }
 
     /// Retrieves the current component being built.
-    fn current(&mut self) -> &mut TextComponent {
+    fn current(&mut self) -> &mut Component {
         self.current_empty = false;
 
         if self.component.has_children() {
-            // This unwrap is checked above
-            match self.component.extra.as_mut().unwrap().last_mut() {
-                Some(Component::Text(component)) => component,
-                // TODO: replace with &mut self.component when the borrow checker allows it in the future
-                _ => unreachable!(),
-            }
+            // These unwraps are checked above
+            self.component.extra.as_mut().unwrap().last_mut().unwrap()
         } else {
             &mut self.component
         }
     }
 
-    /// Finish the current component and prep a new component which can have different color, formatting, etc.
-    pub fn add(mut self) -> Self {
+    /// Finish the current component and prepare a new component which can have a different color, formatting, etc.
+    pub fn add(mut self, component_type: ComponentType) -> Self {
+        self.current().component_type = component_type;
+        self.add_empty()
+    }
+
+    /// Finish the current component, setting its text field to the given value, and prepare a new component
+    /// which can have a different color, formatting, etc.
+    pub fn add_text<T: ToString>(self, text: T) -> Self {
+        self.add(ComponentType::text(text))
+    }
+
+    /// Finish the current component, setting its text field to an empty string, and prepare a new component
+    /// which can have a different color, formatting, etc.
+    pub fn add_empty(mut self) -> Self {
         if !self.current_empty {
-            self.component
-                .add_child(Component::Text(TextComponent::new(String::new(), None)));
+            self.component.add_child(Component::empty());
             self.current_empty = true;
         }
 
         self
     }
 
-    /// Comsumes this builder and returns a finished text component.
-    pub fn build<C: From<TextComponent>>(mut self) -> C {
+    /// Consumes this builder and returns a finished text component.
+    pub fn build(mut self) -> Component {
         if self.current_empty {
             let _ = self.component.extra.as_mut().unwrap().pop();
         }
 
-        self.component.into()
+        self.component
     }
 
     /// Consumes this builder and returns a vec of the base component's children, excluding the base
@@ -99,14 +110,8 @@ impl TextComponentBuilder {
         }
     }
 
-    /// Set the text of the current component.
-    pub fn text(mut self, text: String) -> Self {
-        self.current().text = text.to_owned();
-        self
-    }
-
-    /// Set the color of the current component to a predefined color.
-    pub fn predef_color(mut self, color: PredefinedColor) -> Self {
+    /// Set the color of the current component to the given color.
+    pub fn color<C: Into<Color>>(mut self, color: C) -> Self {
         self.current().color = Some(color.into());
         self
     }
@@ -114,6 +119,12 @@ impl TextComponentBuilder {
     /// Set the color of the current component to a custom color.
     pub fn custom_color(mut self, red: u8, green: u8, blue: u8) -> Self {
         self.current().color = Some(Color::Custom(red, green, blue));
+        self
+    }
+
+    /// Set the font of this component.
+    pub fn font(mut self, font: String) -> Self {
+        self.current().font = Some(font);
         self
     }
 

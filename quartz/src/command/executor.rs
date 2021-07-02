@@ -1,5 +1,5 @@
 use crate::{command::CommandContext, ServerClock, DIAGNOSTICS, RUNNING};
-use quartz_chat::{color::PredefinedColor, TextComponentBuilder};
+use quartz_chat::{color::PredefinedColor, ComponentBuilder};
 use quartz_commands::{self, module, CommandModule};
 use std::sync::atomic::Ordering;
 
@@ -127,16 +127,16 @@ module! {
             }
 
             ctx.sender.send_message(
-                &TextComponentBuilder::new("Server TPS: ".to_owned())
-                    .predef_color(PredefinedColor::Gold)
-                    .add()
-                    .text(format!(
+                &ComponentBuilder::new()
+                    .color(PredefinedColor::Gold)
+                    .add_text("Server TPS: ")
+                    .custom_color(red as u8, green as u8, 0)
+                    .add_text(format!(
                         "{:.2} ({}%), {:.3} mspt",
                         tps,
                         ((tps / ServerClock::max_tps()) * 100.0) as u32,
                         mspt
                     ))
-                    .custom_color(red as u8, green as u8, 0)
                     .build(),
             );
 

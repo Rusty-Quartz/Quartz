@@ -9,8 +9,5 @@ pub mod color;
 /// Defines chat components and their variants.
 pub mod component;
 
-/// Provides support for parsing a custom component format syntax.
-pub mod cfmt;
-
-pub use builder::TextComponentBuilder;
+pub use builder::ComponentBuilder;
 pub use component::Component;

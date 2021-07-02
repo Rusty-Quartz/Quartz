@@ -1,6 +1,6 @@
 use log::*;
-use quartz_chat::{cfmt::parse_cfmt, Component};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use quartz_chat::Component;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{File, OpenOptions},
     io::{self, prelude::*, Read, SeekFrom, Write},
@@ -17,33 +17,7 @@ pub struct Config {
     /// The server port, defaults to 25565.
     pub port: u16,
     /// The server's message of the day, written using CFMT format (see `chat::cfmt::parse_cfmt`).
-    #[serde(
-        serialize_with = "Config::serialize_motd",
-        deserialize_with = "Config::deserialize_motd"
-    )]
     pub motd: Component,
-}
-
-// Custom ser/de functions
-impl Config {
-    fn serialize_motd<S>(_component: &Component, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
-        serializer.serialize_str("A Minecraft Server")
-    }
-
-    fn deserialize_motd<'de, D>(deserializer: D) -> Result<Component, D::Error>
-    where D: Deserializer<'de> {
-        let cfmt: &'de str = Deserialize::deserialize(deserializer)?;
-
-        match parse_cfmt(cfmt) {
-            Ok(component) => Ok(component),
-            Err(e) => {
-                error!("Invalid MOTD format: {}", e);
-                info!("Using default MOTD");
-                Ok(Component::text("A Minecraft Server".to_owned()))
-            }
-        }
-    }
 }
 
 // Instantiate a config with default values
