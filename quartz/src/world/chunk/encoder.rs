@@ -15,6 +15,10 @@ impl CompactStateBuffer<Vec<i64>> {
 }
 
 impl<T> CompactStateBuffer<T> {
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+
     fn advance_cursor(cursor: &mut usize, bit_index: usize, bits: usize) {
         if bit_index + 2 * bits > 64 {
             *cursor += 64 - bit_index;
