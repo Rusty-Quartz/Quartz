@@ -1,77 +1,57 @@
 use crate::{
+    config_unchecked,
     item::init_items,
     network::{
         packet::{ClientBoundPacket, ServerBoundPacket, WrappedServerBoundPacket},
         *,
     },
-    CommandExecutor,
-    Config,
+    raw_console_unchecked,
     Registry,
+    RUNNING,
 };
 use futures_lite::future;
 use linefeed::{
     complete::{Completer, Completion, Suffix},
     prompter::Prompter,
     DefaultTerminal,
-    Interface,
     ReadResult,
 };
 use log::*;
 use openssl::rsa::Rsa;
-use smol::{net::TcpListener, LocalExecutor, Timer};
+use smol::{net::TcpListener, LocalExecutor};
 use std::{
-    cell::RefCell,
     collections::HashMap,
     error::Error,
-    fmt::Display,
     net::TcpStream as StdTcpStream,
     rc::Rc,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::Ordering,
         mpsc::{self, Receiver, Sender},
         Arc,
         Mutex,
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 /// The string form of the minecraft version quartz currently supports.
 pub const VERSION: &str = "1.17";
-/// The state variable that controls whether or not the server and its various sub-processes are running.
-/// If set to false then the server will gracefully stop.
-pub(crate) static RUNNING: AtomicBool = AtomicBool::new(false);
-
-/// Returns whether or not the server is running.
-#[inline]
-pub fn is_running() -> bool {
-    RUNNING.load(Ordering::SeqCst)
-}
 
 /// The main struct containing all relevant data to the quartz server instance.
 // TODO: consider boxing some fields
 pub struct QuartzServer {
-    /// The server config.
-    pub config: Config,
     /// The list of connected clients.
     pub(crate) client_list: ClientList,
-    /// A handle to interact with the console.
-    pub(crate) console_interface: Arc<Interface<DefaultTerminal>>,
     /// A cloneable channel to send packets to the main server thread.
     sync_packet_sender: Sender<WrappedServerBoundPacket>,
     /// The receiver for packets that need to be handled on the server thread.
     sync_packet_receiver: Receiver<WrappedServerBoundPacket>,
     /// A map of thread join handles to join when the server is dropped.
     join_handles: HashMap<String, JoinHandle<()>>,
-    /// The command executor instance for the server.
-    pub(crate) command_executor: Rc<RefCell<CommandExecutor>>,
-    /// The server clock, used to time and regulate ticks.
-    pub clock: ServerClock,
 }
 
 impl QuartzServer {
-    /// Creates a new server instance with the given config and terminal handle.
-    pub fn new(config: Config, console_interface: Arc<Interface<DefaultTerminal>>) -> Self {
+    pub(crate) fn new() -> Self {
         if RUNNING
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
@@ -82,14 +62,10 @@ impl QuartzServer {
         let (sender, receiver) = mpsc::channel::<WrappedServerBoundPacket>();
 
         QuartzServer {
-            config,
             client_list: ClientList::new(),
-            console_interface,
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
             join_handles: HashMap::new(),
-            command_executor: Rc::new(RefCell::new(CommandExecutor::new())),
-            clock: ServerClock::new(50),
         }
     }
 
@@ -125,8 +101,6 @@ impl QuartzServer {
     }
 
     fn init_command_handler(&mut self) {
-        let interface = self.console_interface.clone();
-
         // A simple tab-completer for console
         struct ConsoleCompleter {
             packet_pipe: Mutex<Sender<WrappedServerBoundPacket>>,
@@ -179,15 +153,20 @@ impl QuartzServer {
         }
 
         // Register the tab completer
-        interface.set_completer(Arc::new(ConsoleCompleter {
-            packet_pipe: Mutex::new(self.sync_packet_sender.clone()),
-        }));
+        // Safety: this code can only be called within this crate,
+        unsafe {
+            raw_console_unchecked().set_completer(Arc::new(ConsoleCompleter {
+                packet_pipe: Mutex::new(self.sync_packet_sender.clone()),
+            }));
+        }
 
         // Drive the command reader
         let packet_pipe = self.sync_packet_sender.clone();
         self.add_join_handle(
             "Console Command Reader",
             thread::spawn(move || {
+                let interface = unsafe { raw_console_unchecked() };
+
                 while RUNNING.load(Ordering::Relaxed) {
                     // Check for a new command every 50ms
                     match interface.read_line_step(Some(Duration::from_millis(50))) {
@@ -219,10 +198,14 @@ impl QuartzServer {
     }
 
     fn start_tcp_server(&mut self) -> Result<(), Box<dyn Error>> {
+        let config = unsafe { config_unchecked() }
+            .try_lock()
+            .expect("Config locked during initialization.");
         let listener = smol::block_on(TcpListener::bind(format!(
             "{}:{}",
-            self.config.server_ip, self.config.port
+            config.server_ip, config.port
         )))?;
+        drop(config);
 
         let sync_packet_sender = self.sync_packet_sender.clone();
 
@@ -305,21 +288,7 @@ impl QuartzServer {
         self.join_handles.insert(thread_name.to_owned(), handle);
     }
 
-    /// Runs the server. This function will not exit until the `RUNNING` state variable is set to false
-    /// through some mechanism.
-    pub fn run(&mut self) {
-        info!("Started server thread");
-
-        smol::block_on(async {
-            while RUNNING.load(Ordering::Relaxed) {
-                self.clock.start();
-                self.tick().await;
-                self.clock.finish_tick().await;
-            }
-        });
-    }
-
-    async fn tick(&mut self) {
+    pub(crate) async fn tick(&mut self) {
         self.handle_packets().await;
     }
 
@@ -333,16 +302,6 @@ impl QuartzServer {
             }
         }
     }
-
-    pub fn display_to_console<T: Display>(&self, message: &T) {
-        match self.console_interface.lock_writer_erase() {
-            Ok(mut writer) =>
-                if let Err(e) = writeln!(writer, "{}", message) {
-                    error!("Failed to send message to console: {}", e);
-                },
-            Err(e) => error!("Failed to lock console interface: {}", e),
-        }
-    }
 }
 
 impl Drop for QuartzServer {
@@ -351,7 +310,12 @@ impl Drop for QuartzServer {
         RUNNING.store(false, Ordering::SeqCst);
 
         // Send a connection to the server daemon to shut it down
-        StdTcpStream::connect(format!("{}:{}", self.config.server_ip, self.config.port)).unwrap();
+        match unsafe { config_unchecked() }.try_lock() {
+            Some(guard) => {
+                let _ = StdTcpStream::connect(format!("{}:{}", guard.server_ip, guard.port));
+            }
+            None => warn!("Failed to shutdown TCP thread."),
+        }
 
         for (thread_name, handle) in self.join_handles.drain() {
             info!("Shutting down {}", thread_name);
@@ -360,64 +324,6 @@ impl Drop for QuartzServer {
                 error!("Failed to join {}", thread_name);
             }
         }
-    }
-}
-
-/// Keeps track of the time each tick takes and regulates the server ticks per second (TPS).
-pub struct ServerClock {
-    micros_ema: f32,
-    full_tick_millis: u128,
-    full_tick: Duration,
-    time: Instant,
-}
-
-impl ServerClock {
-    /// Creates a new clock with the given tick length in milliseconds.
-    pub fn new(tick_length: u128) -> Self {
-        ServerClock {
-            micros_ema: 0f32,
-            full_tick_millis: tick_length,
-            full_tick: Duration::from_millis(tick_length as u64),
-            time: Instant::now(),
-        }
-    }
-
-    /// Called at the start of a server tick.
-    fn start(&mut self) {
-        self.time = Instant::now();
-    }
-
-    /// The tick code has finished executing, so record the time and sleep if extra time remains.
-    async fn finish_tick(&mut self) {
-        let elapsed = self.time.elapsed();
-        self.micros_ema = (99f32 * self.micros_ema + elapsed.as_micros() as f32) / 100f32;
-
-        if elapsed.as_millis() < self.full_tick_millis {
-            Timer::after(self.full_tick - elapsed).await;
-        }
-    }
-
-    /// Returns a buffered milliseconds per tick (MSPT) measurement. This reading is buffer for 100
-    /// tick cycles.
-    #[inline]
-    pub fn mspt(&self) -> f32 {
-        self.micros_ema / 1000f32
-    }
-
-    /// Converts a milliseconds pet tick value to ticks per second.
-    #[inline]
-    pub fn as_tps(&self, mspt: f32) -> f32 {
-        if mspt < self.full_tick_millis as f32 {
-            1000f32 / (self.full_tick_millis as f32)
-        } else {
-            1000f32 / mspt
-        }
-    }
-
-    /// The maximum tps the server will tick at.
-    #[inline]
-    pub fn max_tps(&self) -> f32 {
-        1000f32 / self.full_tick_millis as f32
     }
 }
 

@@ -1,5 +1,9 @@
+use super::AsyncWriteHandle;
 use crate::{
     command::{CommandContext, CommandSender},
+    command_executor,
+    config,
+    display_to_console,
     network::{packet::*, AsyncClientConnection, ConnectionState, PacketBuffer},
     server::{self, QuartzServer},
     world::location::BlockPosition,
@@ -24,8 +28,6 @@ use std::{
     sync::{mpsc::Sender, Arc},
 };
 use uuid::Uuid;
-
-use super::AsyncWriteHandle;
 
 /// The numeric protocol version the server uses.
 pub const PROTOCOL_VERSION: i32 = 755;
@@ -271,46 +273,31 @@ impl QuartzServer {
     }
 
     async fn handle_console_command(&mut self, command: &str) {
-        let command_executor = self.command_executor.clone();
-        match command_executor.try_borrow() {
-            Ok(executor) => {
-                let sender = CommandSender::Console(self.console_interface.clone());
-                let context = CommandContext::new(self, &*executor, sender);
-                if let Err(e) = executor.dispatch(command, context) {
-                    self.display_to_console(&e);
-                }
-            }
-            Err(_) => error!(
-                "Internal error: could not borrow command_executor as mutable while executing a \
-                 command."
-            ),
-        };
+        let executor = command_executor();
+        let sender = CommandSender::Console;
+        let context = CommandContext::new(self, &*executor, sender);
+        if let Err(e) = executor.dispatch(command, context) {
+            display_to_console(&e);
+        }
     }
 
     async fn handle_console_completion(&mut self, command: &str, response: &Sender<Vec<String>>) {
-        let command_executor = self.command_executor.clone();
-        match command_executor.try_borrow() {
-            Ok(executor) => {
-                let sender = CommandSender::Console(self.console_interface.clone());
-                let context = CommandContext::new(self, &*executor, sender);
-                let suggestions = executor.get_suggestions(command, &context);
-                // Error handling not useful here
-                drop(response.send(suggestions));
-            }
-            Err(_) => error!(
-                "Internal error: could not borrow command_executor as mutable while generating \
-                 completion suggestions."
-            ),
-        };
+        let executor = command_executor();
+        let sender = CommandSender::Console;
+        let context = CommandContext::new(self, &*executor, sender);
+        let suggestions = executor.get_suggestions(command, &context);
+        // Error handling not useful here
+        drop(response.send(suggestions));
     }
 
     async fn handle_legacy_server_list_ping(&mut self, sender: usize, _payload: u8) {
         // Load in all needed values from server object
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
-        let motd = &self.config.motd;
         let player_count = self.client_list.online_count().to_string();
-        let max_players = self.config.max_players.to_string();
+        let config = config().lock().await;
+        let motd = &config.motd;
+        let max_players = config.max_players.to_string();
 
         // Add String header
         let mut string_vec: Vec<u16> = vec![0x00A7, 0x0031, 0x0000];
@@ -351,17 +338,18 @@ impl QuartzServer {
     }
 
     async fn handle_status_request(&mut self, sender: usize) {
+        let config = config().lock().await;
         let json_response = json!({
             "version": {
                 "name": server::VERSION,
                 "protocol": PROTOCOL_VERSION
             },
             "players": {
-                "max": self.config.max_players,
+                "max": config.max_players,
                 "online": self.client_list.online_count(),
                 "sample": [] // TODO: Decide whether or not to implement "sample" in status req
             },
-            "description": self.config.motd
+            "description": config.motd
         });
 
         // TODO: implement favicon

@@ -99,30 +99,19 @@ pub fn cleanup() {
 }
 
 // Only allow logging from out crate
-#[cfg(debug_assertions)]
 struct CrateFilter {
     filter: String,
 }
 
-#[cfg(not(debug_assertions))]
-struct CrateFilter;
-
 impl CrateFilter {
-    #[cfg(debug_assertions)]
     pub fn new(filter: &str) -> Self {
         CrateFilter {
             filter: filter.to_owned(),
         }
     }
-
-    #[cfg(not(debug_assertions))]
-    pub fn new(_filter: &str) -> Self {
-        CrateFilter
-    }
 }
 
 impl Filter for CrateFilter {
-    #[cfg(debug_assertions)]
     fn filter(&self, record: &Record) -> Response {
         if record.level() == Level::Warn || record.level() == Level::Error {
             return Response::Accept;
@@ -137,11 +126,6 @@ impl Filter for CrateFilter {
                 },
             None => Response::Reject,
         }
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn filter(&self, _record: &Record) -> Response {
-        Response::Neutral
     }
 }
 

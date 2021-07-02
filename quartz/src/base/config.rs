@@ -12,7 +12,7 @@ use std::{
 pub struct Config {
     /// The maximum number of players the server will allow, defaults to 50.
     pub max_players: u16,
-    /// The server IP, defaults to "127.0.0.1"
+    /// The server IP, defaults to "0.0.0.0"
     pub server_ip: String,
     /// The server port, defaults to 25565.
     pub port: u16,
@@ -51,7 +51,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             max_players: 50,
-            server_ip: "127.0.0.1".to_owned(),
+            server_ip: "0.0.0.0".to_owned(),
             port: 25565,
             motd: Component::text("A Minecraft Server".to_owned()),
         }

@@ -1,6 +1,4 @@
-use std::sync::atomic::AtomicBool;
-
-use crate::{util::map::Identify, QuartzServer};
+use crate::QuartzServer;
 
 pub trait Task {
     type Output;
