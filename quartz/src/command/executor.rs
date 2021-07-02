@@ -1,4 +1,4 @@
-use crate::{command::CommandContext, server::RUNNING};
+use crate::{command::CommandContext, ServerClock, DIAGNOSTICS, RUNNING};
 use quartz_chat::{color::PredefinedColor, TextComponentBuilder};
 use quartz_commands::{self, module, CommandModule};
 use std::sync::atomic::Ordering;
@@ -100,10 +100,10 @@ module! {
 
     command tps {
         root executes |ctx| {
-            let mspt = ctx.server.clock.mspt();
-            let tps = ctx.server.clock.as_tps(mspt);
-            let red: f32;
-            let green: f32;
+            let mspt = smol::block_on(DIAGNOSTICS.lock()).mspt();
+            let tps = ServerClock::as_tps(mspt);
+            let red: f64;
+            let green: f64;
 
             // Shift from dark green to yellow
             if tps > 15.0 {
@@ -127,13 +127,13 @@ module! {
             }
 
             ctx.sender.send_message(
-                TextComponentBuilder::new("Server TPS: ".to_owned())
+                &TextComponentBuilder::new("Server TPS: ".to_owned())
                     .predef_color(PredefinedColor::Gold)
                     .add()
                     .text(format!(
                         "{:.2} ({}%), {:.3} mspt",
                         tps,
-                        ((tps / ctx.server.clock.max_tps()) * 100_f32) as u32,
+                        ((tps / ServerClock::max_tps()) * 100.0) as u32,
                         mspt
                     ))
                     .custom_color(red as u8, green as u8, 0)

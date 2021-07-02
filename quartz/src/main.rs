@@ -1,6 +1,6 @@
 use linefeed::Interface;
 use log::error;
-use quartz::{config::load_config, util::logging, Config, QuartzServer};
+use quartz::{config::load_config, run, util::logging, Config};
 use std::{error::Error, path::Path, sync::Arc};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -18,10 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let mut server = QuartzServer::new(config, console_interface);
-    server.init();
-    server.run();
-    drop(server);
+    run(config, console_interface);
     logging::cleanup();
 
     // Move off of the command prompt
