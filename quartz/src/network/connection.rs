@@ -291,6 +291,7 @@ impl IOHandle {
 /// A handle for asynchronously writing packets to a client connection. While the time at which the packets
 /// will be processed cannot be guaranteed, packets will always be sent in the order that they are passed
 /// to this handle.
+#[derive(Debug)]
 pub struct AsyncWriteHandle(Sender<WrappedClientBoundPacket>);
 
 impl AsyncWriteHandle {

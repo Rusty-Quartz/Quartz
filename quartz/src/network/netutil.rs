@@ -786,6 +786,7 @@ pub enum PacketSerdeError {
     Nbt(io::Error),
     Network(io::Error),
     OpenSSL(ErrorStack),
+    InvalidEnum(&'static str, i32),
     Internal(&'static str),
 }
 
@@ -808,6 +809,7 @@ impl Display for PacketSerdeError {
             PacketSerdeError::Nbt(e) => Display::fmt(e, f),
             PacketSerdeError::Network(e) => Display::fmt(e, f),
             PacketSerdeError::OpenSSL(e) => Display::fmt(e, f),
+            PacketSerdeError::InvalidEnum(enum_type, id) => write!(f, "Received invalid enum ID for type {}: {}", enum_type, id),
             PacketSerdeError::Internal(msg) => Display::fmt(msg, f),
         }
     }

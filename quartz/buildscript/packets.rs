@@ -9,7 +9,7 @@ use quote::{format_ident, quote};
 use serde::Deserialize;
 use serde_json;
 use std::{collections::HashMap, env, fs, path::Path};
-use syn::Type;
+use syn::{Ident, Type};
 
 pub fn gen_packet_handlers() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
@@ -32,9 +32,7 @@ pub fn gen_packet_handlers() {
 
         if state.server_bound.is_some() {
             for packet in state.server_bound.unwrap() {
-                if !packet.asynchronous {
-                    server_bound.push(packet);
-                }
+                server_bound.push(packet);
             }
         }
 
@@ -45,8 +43,20 @@ pub fn gen_packet_handlers() {
         }
     }
 
-    let client_packet_enum = gen_client_packet_enum(&client_bound, &mappings);
-    let server_packet_enum = gen_server_packet_enum(&states_raw, &mappings);
+    let client_packet_enum = gen_packet_enum(
+        format_ident!("ClientBoundPacket"),
+        &client_bound,
+        &states_raw,
+        false,
+        &mappings
+    );
+    let server_packet_enum = gen_packet_enum(
+        format_ident!("ServerBoundPacket"),
+        &server_bound,
+        &states_raw,
+        true,
+        &mappings
+    );
     let handle_packet = gen_handle_packet(&states_raw, &mappings);
     let sync_dispatch = gen_sync_dispatch(&server_bound, &mappings);
 
@@ -81,7 +91,7 @@ pub fn gen_packet_handlers() {
     println!("cargo:rerun-if-changed=buildscript/packets.rs")
 }
 
-fn gen_client_packet_enum(packet_arr: &[Packet], mappings: &Mappings) -> TokenStream {
+fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacketInfo], is_server_bound: bool, mappings: &Mappings) -> TokenStream {
     let variant_names = packet_arr
         .iter()
         .map(|packet| format_ident!("{}", snake_to_pascal(&packet.name)))
@@ -100,7 +110,12 @@ fn gen_client_packet_enum(packet_arr: &[Packet], mappings: &Mappings) -> TokenSt
             }
         }
     });
-    let write_variants = packet_arr.iter().enumerate().map(|(index, packet)| {
+    let any_internal = packet_arr.iter().any(|packet| packet.internal);
+    let write_variants = packet_arr
+        .iter()
+        .enumerate()
+        .filter(|(_, packet)| !packet.internal)
+        .map(|(index, packet)| {
         let variant_name = &variant_names[index];
         let id = Literal::i32_unsuffixed(
             i32::from_str_radix(&packet.id[2 ..], 16)
@@ -117,8 +132,8 @@ fn gen_client_packet_enum(packet_arr: &[Packet], mappings: &Mappings) -> TokenSt
             Some(quote! { { #( #field_names ),* } })
         };
         let write_fields = packet
-            .codegen_fields(mappings)
-            .map(|field| gen_serialize_enum_field(&field, &format_ident!("buffer")));
+            .codegen_fields(mappings, true)
+            .map(|(field, _)| gen_serialize_enum_field(&field, &format_ident!("buffer")));
         quote! {
             Self::#variant_name #unpack_fields => {
                 buffer.write_varying(&#id);
@@ -126,44 +141,128 @@ fn gen_client_packet_enum(packet_arr: &[Packet], mappings: &Mappings) -> TokenSt
             }
         }
     });
-
-    quote! {
-        pub enum ClientBoundPacket {
-            #( #variants ),*
-        }
-
-        impl crate::network::WriteToPacket for ClientBoundPacket {
-            fn write_to(&self, buffer: &mut crate::network::PacketBuffer) {
-                match self {
-                    #( #write_variants ),*
-                }
-            }
-        }
-    }
-}
-
-fn gen_server_packet_enum(states: &[StatePacketInfo], mappings: &Mappings) -> TokenStream {
-    let variants = states
+    let state_deserializers = states
         .iter()
-        .flat_map(|state_info| state_info.server_bound.as_ref().into_iter().flatten())
-        .map(|packet| {
-            let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
-            if packet.fields.is_empty() {
-                quote! { #variant_name }
+        .filter(|state_info| {
+            if state_info.name == "__internal__" {
+                return false;
+            }
+            if is_server_bound {
+                state_info.server_bound.is_some()
             } else {
-                let fields = packet
-                    .fields
-                    .iter()
-                    .map(|field| field.struct_field_def(mappings));
-                quote! {
-                    #variant_name { #( #fields ),* }
+                state_info.client_bound.is_some()
+            }
+        })
+        .map(|state_info| {
+            let state_name = format_ident!("{}", &state_info.name);
+            let packets = if is_server_bound {
+                state_info.server_bound.as_ref().unwrap()
+            } else {
+                state_info.client_bound.as_ref().unwrap()
+            };
+            let match_arms = packets
+                .iter()
+                .map(|packet| {
+                    let id = Literal::i32_unsuffixed(
+                        i32::from_str_radix(&packet.id[2..], 16)
+                            .expect("Invalid packet ID encountered in JSON.")
+                    );
+                    let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
+                    let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
+                    let read_fields = packet
+                        .codegen_fields(mappings, true)
+                        .map(|(codegen_field, field)| {
+                            match &field.deserialize_with {
+                                Some(deserializer) => {
+                                    let name = &codegen_field.name;
+                                    let deserializer: TokenStream = syn::parse_str(deserializer).unwrap();
+                                    quote! {
+                                        let #name = #deserializer;
+                                    }
+                                },
+                                None => gen_deserialize_field(&codegen_field, &format_ident!("buffer"))
+                            }
+                        });
+                    quote! {
+                        #id => {
+                            #( #read_fields )*
+                            Ok(#enum_name::#variant_name { #( #field_names ),* })
+                        }
+                    }
+                });
+            quote! {
+                crate::network::ConnectionState::#state_name => {
+                    match id {
+                        #( #match_arms, )*
+                        id @ _ => Err(crate::network::PacketSerdeError::InvalidId(id))
+                    }
                 }
             }
         });
 
+    let default_case = if any_internal {
+        Some(quote!{ _ => unimplemented!("WriteToPacket unimplemented for {:?}", self) })
+    } else {
+        None
+    };
+
     quote! {
-        pub enum ServerBoundPacket {
+        #[derive(Debug)]
+        pub enum #enum_name {
             #( #variants ),*
+        }
+
+        impl #enum_name {
+            pub async fn read_from(
+                buffer: &mut PacketBuffer,
+                connection_state: crate::network::ConnectionState,
+                packet_len: usize
+            ) -> Result<Self, crate::network::PacketSerdeError>
+            {
+                let initial_len = buffer.len();
+                let truncated_len = buffer.cursor() + packet_len;
+                unsafe {
+                    buffer.set_len(truncated_len);
+                }
+    
+                async fn read_internal(
+                    buffer: &mut PacketBuffer,
+                    connection_state: crate::network::ConnectionState,
+                ) -> Result<#enum_name, crate::network::PacketSerdeError> {
+                    let id;
+                    if connection_state == crate::network::ConnectionState::Handshake && buffer.peek()? == crate::network::LEGACY_PING_PACKET_ID as u8 {
+                        id = crate::network::LEGACY_PING_PACKET_ID;
+                        buffer.read_one()?;
+                    } else {
+                        id = buffer.read_varying::<i32>()?;
+                    }
+    
+                    match connection_state {
+                        #( #state_deserializers, )*
+                        _ => Err(crate::network::PacketSerdeError::Internal("Attempted to read packet in invalid connection state"))
+                    }
+                }
+                let mut ret = read_internal(buffer, connection_state).await;
+    
+                if buffer.len() != truncated_len {
+                    ret = Err(crate::network::PacketSerdeError::Internal("Packet buffer written to while being read from"));
+                }
+    
+                unsafe {
+                    buffer.set_len(initial_len);
+                }
+    
+                ret
+            }
+        }
+
+        impl crate::network::WriteToPacket for #enum_name {
+            fn write_to(&self, buffer: &mut crate::network::PacketBuffer) {
+                match self {
+                    #( #write_variants ),*
+                    #default_case
+                }
+            }
         }
     }
 }
@@ -187,8 +286,8 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
                     let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
                     let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
                     let read_fields = packet
-                        .codegen_fields(mappings)
-                        .map(|field| gen_deserialize_field(&field, &format_ident!("buffer")));
+                        .codegen_fields(mappings, false)
+                        .map(|(field, _)| gen_deserialize_field(&field, &format_ident!("buffer")));
                     let handler = if packet.asynchronous {
                         let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
                         let field_borrows = packet.field_borrows(mappings);
@@ -234,8 +333,8 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
                 let buffer = &mut conn.read_buffer;
 
                 let id;
-                if conn.connection_state == ConnectionState::Handshake && buffer.peek()? == LEGACY_PING_PACKET_ID as u8 {
-                    id = LEGACY_PING_PACKET_ID;
+                if conn.connection_state == ConnectionState::Handshake && buffer.peek()? == crate::network::LEGACY_PING_PACKET_ID as u8 {
+                    id = crate::network::LEGACY_PING_PACKET_ID;
                     buffer.read_one()?;
                 } else {
                     id = buffer.read_varying::<i32>()?;
@@ -265,7 +364,7 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
 }
 
 fn gen_sync_dispatch(server_bound: &[Packet], mappings: &Mappings) -> TokenStream {
-    let match_arms = server_bound.iter().map(|packet| {
+    let match_arms = server_bound.iter().filter(|packet| !packet.asynchronous).map(|packet| {
         let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
         let field_names = packet
             .fields
@@ -338,6 +437,8 @@ struct Packet {
     unimplemented: bool,
     #[serde(default)]
     sender_independent: bool,
+    #[serde(default)]
+    internal: bool,
     #[serde(default = "Packet::dispatch_default")]
     dispatch: bool,
     name: String,
@@ -349,11 +450,12 @@ impl Packet {
     pub fn codegen_fields<'a>(
         &'a self,
         mappings: &'a Mappings,
-    ) -> impl Iterator<Item = CodegenField> + 'a {
+        writing: bool
+    ) -> impl Iterator<Item = (CodegenField, &'a Field)> + 'a {
         self.fields.iter().map(move |field| {
             let name = format_ident!(
                 "{}{}",
-                if !field.unused || field.referenced {
+                if !field.unused || field.referenced || writing {
                     ""
                 } else {
                     "_"
@@ -380,7 +482,7 @@ impl Packet {
                     "Failed to parse length expression for array type for field {} in packet {}",
                     &field.name, &self.name
                 ));
-                CodegenField::array(
+                (CodegenField::array(
                     name,
                     ty,
                     len,
@@ -388,9 +490,9 @@ impl Packet {
                     is_option,
                     varying,
                     field.var_type.starts_with("u8"),
-                )
+                ), field)
             } else {
-                CodegenField::regular(name, ty, condition, is_option, varying)
+                (CodegenField::regular(name, ty, condition, is_option, varying), field)
             }
         })
     }
@@ -453,6 +555,8 @@ struct Field {
     array: bool,
     #[serde(default)]
     condition: String,
+    #[serde(default)]
+    deserialize_with: Option<String>,
     #[serde(skip)]
     cached_type: OnceCell<Type>,
 }

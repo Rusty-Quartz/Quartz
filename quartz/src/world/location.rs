@@ -26,6 +26,18 @@ impl BlockPosition {
     }
 }
 
+impl Display for BlockPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "x: {}, y:{}, z: {}", self.x, self.y, self.z)
+    }
+}
+
+impl Debug for BlockPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {}, {})", self.x, self.y, self.z)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Coordinate {
     Block(CoordinatePair),

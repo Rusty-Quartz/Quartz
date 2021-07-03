@@ -1149,7 +1149,7 @@
           },
           {
             "name": "statistic",
-            "type": "statistic(count)",
+            "type": "statistic(count as usize)",
             "array": true
           }
         ]
@@ -1372,7 +1372,7 @@
           },
           {
             "name": "matches",
-            "type": "tab_complete_match(count)",
+            "type": "tab_complete_match(count as usize)",
             "array": true
           }
         ]
@@ -1424,7 +1424,7 @@
           },
           {
             "name": "slot_data",
-            "type": "slot(count)",
+            "type": "slot(count as usize)",
             "array": true
           }
         ]
@@ -1586,7 +1586,7 @@
           },
           {
             "name": "records",
-            "type": "i8(count * 3)",
+            "type": "i8((record_count * 3) as usize)",
             "array": true
           },
           {
@@ -1730,13 +1730,11 @@
           },
           {
             "name": "biomes_length",
-            "type": "varint",
-            "option": true,
-            "condition": "full_chunk"
+            "type": "varint"
           },
           {
             "name": "biomes",
-            "type": "varint(biomes_length)",
+            "type": "varint(biomes_length as usize)",
             "array": true
           },
           {
@@ -1754,7 +1752,7 @@
           },
           {
             "name": "block_entities",
-            "type": "nbt_tag(number_of_block_entities)",
+            "type": "nbt_tag(number_of_block_entities as usize)",
             "array": true
           }
         ]
@@ -1829,7 +1827,8 @@
           },
           {
             "name": "data",
-            "type": "particle"
+            "type": "particle",
+            "deserialize_with": "crate::network::packet::ParticleData::read_particle_data(particle_id, buffer)?"
           }
         ]
       },
@@ -1933,7 +1932,7 @@
           },
           {
             "name": "world_names",
-            "type": "unlocalized_name(world_count)",
+            "type": "unlocalized_name(world_count as usize)",
             "array": true
           },
           {
@@ -2005,7 +2004,7 @@
           },
           {
             "name": "icon",
-            "type": "map_icon(icon_count)",
+            "type": "map_icon(icon_count as usize)",
             "array": true
           },
           {
@@ -2038,7 +2037,7 @@
           },
           {
             "name": "data",
-            "type": "u8(length)",
+            "type": "u8(length.unwrap() as usize)",
             "option": true,
             "condition": "columns > 0",
             "array": true
@@ -2060,7 +2059,7 @@
           },
           {
             "name": "trades",
-            "type": "villager_trade(size)",
+            "type": "villager_trade(size as usize)",
             "array": true
           },
           {
@@ -2334,8 +2333,9 @@
           },
           {
             "name": "player",
-            "type": "wrapped_player_info_action(number_of_players)",
-            "array": true
+            "type": "wrapped_player_info_action(number_of_players as usize)",
+            "array": true,
+            "deserialize_with": "{let mut res = Vec::new(); for _ in 0..number_of_players { res.push(crate::network::packet::WrappedPlayerInfoAction::read_action(action, buffer)?); } res}"
           }
         ]
       },
@@ -2464,7 +2464,7 @@
           },
           {
             "name": "recipe_ids_1",
-            "type": "unlocalized_name(array_size_1)",
+            "type": "unlocalized_name(array_size_1 as usize)",
             "array": true
           },
           {
@@ -2475,7 +2475,7 @@
           },
           {
             "name": "recipe_ids_2",
-            "type": "unlocalized_name(array_size_2)",
+            "type": "unlocalized_name(array_size_2.unwrap() as usize)",
             "option": true,
             "condition": "action == 0",
             "array": true
@@ -2606,7 +2606,7 @@
           },
           {
             "name": "blocks",
-            "type": "varlong(blocks_array_size)",
+            "type": "varlong(blocks_array_size as usize)",
             "array": true
           }
         ]
@@ -2795,7 +2795,7 @@
           },
           {
             "name": "metadata",
-            "type": "entity_metadata_wrapper"
+            "type": "Vec<crate::network::packet::EntityMetadataWrapper>"
           }
         ]
       },
@@ -2932,7 +2932,7 @@
           },
           {
             "name": "passengers",
-            "type": "varint(passenger_count)",
+            "type": "varint(passenger_count as usize)",
             "array": true
           }
         ]
@@ -3000,7 +3000,7 @@
           },
           {
             "name": "entities",
-            "type": "string(entity_count)",
+            "type": "string(entity_count.unwrap() as usize)",
             "array": true,
             "option": true,
             "condition": "mode == 0 || mode == 3 || mode == 4"
@@ -3272,7 +3272,7 @@
           },
           {
             "name": "advancement_mappings",
-            "type": "advancement_map_element(mapping_size)",
+            "type": "advancement_map_element(mapping_size as usize)",
             "array": true
           },
           {
@@ -3281,7 +3281,7 @@
           },
           {
             "name": "identifiers",
-            "type": "unlocalized_name(list_size)",
+            "type": "unlocalized_name(list_size as usize)",
             "array": true
           },
           {
@@ -3290,7 +3290,7 @@
           },
           {
             "name": "progress_mapping",
-            "type": "advancement_progress_map_element(progress_size)",
+            "type": "advancement_progress_map_element(progress_size as usize)",
             "array": true
           }
         ]
@@ -3472,7 +3472,7 @@
           },
           {
             "name": "public_key",
-            "type": "u8(public_key_length)",
+            "type": "u8(public_key_length as usize)",
             "array": true
           },
           {
@@ -3481,7 +3481,7 @@
           },
           {
             "name": "verify_token",
-            "type": "u8(verify_token_length)",
+            "type": "u8(verify_token_length as usize)",
             "array": true
           }
         ]
@@ -3631,6 +3631,7 @@
         "sender_independent": true,
         "name": "client_connected",
         "id": "0xFF",
+        "internal": true,
         "fields": [
           {
             "name": "id",
@@ -3646,6 +3647,7 @@
         "sender_independent": true,
         "name": "client_disconnected",
         "id": "0xFF",
+        "internal": true,
         "fields": [
           {
             "name": "id",
@@ -3656,6 +3658,7 @@
       {
         "name": "login_success_server",
         "id": "0xFF",
+        "internal": true,
         "fields": [
           {
             "name": "uuid",
@@ -3671,6 +3674,7 @@
         "sender_independent": true,
         "name": "console_command",
         "id": "0xFF",
+        "internal": true,
         "fields": [
           {
             "name": "command",
@@ -3682,6 +3686,7 @@
         "sender_independent": true,
         "name": "console_completion",
         "id": "0xFF",
+        "internal": true,
         "fields": [
           {
             "name": "command",
