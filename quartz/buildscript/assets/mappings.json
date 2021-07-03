@@ -31,7 +31,8 @@
         "particle": "crate::network::packet::ParticleData",
         "wrapped_player_info_action": "crate::network::packet::WrappedPlayerInfoAction",
         "player_info_action": "crate::network::packet::PlayerInfoAction",
-        "tag_array": "crate::network::packet::TagArray"
+        "tag_array": "crate::network::packet::TagArray",
+        "chunk_section": "crate::world::chunk::ClientSection"
     },
     "primitives": [
         "bool",

@@ -1,7 +1,6 @@
 use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
-    ops::{Shl, Shr},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -21,9 +20,9 @@ impl BlockPosition {
     }
 
     pub fn as_u64(&self) -> u64 {
-        ((self.x as u64 & 0x3FFFFFF) << 38)
-            | ((self.z as u64 & 0x3FFFFFF) << 12)
-            | (self.y as u64 & 0xFFF)
+        ((self.x as u32 as u64 & 0x3FFFFFF) << 38)
+            | ((self.z as u32 as u64 & 0x3FFFFFF) << 12)
+            | (self.y as u16 as u64 & 0xFFF)
     }
 }
 
@@ -126,28 +125,8 @@ impl From<Coordinate> for CoordinatePair {
     }
 }
 
-impl Shl<usize> for CoordinatePair {
-    type Output = CoordinatePair;
-
-    fn shl(mut self, shift: usize) -> Self::Output {
-        self.x <<= shift;
-        self.z <<= shift;
-        self
-    }
-}
-
-impl Shr<usize> for CoordinatePair {
-    type Output = CoordinatePair;
-
-    fn shr(mut self, shift: usize) -> Self::Output {
-        self.x >>= shift;
-        self.z >>= shift;
-        self
-    }
-}
-
 impl Hash for CoordinatePair {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64((self.x as u64) << 32 | self.z as u64);
+        state.write_u64((self.x as u32 as u64) << 32 | self.z as u32 as u64);
     }
 }

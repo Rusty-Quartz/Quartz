@@ -1,0 +1,17 @@
+{
+    min_y: 0b,
+    natural: 1b,
+    has_raids: 1b,
+    respawn_anchor_works: 0b,
+    has_skylight: 1b,
+    has_ceiling: 0b,
+    logical_height: 256s,
+    height: 256s,
+    effects: "minecraft:overworld",
+    bed_works: 1b,
+    infiniburn: "minecraft:infiniburn_overworld",
+    piglin_safe: 0b,
+    ambient_light: 0.0f,
+    coordinate_scale: 1.0f,
+    ultrawarm: 0b
+}

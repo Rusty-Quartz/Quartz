@@ -187,9 +187,9 @@ pub struct Statistic {
 #[derive(WriteToPacket, ReadFromPacket)]
 pub struct BlockLights {
     #[packet_serde(varying)]
-    length: i32,
+    pub length: i32,
     #[packet_serde(len = "2048")]
-    values: Vec<u8>,
+    pub values: Vec<u8>,
 }
 
 #[derive(WriteToPacket, ReadFromPacket)]
@@ -381,8 +381,8 @@ pub struct PlayerProperty {
 
 #[derive(WriteToPacket)]
 pub struct WrappedPlayerInfoAction {
-    uuid: Uuid,
-    action: PlayerInfoAction,
+    pub uuid: Uuid,
+    pub action: PlayerInfoAction,
 }
 
 #[derive(WriteToPacket)]

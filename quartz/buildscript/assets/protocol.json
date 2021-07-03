@@ -1721,7 +1721,8 @@
           },
           {
             "name": "primary_bit_mask",
-            "type": "i64(bit_mask_length as usize)"
+            "type": "i64(bit_mask_length as usize)",
+            "array": true
           },
           {
             "name": "heightmaps",
@@ -1744,7 +1745,7 @@
           },
           {
             "name": "data",
-            "type": "u8(size as usize)",
+            "type": "chunk_section(size)",
             "array": true
           },
           {
@@ -1835,7 +1836,7 @@
       {
         "dispatch": true,
         "name": "update_light",
-        "id": "0x23",
+        "id": "0x25",
         "fields": [
           {
             "name": "chunk_x",
@@ -1855,7 +1856,8 @@
           },
           {
             "name": "sky_light_mask",
-            "type": "i64(sky_light_mask_length as usize)"
+            "type": "i64(sky_light_mask_length as usize)",
+            "array": true
           },
           {
             "name": "block_light_mask_length",
@@ -1863,7 +1865,8 @@
           },
           {
             "name": "block_light_mask",
-            "type": "i64(block_light_mask_length as usize)"
+            "type": "i64(block_light_mask_length as usize)",
+            "array": true
           },
           {
             "name": "empty_sky_light_mask_length",
@@ -1871,7 +1874,8 @@
           },
           {
             "name": "empty_sky_light_mask",
-            "type": "i64(empty_sky_light_mask_length as usize)"
+            "type": "i64(empty_sky_light_mask_length as usize)",
+            "array": true
           },
           {
             "name": "empty_block_light_mask_length",
@@ -1879,7 +1883,8 @@
           },
           {
             "name": "empty_block_light_mask",
-            "type": "i64(empty_block_light_mask_length as usize)"
+            "type": "i64(empty_block_light_mask_length as usize)",
+            "array": true
           },
           {
             "name": "sky_light_count",
@@ -2697,7 +2702,8 @@
         "fields": [
           {
             "name": "warning_blocks",
-            "type": "varint"          }
+            "type": "varint"
+          }
         ]
       },
       {
@@ -3362,9 +3368,9 @@
             "type": "varint"
           },
           {
-              "name": "tag_arrays",
-              "type": "tag_array(tag_arr_len as usize)",
-              "array": true
+            "name": "tag_arrays",
+            "type": "tag_array(tag_arr_len as usize)",
+            "array": true
           }
         ]
       }

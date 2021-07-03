@@ -6,6 +6,7 @@ use crate::{
         *,
     },
     raw_console_unchecked,
+    world::chunk::{Chunk, ChunkProvider},
     Registry,
     RUNNING,
 };
@@ -48,6 +49,8 @@ pub struct QuartzServer {
     sync_packet_receiver: Receiver<WrappedServerBoundPacket>,
     /// A map of thread join handles to join when the server is dropped.
     join_handles: HashMap<String, JoinHandle<()>>,
+    /// The ChunckProvider
+    pub chunk_provider: ChunkProvider,
 }
 
 impl QuartzServer {
@@ -66,6 +69,8 @@ impl QuartzServer {
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
             join_handles: HashMap::new(),
+            chunk_provider: ChunkProvider::new("world", "./world/region", 4)
+                .expect("Error making chunk provider"),
         }
     }
 
@@ -290,6 +295,7 @@ impl QuartzServer {
 
     pub(crate) async fn tick(&mut self) {
         self.handle_packets().await;
+        self.chunk_provider.flush_queue().await;
     }
 
     async fn handle_packets(&mut self) {

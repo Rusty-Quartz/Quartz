@@ -15,7 +15,7 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::world::location::BlockPosition;
+use crate::world::{chunk::ClientSection, location::BlockPosition};
 
 /// A wrapper around a vec used for reading/writing packet data efficiently.
 pub struct PacketBuffer {
@@ -248,7 +248,7 @@ impl PacketBuffer {
         if remaining < blob.len() {
             let remaining_allocated = self.capacity() - self.cursor;
             if remaining_allocated < blob.len() {
-                self.inner.reserve(blob.len() - remaining_allocated);
+                self.inner.reserve(blob.len() - self.remaining());
             }
 
             // Safety: above we allocate enough memory to fit `blob`, and after the write is
@@ -723,6 +723,14 @@ impl WriteToPacket for String {
     }
 }
 
+impl WriteToPacket for &str {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        let bytes = self.as_bytes();
+        buffer.write_varying(&(bytes.len() as i32));
+        buffer.write_bytes(bytes);
+    }
+}
+
 impl WriteToPacket for BlockPosition {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         buffer.write(&(self.as_u64() as i64));
@@ -753,6 +761,17 @@ impl WriteToPacket for NbtCompound {
 impl WriteToPacket for Component {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         buffer.write(&serde_json::to_string(self).unwrap_or(String::new()));
+    }
+}
+
+impl WriteToPacket for ClientSection {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        buffer.write(&self.block_count);
+        buffer.write(&self.bits_per_block);
+        buffer.write_varying(&(self.data.len() as i64));
+        for long in self.data.iter() {
+            buffer.write(long);
+        }
     }
 }
 

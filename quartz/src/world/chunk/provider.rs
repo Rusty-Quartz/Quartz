@@ -1,15 +1,15 @@
-use crate::{
-    world::{
-        chunk::Chunk,
-        location::{Coordinate, CoordinatePair},
-    },
+use crate::world::{
+    chunk::Chunk,
+    location::{Coordinate, CoordinatePair},
 };
 use futures_lite::{
     future,
     io::{AsyncReadExt, AsyncSeekExt},
 };
 use log::{error, warn};
+use quartz_chat::component::ToComponent;
 use quartz_nbt::read::{read_nbt_gz_compressed, read_nbt_zlib_compressed};
+use quartz_util::hash::NumHasher;
 use smol::{
     channel::{self, Receiver, Sender},
     fs::{File, OpenOptions},
@@ -17,11 +17,16 @@ use smol::{
     lock::{Mutex, MutexGuard},
     Executor,
 };
-use quartz_util::hash::NumHasher;
-use std::{collections::HashMap, io::Cursor as StdCursor, path::{Path, PathBuf}, sync::Arc, thread};
+use std::{
+    collections::HashMap,
+    io::Cursor as StdCursor,
+    path::{Path, PathBuf},
+    sync::Arc,
+    thread,
+};
 
 pub struct ChunkProvider {
-    regions: RegionHandler,
+    pub regions: RegionHandler,
     chunk_sender: Sender<Chunk>,
     chunk_receiver: Receiver<Chunk>,
     executor: Arc<Executor<'static>>,
@@ -34,8 +39,7 @@ impl ChunkProvider {
         world_name: &str,
         root_directory: P,
         thread_count: usize,
-    ) -> io::Result<Self>
-    {
+    ) -> io::Result<Self> {
         // Ensure the root directory exists
         std::fs::create_dir_all(root_directory.as_ref())?;
 
@@ -69,13 +73,20 @@ impl ChunkProvider {
     pub async fn flush_queue(&mut self) {
         let mut region_guard = self.regions.lock_regions().await;
         let mut chunk_guard = self.regions.lock_chunks().await;
+        let mut rec_chunks = 0;
 
         while let Ok(chunk) = self.chunk_receiver.try_recv() {
             match region_guard.loaded_region_at(chunk.coordinates()) {
-                Some(region) => chunk_guard.cache_chunk(region, chunk),
+                Some(region) => {
+                    rec_chunks += 1;
+                    chunk_guard.cache_chunk(region, chunk)
+                }
                 // This should never happen
                 None => drop(chunk),
             }
+        }
+        if rec_chunks != 0 {
+            log::debug!("recieved {} chunks", rec_chunks);
         }
     }
 
@@ -99,8 +110,7 @@ impl ChunkProvider {
         request: ProviderRequest,
         regions: RegionHandler,
         chunk_sender: Sender<Chunk>,
-    ) -> io::Result<()>
-    {
+    ) -> io::Result<()> {
         match request {
             ProviderRequest::LoadFull(coords) => {
                 let mut region_guard = regions.lock_regions().await;
@@ -210,17 +220,17 @@ impl RegionHandler {
         }
     }
 
-    async fn lock_regions(&self) -> RegionHandlerGuard<'_, Region> {
+    pub async fn lock_regions(&self) -> RegionHandlerGuard<'_, Region> {
         RegionHandlerGuard {
             guard: self.regions.lock().await,
             map: self,
         }
     }
 
-    async fn lock_chunks(&self) -> RegionHandlerGuard<'_, Chunk> {
+    pub async fn lock_chunks(&self) -> RegionHandlerGuard<'_, Chunk> {
         RegionHandlerGuard {
             guard: self.chunks.lock().await,
-            map: self
+            map: self,
         }
     }
 }
@@ -258,10 +268,15 @@ impl<'a> RegionHandlerGuard<'a, Chunk> {
             chunk_info.cache_active = true;
         }
 
-        self.guard.insert(chunk.coordinates().as_chunk().into(), chunk);
+        self.guard
+            .insert(chunk.coordinates().as_chunk().into(), chunk);
     }
 
-    pub fn chunk_at(&mut self, region: &mut Region, absolute_position: Coordinate) -> Option<&mut Chunk> {
+    pub fn chunk_at(
+        &mut self,
+        region: &mut Region,
+        absolute_position: Coordinate,
+    ) -> Option<&mut Chunk> {
         let chunk = self.guard.get_mut(&absolute_position.as_chunk().into());
 
         match chunk {
@@ -269,20 +284,23 @@ impl<'a> RegionHandlerGuard<'a, Chunk> {
                 let chunk_info = match region.mut_chunk_info_at(absolute_position) {
                     Some(info) => info,
                     None => {
-                        warn!("Failed to extract chunk info from region at {:?}", absolute_position);
+                        warn!(
+                            "Failed to extract chunk info from region at {:?}",
+                            absolute_position
+                        );
                         return None;
                     }
                 };
-                
+
                 if !chunk_info.cache_active {
                     chunk_info.cache_active = true;
                     region.loaded_count += 1;
                 }
 
                 Some(chunk)
-            },
+            }
 
-            None => None
+            None => None,
         }
     }
 }
@@ -296,8 +314,11 @@ pub struct Region {
 
 impl Region {
     async fn new(root_directory: &Path, location: Coordinate) -> io::Result<Self> {
-        let chunk_offset: CoordinatePair = location.as_chunk().into();
-        let file_path = root_directory.join(format!("r.{}.{}.mca", chunk_offset.x, chunk_offset.z));
+        let chunk_offset: CoordinatePair = location.as_region().as_chunk().into();
+        let region_offset: CoordinatePair = location.as_region().into();
+
+        let file_path =
+            root_directory.join(format!("r.{}.{}.mca", region_offset.x, region_offset.z));
 
         let mut chunk_info: Vec<ChunkDataInfo> = Vec::with_capacity(1024);
         chunk_info.resize_with(1024, ChunkDataInfo::uninitialized);
@@ -366,18 +387,16 @@ impl Region {
     #[inline]
     fn index_absolute(&self, absolute_position: CoordinatePair) -> usize {
         (absolute_position.x - self.chunk_offset.x
-            + (absolute_position.z - self.chunk_offset.z) * 16) as usize
+            + (absolute_position.z - self.chunk_offset.z) * 32) as usize
     }
 
     fn chunk_info_at(&self, absolute_position: Coordinate) -> Option<&ChunkDataInfo> {
-        self
-            .chunk_info
+        self.chunk_info
             .get(self.index_absolute(absolute_position.as_chunk().into()))
     }
 
     fn mut_chunk_info_at(&mut self, absolute_position: Coordinate) -> Option<&mut ChunkDataInfo> {
-        self
-            .chunk_info
+        self.chunk_info
             .get_mut(self.index_absolute(absolute_position.as_chunk().into()))
     }
 
@@ -409,8 +428,7 @@ impl Region {
         &mut self,
         absolute_position: Coordinate,
         buffer: &mut Vec<u8>,
-    ) -> io::Result<bool>
-    {
+    ) -> io::Result<bool> {
         let chunk_info = match self
             .chunk_info
             .get_mut(self.index_absolute(absolute_position.as_chunk().into()))

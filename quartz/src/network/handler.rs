@@ -6,7 +6,10 @@ use crate::{
     display_to_console,
     network::{packet::*, AsyncClientConnection, ConnectionState, PacketBuffer},
     server::{self, QuartzServer},
-    world::location::BlockPosition,
+    world::{
+        chunk::CLIENT_SECTION_SIZE,
+        location::{BlockPosition, Coordinate, CoordinatePair},
+    },
 };
 use hex::ToHex;
 use lazy_static::lazy_static;
@@ -18,6 +21,7 @@ use openssl::{
 };
 use quartz_chat::{color::PredefinedColor, Component};
 use quartz_commands::CommandModule;
+use quartz_nbt::NbtCompound;
 use quartz_util::UnlocalizedName;
 use rand::{thread_rng, Rng};
 use regex::Regex;
@@ -26,6 +30,7 @@ use serde_json::json;
 use std::{
     str::FromStr,
     sync::{mpsc::Sender, Arc},
+    time::Duration,
 };
 use uuid::Uuid;
 
@@ -251,6 +256,13 @@ impl AsyncPacketHandler {
                     username: self.username.clone(),
                 })
                 .await;
+
+                conn.connection_state = ConnectionState::Play;
+
+                conn.forward_to_server(ServerBoundPacket::LoginSuccessServer {
+                    uuid,
+                    username: self.username.clone(),
+                })
             }
             Err(e) => error!("Failed to parse malformed UUID: {}", e),
         }
@@ -268,8 +280,76 @@ impl AsyncPacketHandler {
 }
 
 impl QuartzServer {
-    async fn handle_login_success_server(&mut self, _sender: usize, _uuid: Uuid, _username: &str) {
-        // TODO: Implement login_success_server
+    async fn handle_login_success_server(&mut self, sender: usize, _uuid: Uuid, username: &str) {
+        // let config = config().lock().await;
+
+        /*
+
+            {
+                logical_height:256S,
+                coordinate_scale:1F,
+                natural:1B,
+                ultrawarm:0B,
+                ambient_light:0F,
+                respawn_anchor_works:0B,
+                infiniburn:"minecraft:infiniburn_overworld",
+                effects:"minecraft:overworld",
+                has_ceiling:0B,
+                bed_works:1B,
+                has_skylight:1B,
+                piglin_safe:0B,
+                has_raids:1B
+            }
+
+        */
+        let dimension =
+            match quartz_nbt::snbt::parse(include_str!("../../../assets/dimension.snbt")) {
+                Ok(nbt) => nbt,
+                Err(e) => {
+                    error!("Error in dimension snbt: {}", e);
+                    NbtCompound::new()
+                }
+            };
+
+        let dimension_codec =
+            match quartz_nbt::snbt::parse(include_str!("../../../assets/dimension_codec.snbt")) {
+                Ok(nbt) => nbt,
+                Err(e) => {
+                    error!("Error in dimension codec snbt: {}", e);
+                    NbtCompound::new()
+                }
+            };
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::JoinGame {
+                entity_id: 0,
+                is_hardcore: false,
+                gamemode: 0,
+                previous_gamemode: -1,
+                world_count: 1,
+                world_names: vec![UnlocalizedName::minecraft("overworld")],
+                dimension_codec,
+                dimension,
+                world_name: UnlocalizedName::minecraft("overworld"),
+                hashed_seed: 0,
+                max_players: 10,
+                view_distance: 12,
+                reduced_debug_info: false,
+                enable_respawn_screen: true,
+                is_debug: false,
+                is_flat: false,
+            })
+            .await;
+
+        let mut brand_buf = PacketBuffer::new(2048);
+        brand_buf.write(&"Quartz");
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::PluginMessage {
+                channel: UnlocalizedName::minecraft("brand"),
+                data: brand_buf[..].to_vec(),
+            })
+            .await;
     }
 
     async fn handle_console_command(&mut self, command: &str) {
@@ -702,6 +782,201 @@ impl QuartzServer {
         main_hand: i32,
         disable_text_filtering: bool,
     ) {
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::HeldItemChange { slot: 0 })
+            .await;
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::DeclareRecipes {
+                num_recipes: 0,
+                recipes: vec![],
+            })
+            .await;
+
+        // self.client_list
+        //     .send_packet(sender, ClientBoundPacket::Tags {
+        //         tag_arr_len: 0,
+        //         tag_arrays: Vec::new(),
+        //     })
+        //     .await;
+
+        // self.client_list
+        //     .send_packet(sender, ClientBoundPacket::DeclareCommands {
+        //         count: 0,
+        //         nodes: vec![],
+        //         root_index: 0,
+        //     })
+        //     .await;
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::UnlockRecipes {
+                action: 0,
+                crafting_recipe_book_open: false,
+                crafting_recipe_book_filter_active: false,
+                smelting_recipe_book_open: false,
+                smelting_recipe_book_filter_active: false,
+                smoker_recipe_book_filter_active: false,
+                smoker_recipe_book_open: false,
+                blast_furnace_recipe_book_open: false,
+                blast_furnace_recipe_book_filter_active: false,
+                array_size_1: 0,
+                recipe_ids_1: vec![],
+                array_size_2: Some(0),
+                recipe_ids_2: Some(vec![]),
+            })
+            .await;
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::PlayerInfo {
+                action: 0,
+                number_of_players: 1, //self.client_list.online_count() as i32,
+                player: vec![WrappedPlayerInfoAction {
+                    uuid: Uuid::new_v4(),
+                    action: PlayerInfoAction::AddPlayer {
+                        name: "Test".to_owned(),
+                        number_of_properties: 0,
+                        properties: vec![],
+                        gamemode: 0,
+                        ping: 120,
+                        has_display_name: false,
+                        display_name: None,
+                    },
+                }],
+            })
+            .await;
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::PlayerInfo {
+                action: 2,
+                number_of_players: 1,
+                player: vec![WrappedPlayerInfoAction {
+                    uuid: Uuid::new_v4(),
+                    action: PlayerInfoAction::UpdateLatency { ping: 12 },
+                }],
+            })
+            .await;
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::UpdateViewPosition {
+                chunk_x: 0,
+                chunk_z: 0,
+            })
+            .await;
+
+        for x in -(view_distance / 2) .. view_distance / 2 {
+            for z in -(view_distance / 2) .. view_distance / 2 {
+                self.chunk_provider
+                    .request_load_full(Coordinate::Chunk(CoordinatePair::new(x as i32, z as i32)));
+            }
+        }
+
+        std::thread::sleep(Duration::from_millis(2000));
+        self.chunk_provider.flush_queue().await;
+        let mut regions = self.chunk_provider.regions.lock_chunks().await;
+
+        for x in -(view_distance / 2) .. view_distance / 2 {
+            for z in -(view_distance / 2) .. view_distance / 2 {
+                let chunk = match regions
+                    .loaded_chunk_at(Coordinate::Chunk(CoordinatePair::new(x as i32, z as i32)))
+                {
+                    Some(c) => c,
+                    None => {
+                        log::error!("trying to get unloaded chunk {}, {}", x, z);
+                        continue;
+                    }
+                };
+
+                let mut mask = vec![0; 256 / 16];
+
+                for section_y in 0 .. (256 / 16) {
+                    if !chunk.is_section_empty(section_y) {
+                        mask[section_y] = 1;
+                    }
+                }
+
+                let biomes = vec![0; 256];
+                let sections = chunk.get_client_sections();
+
+                let mut heightmaps = NbtCompound::new();
+                heightmaps.insert("MOTION_BLOCKING", vec![70_i64; 37]);
+
+                let chunk_coords: CoordinatePair = chunk.coordinates().as_chunk().into();
+
+                self.client_list
+                    .send_packet(sender, ClientBoundPacket::ChunkData {
+                        chunk_x: chunk_coords.x,
+                        chunk_z: chunk_coords.z,
+                        bit_mask_length: mask.len() as i32,
+                        primary_bit_mask: mask,
+                        heightmaps,
+                        biomes_length: Some(biomes.len() as i32),
+                        biomes,
+                        number_of_block_entities: 0,
+                        block_entities: vec![],
+                        size: sections.len() as i32 * CLIENT_SECTION_SIZE,
+                        data: sections,
+                    })
+                    .await;
+
+                let sky_light_mask = vec![1_i64; (256 / 16) + 2];
+                let block_light_mask = vec![1_i64; (256 / 16) + 2];
+
+                let mut sky_lights = Vec::new();
+                let mut block_lights = Vec::new();
+
+                for i in 0 .. 18 {
+                    sky_lights.push(BlockLights {
+                        length: 2048,
+                        values: vec![12; 2048],
+                    });
+
+                    block_lights.push(BlockLights {
+                        length: 2048,
+                        values: vec![12; 2048],
+                    })
+                }
+
+                self.client_list
+                    .send_packet(sender, ClientBoundPacket::UpdateLight {
+                        chunk_x: chunk_coords.x,
+                        chunk_z: chunk_coords.z,
+                        trust_edges: true,
+                        sky_light_mask_length: (256 / 16) + 2,
+                        sky_light_mask,
+                        block_light_mask_length: (256 / 16) + 2,
+                        block_light_mask,
+                        empty_sky_light_mask_length: 0,
+                        empty_sky_light_mask: Vec::new(),
+                        empty_block_light_mask_length: 0,
+                        empty_block_light_mask: Vec::new(),
+                        sky_light_count: 18,
+                        sky_light_arrays: sky_lights,
+                        block_light_count: 18,
+                        block_light_arrays: block_lights,
+                    })
+                    .await;
+            }
+        }
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::SpawnPosition {
+                location: BlockPosition { x: 0, y: 60, z: 0 },
+                angle: 0.0,
+            })
+            .await;
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::PlayerPositionAndLook {
+                dismount_vehicle: true,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                yaw: 0.0,
+                pitch: 0.0,
+                flags: 0,
+                teleport_id: 0,
+            })
+            .await;
     }
 
     #[allow(unused_variables)]
