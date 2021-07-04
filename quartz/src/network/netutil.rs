@@ -15,7 +15,10 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::world::{chunk::ClientSection, location::BlockPosition};
+use crate::world::{
+    chunk::{ClientSection, SECTION_DATA_LENGTH},
+    location::BlockPosition,
+};
 
 /// A wrapper around a vec used for reading/writing packet data efficiently.
 pub struct PacketBuffer {
@@ -775,6 +778,24 @@ impl WriteToPacket for ClientSection {
     }
 }
 
+impl ReadFromPacket for ClientSection {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let block_count = buffer.read()?;
+        let bits_per_block = buffer.read()?;
+        let data_len: i64 = buffer.read_varying()?;
+        let mut data = [0; SECTION_DATA_LENGTH as usize];
+        for i in 0 .. data_len as usize {
+            buffer[i] = buffer.read()?;
+        }
+
+        Ok(ClientSection {
+            block_count,
+            bits_per_block,
+            data,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub enum PacketSerdeError {
     EndOfBuffer,
@@ -809,7 +830,8 @@ impl Display for PacketSerdeError {
             PacketSerdeError::Nbt(e) => Display::fmt(e, f),
             PacketSerdeError::Network(e) => Display::fmt(e, f),
             PacketSerdeError::OpenSSL(e) => Display::fmt(e, f),
-            PacketSerdeError::InvalidEnum(enum_type, id) => write!(f, "Received invalid enum ID for type {}: {}", enum_type, id),
+            PacketSerdeError::InvalidEnum(enum_type, id) =>
+                write!(f, "Received invalid enum ID for type {}: {}", enum_type, id),
             PacketSerdeError::Internal(msg) => Display::fmt(msg, f),
         }
     }
