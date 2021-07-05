@@ -909,7 +909,7 @@ impl QuartzServer {
                         bit_mask_length: mask.len() as i32,
                         primary_bit_mask: mask,
                         heightmaps,
-                        biomes_length: Some(biomes.len() as i32),
+                        biomes_length: biomes.len() as i32,
                         biomes,
                         number_of_block_entities: 0,
                         block_entities: vec![],

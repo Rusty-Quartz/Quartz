@@ -55,31 +55,41 @@ impl PacketBuffer {
         }
     }
 
-    /// Ensures that this buffer is at least the given length/size.
+    /// Resizes this buffer to the given size.
     #[inline]
-    pub fn ensure_size(&mut self, size: usize) {
+    pub fn resize(&mut self, size: usize) {
         if size > self.inner.capacity() {
-            self.inner.reserve(size - self.inner.capacity());
+            self.inner.reserve(size - self.inner.len());
         }
 
         unsafe {
             self.inner.set_len(size);
         }
-    }
 
-    /// Resizes this buffer to the given size.
-    #[inline]
-    pub fn resize(&mut self, size: usize) {
-        self.ensure_size(size);
         if size < self.cursor {
             self.cursor = size;
+        }
+    }
+
+    pub fn ensure_remaining(&mut self, n: usize) {
+        if n <= self.remaining() {
+            return;
+        }
+
+        self.inner.reserve(n - self.cursor());
+        unsafe {
+            self.inner.set_len(self.cursor() + n);
         }
     }
 
     /// Returs the position of the cursor in the buffer.
     #[inline]
     pub fn cursor(&self) -> usize {
-        self.cursor
+        if cfg!(debug_assertions) && self.cursor > self.len() {
+            self.len()
+        } else {
+            self.cursor
+        }
     }
 
     /// Sets this buffer's cursor to the beginning of the buffer.
@@ -105,9 +115,8 @@ impl PacketBuffer {
     }
 
     /// Shifts the remaining bytes after the cursor to the beginning of the buffer.
-    #[allow(unsafe_code)]
     pub fn shift_remaining(&mut self) {
-        if self.cursor == self.inner.len() {
+        if self.cursor >= self.inner.len() {
             self.inner.clear();
             self.cursor = 0;
             return;
@@ -128,7 +137,7 @@ impl PacketBuffer {
     /// Returns the number of bytes remaining in this buffer.
     #[inline]
     pub fn remaining(&self) -> usize {
-        self.inner.len() - self.cursor
+        self.inner.len() - self.cursor()
     }
 
     /// Clears the contents of this buffer and resets the cursor to the beginning of the buffer.
@@ -149,7 +158,7 @@ impl PacketBuffer {
     #[inline]
     pub fn peek(&self) -> Result<u8, PacketSerdeError> {
         self.inner
-            .get(self.cursor)
+            .get(self.cursor())
             .copied()
             .ok_or(PacketSerdeError::EndOfBuffer)
     }
@@ -157,7 +166,7 @@ impl PacketBuffer {
     /// Reads a byte from the buffer, returning `0` if no bytes remain.
     #[inline]
     pub fn read_one(&mut self) -> Result<u8, PacketSerdeError> {
-        match self.inner.get(self.cursor).copied() {
+        match self.inner.get(self.cursor()).copied() {
             Some(by) => {
                 self.cursor += 1;
                 Ok(by)
@@ -227,7 +236,7 @@ impl PacketBuffer {
         }
 
         let ret =
-            str::from_utf8(&self.inner[self.cursor .. self.cursor + byte_len]).map_err(Into::into);
+            str::from_utf8(&self.inner[self.cursor() .. self.cursor() + byte_len]).map_err(Into::into);
         self.cursor += byte_len;
         ret
     }
@@ -247,6 +256,11 @@ impl PacketBuffer {
 
     /// Writes the given bytes to this buffer.
     pub fn write_bytes(&mut self, blob: &[u8]) {
+        // TODO: remove when unsafe set_len calls are fully debugged
+        if self.cursor > self.len() {
+            self.cursor = self.len();
+        }
+
         let remaining = self.remaining();
         if remaining < blob.len() {
             let remaining_allocated = self.capacity() - self.cursor;
@@ -336,7 +350,7 @@ where Idx: SliceIndex<[u8]>
 
 impl Debug for PacketBuffer {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:X?}", self.inner)
+        write!(f, "{:02X?}", self.inner)
     }
 }
 
@@ -376,7 +390,7 @@ impl ReadFromPacket for i8 {
 
 impl ReadFromPacket for u16 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor + 1 >= buffer.inner.len() {
+        if buffer.cursor() + 1 >= buffer.inner.len() {
             return Err(PacketSerdeError::EndOfBuffer);
         }
 
@@ -392,7 +406,7 @@ impl ReadFromPacket for u16 {
 
 impl ReadFromPacket for i16 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor + 1 >= buffer.inner.len() {
+        if buffer.cursor() + 1 >= buffer.inner.len() {
             return Err(PacketSerdeError::EndOfBuffer);
         }
 
@@ -408,7 +422,7 @@ impl ReadFromPacket for i16 {
 
 impl ReadFromPacket for i32 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor + 3 >= buffer.inner.len() {
+        if buffer.cursor() + 3 >= buffer.inner.len() {
             return Err(PacketSerdeError::EndOfBuffer);
         }
 
@@ -426,7 +440,7 @@ impl ReadFromPacket for i32 {
 
         let len = buffer.remaining().min(buf.len());
         unsafe {
-            let src = buffer.inner.as_ptr().add(buffer.cursor);
+            let src = buffer.inner.as_ptr().add(buffer.cursor());
             ptr::copy_nonoverlapping(src, buf.as_mut_ptr(), len);
         }
 
@@ -441,10 +455,10 @@ impl ReadFromPacket for i32 {
 
             if (by & 0x80) == 0 {
                 buffer.cursor += i;
-                return Ok(result.into());
+                return Ok(result);
             }
 
-            if i == len {
+            if i >= len {
                 return Err(PacketSerdeError::EndOfBuffer);
             }
         }
@@ -455,7 +469,7 @@ impl ReadFromPacket for i32 {
 
 impl ReadFromPacket for i64 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor + 7 >= buffer.inner.len() {
+        if buffer.cursor() + 7 >= buffer.inner.len() {
             return Err(PacketSerdeError::EndOfBuffer);
         }
 
@@ -473,7 +487,7 @@ impl ReadFromPacket for i64 {
 
         let len = buffer.remaining().min(buf.len());
         unsafe {
-            let src = buffer.inner.as_ptr().add(buffer.cursor);
+            let src = buffer.inner.as_ptr().add(buffer.cursor());
             ptr::copy_nonoverlapping(src, buf.as_mut_ptr(), len);
         }
 
@@ -488,10 +502,10 @@ impl ReadFromPacket for i64 {
 
             if (by & 0x80) == 0 {
                 buffer.cursor += i;
-                return Ok(result.into());
+                return Ok(result);
             }
 
-            if i == len {
+            if i >= len {
                 return Err(PacketSerdeError::EndOfBuffer);
             }
         }
@@ -502,7 +516,7 @@ impl ReadFromPacket for i64 {
 
 impl ReadFromPacket for u128 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor + 15 >= buffer.inner.len() {
+        if buffer.cursor() + 15 >= buffer.inner.len() {
             return Err(PacketSerdeError::EndOfBuffer);
         }
 
@@ -518,7 +532,7 @@ impl ReadFromPacket for u128 {
 
 impl ReadFromPacket for f32 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor + 3 >= buffer.inner.len() {
+        if buffer.cursor() + 3 >= buffer.inner.len() {
             return Err(PacketSerdeError::EndOfBuffer);
         }
 
@@ -534,7 +548,7 @@ impl ReadFromPacket for f32 {
 
 impl ReadFromPacket for f64 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor + 7 >= buffer.inner.len() {
+        if buffer.cursor() + 7 >= buffer.inner.len() {
             return Err(PacketSerdeError::EndOfBuffer);
         }
 
@@ -578,7 +592,7 @@ impl ReadFromPacket for UnlocalizedName {
 impl ReadFromPacket for NbtCompound {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut cursor = Cursor::new(&buffer.inner);
-        cursor.set_position(buffer.cursor as u64);
+        cursor.set_position(buffer.cursor() as u64);
         let ret = match quartz_nbt::read::read_nbt_uncompressed(&mut cursor) {
             Ok((nbt, _)) => Ok(nbt),
             Err(error) => Err(PacketSerdeError::Nbt(error)),
@@ -754,8 +768,9 @@ impl WriteToPacket for UnlocalizedName {
 
 impl WriteToPacket for NbtCompound {
     fn write_to(&self, buffer: &mut PacketBuffer) {
+        let position = buffer.cursor();
         let mut cursor = Cursor::new(&mut buffer.inner);
-        cursor.set_position(buffer.cursor as u64);
+        cursor.set_position(position as u64);
         let _ = quartz_nbt::write::write_nbt_uncompressed(&mut cursor, "root", self);
         buffer.cursor = cursor.position() as usize;
     }
@@ -784,8 +799,8 @@ impl ReadFromPacket for ClientSection {
         let bits_per_block = buffer.read()?;
         let data_len: i64 = buffer.read_varying()?;
         let mut data = [0; SECTION_DATA_LENGTH as usize];
-        for i in 0 .. data_len as usize {
-            buffer[i] = buffer.read()?;
+        for i in 0 .. (data_len as usize).min(data.len()) {
+            data[i] = buffer.read()?;
         }
 
         Ok(ClientSection {

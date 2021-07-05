@@ -666,7 +666,8 @@ pub struct EntityProperty {
     value: f64,
     #[packet_serde(varying)]
     number_of_modifiers: i32,
-    modifiers: AttributeModifier,
+    #[packet_serde(len = "number_of_modifiers as usize")]
+    modifiers: Vec<AttributeModifier>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]

@@ -307,6 +307,7 @@ impl Default for Section {
 }
 
 /// A chunk section in the format understood by the client
+#[derive(Debug)]
 pub struct ClientSection {
     pub block_count: i16,
     pub bits_per_block: u8,

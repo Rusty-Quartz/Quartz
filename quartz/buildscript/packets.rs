@@ -213,7 +213,7 @@ fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacke
         }
 
         impl #enum_name {
-            pub async fn read_from(
+            pub fn read_from(
                 buffer: &mut PacketBuffer,
                 connection_state: crate::network::ConnectionState,
                 packet_len: usize
@@ -221,11 +221,13 @@ fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacke
             {
                 let initial_len = buffer.len();
                 let truncated_len = buffer.cursor() + packet_len;
+
                 unsafe {
                     buffer.set_len(truncated_len);
                 }
     
-                async fn read_internal(
+                #[inline(always)]
+                fn read_internal(
                     buffer: &mut PacketBuffer,
                     connection_state: crate::network::ConnectionState,
                 ) -> Result<#enum_name, crate::network::PacketSerdeError> {
@@ -242,7 +244,7 @@ fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacke
                         _ => Err(crate::network::PacketSerdeError::Internal("Attempted to read packet in invalid connection state"))
                     }
                 }
-                let mut ret = read_internal(buffer, connection_state).await;
+                let mut ret = read_internal(buffer, connection_state);
     
                 if buffer.len() != truncated_len {
                     ret = Err(crate::network::PacketSerdeError::Internal("Packet buffer written to while being read from"));
@@ -326,6 +328,7 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
                 conn.read_buffer.set_len(truncated_len);
             }
 
+            #[inline(always)]
             async fn handle_packet_internal(
                 conn: &mut AsyncClientConnection,
                 async_handler: &mut AsyncPacketHandler,

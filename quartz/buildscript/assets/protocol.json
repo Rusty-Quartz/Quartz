@@ -1743,7 +1743,7 @@
           },
           {
             "name": "data",
-            "type": "chunk_section(size)",
+            "type": "chunk_section(size as usize)",
             "array": true
           },
           {

@@ -2,13 +2,13 @@ use crate::world::{
     chunk::Chunk,
     location::{Coordinate, CoordinatePair},
 };
+use byteorder::{BigEndian, ByteOrder};
 use futures_lite::{
     future,
     io::{AsyncReadExt, AsyncSeekExt},
 };
 use log::{error, warn};
-use quartz_chat::component::ToComponent;
-use quartz_nbt::read::{read_nbt_gz_compressed, read_nbt_zlib_compressed};
+use quartz_nbt::{NbtCompound, read::{read_nbt_gz_compressed, read_nbt_zlib_compressed}};
 use quartz_util::hash::NumHasher;
 use smol::{
     channel::{self, Receiver, Sender},
@@ -122,44 +122,32 @@ impl ChunkProvider {
                     return Ok(());
                 }
 
-                let mut buffer: Vec<u8> = Vec::new();
-                let saved_on_disk = region.load_chunk_nbt(coords, &mut buffer).await?;
+                let chunk_nbt = region.load_chunk_nbt(coords).await?;
 
                 drop(region);
                 drop(region_guard);
 
-                if saved_on_disk {
-                    let (nbt, _) = match buffer[0] {
-                        // GZip compression (not used in practice)
-                        1 => read_nbt_gz_compressed(&mut StdCursor::new(&buffer[1 ..]))?,
-                        2 => read_nbt_zlib_compressed(&mut StdCursor::new(&buffer[1 ..]))?,
-                        _ =>
-                            return Err(IoError::new(
-                                ErrorKind::InvalidData,
-                                format!(
-                                    "Encountered invalid compression scheme ({}) for chunk at {}",
-                                    buffer[0], coords
-                                ),
-                            )),
-                    };
-
-                    let chunk = Chunk::from_nbt(&nbt);
-                    match chunk {
-                        Ok(chunk) => chunk_sender.send(chunk).await.map_err(|_| {
-                            io::Error::new(
-                                io::ErrorKind::BrokenPipe,
-                                "Failed to send chunk between threads",
-                            )
-                        })?,
-                        Err(e) =>
-                            return Err(IoError::new(
-                                ErrorKind::InvalidData,
-                                format!("Encountered invalid NBT for chunk at {}: {}", coords, e),
-                            )
-                            .into()),
+                match chunk_nbt {
+                    Some(nbt) => {
+                        let chunk = Chunk::from_nbt(&nbt);
+                        match chunk {
+                            Ok(chunk) => chunk_sender.send(chunk).await.map_err(|_| {
+                                io::Error::new(
+                                    io::ErrorKind::BrokenPipe,
+                                    "Failed to send chunk between threads",
+                                )
+                            })?,
+                            Err(e) =>
+                                return Err(IoError::new(
+                                    ErrorKind::InvalidData,
+                                    format!("Encountered invalid NBT for chunk at {}: {}", coords, e),
+                                )
+                                .into()),
+                        }
+                    },
+                    None => {
+                        log::warn!("Chunk generation not supported yet.");
                     }
-                } else {
-                    log::warn!("Chunk generation not supported yet.");
                 }
             }
 
@@ -427,8 +415,7 @@ impl Region {
     async fn load_chunk_nbt(
         &mut self,
         absolute_position: Coordinate,
-        buffer: &mut Vec<u8>,
-    ) -> io::Result<bool> {
+    ) -> io::Result<Option<NbtCompound>> {
         let chunk_info = match self
             .chunk_info
             .get_mut(self.index_absolute(absolute_position.as_chunk().into()))
@@ -442,24 +429,41 @@ impl Region {
         };
 
         if chunk_info.is_uninitialized() {
-            return Ok(false);
+            return Ok(None);
         }
 
-        buffer.resize(((chunk_info.sector_count as usize) * 4096).max(5), 0);
         // The sector offset accounts for the tables at the beginning
         self.file
             .seek(SeekFrom::Start((chunk_info.sector_offset as u64) * 4096))
             .await?;
-        self.file.read_exact(buffer).await?;
 
-        let length = (buffer[0] as usize) << 24
-            | (buffer[1] as usize) << 16
-            | (buffer[2] as usize) << 8
-            | (buffer[3] as usize);
-        buffer.drain(.. 4);
-        buffer.resize(length, 0);
+        // Read the length
+        let mut buf = [0u8; 4];
+        self.file.read_exact(&mut buf).await?;
+        let length = BigEndian::read_u32(&buf) as usize;
 
-        Ok(true)
+        let mut buf: Vec<u8> = Vec::with_capacity(length);
+        unsafe {
+            buf.set_len(length);
+        } 
+        
+        self.file.read_exact(&mut buf).await?;
+
+        let (nbt, _) = match buf[0] {
+            // GZip compression (not used in practice)
+            1 => read_nbt_gz_compressed(&mut StdCursor::new(&buf[1 ..]))?,
+            2 => read_nbt_zlib_compressed(&mut StdCursor::new(&buf[1 ..]))?,
+            _ =>
+                return Err(IoError::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "Encountered invalid compression scheme ({}) for chunk at {}",
+                        buf[0], absolute_position.as_chunk()
+                    ),
+                )),
+        };
+
+        Ok(Some(nbt))
     }
 
     fn mark_chunk_inactive(&mut self, absolute_position: Coordinate) {

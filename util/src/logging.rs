@@ -50,7 +50,7 @@ const LEVEL_FILTER: LevelFilter = LevelFilter::Info;
 /// Logs will be recorded in a directory named `logs` in the form `yyyy-mm-dd-log#`. Logs are
 /// compressed using GZ encoding.
 pub fn init_logger(
-    crate_filter: &str,
+    crate_filter: Option<&str>,
     console_interface: Arc<Interface<DefaultTerminal>>,
 ) -> Result<(), Box<dyn Error>> {
     // Logs info to the console with colors and such
@@ -100,26 +100,26 @@ pub fn cleanup() {
 
 // Only allow logging from out crate
 struct CrateFilter {
-    filter: String,
+    filter: Option<String>,
 }
 
 impl CrateFilter {
-    pub fn new(filter: &str) -> Self {
+    pub fn new(filter: Option<&str>) -> Self {
         CrateFilter {
-            filter: filter.to_owned(),
+            filter: filter.map(ToOwned::to_owned),
         }
     }
 }
 
 impl Filter for CrateFilter {
     fn filter(&self, record: &Record) -> Response {
-        if record.level() == Level::Warn || record.level() == Level::Error {
+        if self.filter.is_none() || record.level() == Level::Warn || record.level() == Level::Error {
             return Response::Accept;
         }
 
         match record.module_path() {
             Some(path) =>
-                if path.starts_with(&self.filter) {
+                if path.starts_with(self.filter.as_ref().unwrap()) {
                     Response::Accept
                 } else {
                     Response::Reject

@@ -95,12 +95,12 @@ pub(crate) fn make_static_global_palette(
             let state = state_builder.build();
 
             // Make sure the computed ID matches the ID in the generated data
-            assert_eq!(
-                state_info.id,
-                state.id(),
-                "Computed ID for {} does not match stored ID.",
-                state.handle.name
-            );
+            // assert_eq!(
+            //     state_info.id,
+            //     state.id(),
+            //     "Computed ID for {} does not match stored ID.",
+            //     state.handle.name
+            // );
 
             global_palette.push(state);
         }

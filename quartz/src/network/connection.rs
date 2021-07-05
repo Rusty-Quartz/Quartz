@@ -121,7 +121,7 @@ impl IOHandle {
     }
 
     /// Writes the raw packet data bytes to the given stream, applying compression and encryption if needed.
-    pub async fn write_packet_data(
+    async fn write_packet_data(
         &mut self,
         packet_data: &mut PacketBuffer,
         stream: &mut TcpStream,
@@ -243,7 +243,7 @@ impl IOHandle {
         // Large packet, gather the rest of the data
         if raw_len > packet_buffer.len() {
             let end = packet_buffer.len();
-            packet_buffer.resize(raw_len);
+            packet_buffer.resize(PacketBuffer::varint_size(raw_len as i32) + raw_len);
             match stream.read_exact(&mut packet_buffer[end ..]).await {
                 Ok(_) => self.decrypt_buffer(&mut *packet_buffer, end),
                 Err(e) => return Err(PacketSerdeError::Network(e)),
