@@ -150,7 +150,7 @@ impl ReadFromPacket for Vec<EntityMetadataWrapper> {
                 13 => EntityMetadata::OptBlockId(buffer.read_varying()?),
                 14 => EntityMetadata::Nbt(buffer.read()?),
                 15 => EntityMetadata::Particle(buffer.read()?),
-                16 => EntityMetadata::VillagerData(buffer.read()?, buffer.read()?, buffer.read()?),
+                16 => EntityMetadata::VillagerData(buffer.read_varying()?, buffer.read_varying()?, buffer.read_varying()?),
                 17 => EntityMetadata::OptVarInt(buffer.read_varying()?),
                 18 => EntityMetadata::Pose(buffer.read_varying()?),
                 id @ _ => return Err(PacketSerdeError::InvalidEnum("EntityMetadata", id as i32))
@@ -485,15 +485,54 @@ impl PlayerInfoAction {
     }
 }
 
-#[derive(Debug, WriteToPacket, ReadFromPacket)]
+#[derive(Debug)]
 pub struct Slot {
     present: bool,
-    #[packet_serde(varying, condition = "present")]
     item_id: Option<i32>,
-    #[packet_serde(condition = "present")]
     item_count: Option<i8>,
-    #[packet_serde(condition = "present")]
     nbt: Option<NbtCompound>,
+}
+
+impl WriteToPacket for Slot {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        buffer.write(&self.present);
+        if self.present {
+            buffer.write_varying(&self.item_id.unwrap());
+            buffer.write(&self.item_count.unwrap());
+            match self.nbt.as_ref() {
+                Some(nbt) => buffer.write(nbt),
+                None => buffer.write_one(0) // TAG_End
+            }
+        }
+    }
+}
+
+impl ReadFromPacket for Slot {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let present = buffer.read()?;
+        let (item_id, item_count, nbt) = if present {
+            let item_id = buffer.read_varying()?;
+            let item_count = buffer.read()?;
+            let nbt = match buffer.peek()? {
+                0 => {
+                    let _ = buffer.read_one()?;
+                    None
+                },
+                _ => Some(buffer.read()?)
+            };
+
+            (Some(item_id), Some(item_count), nbt)
+        } else {
+            (None, None, None)
+        };
+
+        Ok(Slot {
+            present,
+            item_id,
+            item_count,
+            nbt
+        })
+    }
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -548,6 +587,12 @@ pub struct VillagerTrade {
     special_price: i32,
     price_multiplier: f32,
     demand: i32,
+}
+
+#[derive(Debug, WriteToPacket, ReadFromPacket)]
+pub struct InventorySlot {
+    slot_number: i16,
+    slot: Slot
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -610,7 +655,8 @@ pub struct Advancement {
     #[packet_serde(condition = "has_parent")]
     parent_id: Option<UnlocalizedName>,
     has_display: bool,
-    display_data: AdvancementDisplay,
+    #[packet_serde(condition = "has_display")]
+    display_data: Option<AdvancementDisplay>,
     #[packet_serde(varying)]
     criteria_len: i32,
     #[packet_serde(len = "criteria_len as usize")]
@@ -658,6 +704,10 @@ pub struct AdvancementDisplay {
     #[packet_serde(varying)]
     frame_type: i32,
     flags: i32,
+    #[packet_serde(condition = "(flags & 0x1) != 0")]
+    background_texture: Option<UnlocalizedName>,
+    x: f32,
+    y: f32
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -731,6 +781,7 @@ impl WrappedPlayerInfoAction {
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct TagArray {
+    tag_type: UnlocalizedName,
     #[packet_serde(varying)]
     length: i32,
     #[packet_serde(len = "length as usize")]

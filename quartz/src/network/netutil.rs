@@ -76,9 +76,9 @@ impl PacketBuffer {
             return;
         }
 
-        self.inner.reserve(n - self.cursor());
+        self.inner.reserve(n - self.cursor);
         unsafe {
-            self.inner.set_len(self.cursor() + n);
+            self.inner.set_len(self.cursor + n);
         }
     }
 
@@ -137,7 +137,7 @@ impl PacketBuffer {
     /// Returns the number of bytes remaining in this buffer.
     #[inline]
     pub fn remaining(&self) -> usize {
-        self.inner.len() - self.cursor()
+        self.inner.len().checked_sub(self.cursor).unwrap_or(0)
     }
 
     /// Clears the contents of this buffer and resets the cursor to the beginning of the buffer.
@@ -158,7 +158,7 @@ impl PacketBuffer {
     #[inline]
     pub fn peek(&self) -> Result<u8, PacketSerdeError> {
         self.inner
-            .get(self.cursor())
+            .get(self.cursor)
             .copied()
             .ok_or(PacketSerdeError::EndOfBuffer)
     }
@@ -166,7 +166,7 @@ impl PacketBuffer {
     /// Reads a byte from the buffer, returning `0` if no bytes remain.
     #[inline]
     pub fn read_one(&mut self) -> Result<u8, PacketSerdeError> {
-        match self.inner.get(self.cursor()).copied() {
+        match self.inner.get(self.cursor).copied() {
             Some(by) => {
                 self.cursor += 1;
                 Ok(by)
@@ -231,12 +231,12 @@ impl PacketBuffer {
     #[inline]
     pub fn read_mc_str(&mut self) -> Result<&str, PacketSerdeError> {
         let byte_len = self.read_varying::<i32>()? as usize;
-        if byte_len > self.remaining() {
+        if self.cursor + byte_len > self.inner.len() {
             return Err(PacketSerdeError::EndOfBuffer);
         }
 
         let ret =
-            str::from_utf8(&self.inner[self.cursor() .. self.cursor() + byte_len]).map_err(Into::into);
+            str::from_utf8(&self.inner[self.cursor .. self.cursor + byte_len]).map_err(Into::into);
         self.cursor += byte_len;
         ret
     }
@@ -597,7 +597,8 @@ impl ReadFromPacket for NbtCompound {
             Ok((nbt, _)) => Ok(nbt),
             Err(error) => Err(PacketSerdeError::Nbt(error)),
         };
-        buffer.cursor = cursor.position() as usize;
+        let position = cursor.position() as usize;
+        buffer.set_cursor(position);
         ret
     }
 }
@@ -771,8 +772,9 @@ impl WriteToPacket for NbtCompound {
         let position = buffer.cursor();
         let mut cursor = Cursor::new(&mut buffer.inner);
         cursor.set_position(position as u64);
-        let _ = quartz_nbt::write::write_nbt_uncompressed(&mut cursor, "root", self);
-        buffer.cursor = cursor.position() as usize;
+        let _ = quartz_nbt::write::write_nbt_uncompressed(&mut cursor, "", self);
+        let position = cursor.position() as usize;
+        buffer.set_cursor(position);
     }
 }
 

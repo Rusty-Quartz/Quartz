@@ -222,6 +222,10 @@ fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacke
                 let initial_len = buffer.len();
                 let truncated_len = buffer.cursor() + packet_len;
 
+                if truncated_len > initial_len {
+                    return Err(PacketSerdeError::EndOfBuffer);
+                }
+
                 unsafe {
                     buffer.set_len(truncated_len);
                 }

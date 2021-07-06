@@ -153,7 +153,7 @@
           },
           {
             "name": "slots",
-            "type": "slot(slots_len as usize)",
+            "type": "inventory_slot(slots_len as usize)",
             "array": true
           },
           {
@@ -258,7 +258,7 @@
             "name": "hand",
             "type": "varint",
             "option": true,
-            "condition": "r#type == 1 || r#type == 2"
+            "condition": "r#type == 0 || r#type == 2"
           },
           {
             "name": "sneaking",
@@ -3364,12 +3364,12 @@
         "id": "0x66",
         "fields": [
           {
-            "name": "tag_arr_len",
+            "name": "length",
             "type": "varint"
           },
           {
-            "name": "tag_arrays",
-            "type": "tag_array(tag_arr_len as usize)",
+            "name": "tags",
+            "type": "tag_array(length as usize)",
             "array": true
           }
         ]

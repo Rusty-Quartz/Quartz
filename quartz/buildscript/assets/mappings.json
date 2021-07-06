@@ -15,6 +15,7 @@
         "map_icon": "crate::network::packet::MapIcon",
         "villager_trade": "crate::network::packet::VillagerTrade",
         "entity_metadata_wrapper": "crate::network::packet::EntityMetadataWrapper",
+        "inventory_slot": "crate::network::packet::InventorySlot",
         "equipment_slot": "crate::network::packet::EquipmentSlot",
         "advancement_map_element": "crate::network::packet::AdvancementMapElement",
         "advancement_progress_map_element": "crate::network::packet::AdvancementProgressMapElement",

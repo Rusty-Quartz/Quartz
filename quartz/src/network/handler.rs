@@ -759,7 +759,7 @@ impl QuartzServer {
         button: i8,
         mode: i32,
         slots_len: i32,
-        slots: &Vec<Slot>,
+        slots: &Vec<InventorySlot>,
         clicked_slot: &Slot,
     ) {
     }
