@@ -2,6 +2,10 @@
 A reimplementation of a minecraft server in rust.  
 Currently working on supporting 1.16.1
 
+## Mission Statement
+
+Be better than feather.
+
 ## Current TODO List
 - [x] Logging
 - [x] Packet Reading and Writing
