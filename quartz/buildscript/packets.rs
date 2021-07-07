@@ -48,14 +48,14 @@ pub fn gen_packet_handlers() {
         &client_bound,
         &states_raw,
         false,
-        &mappings
+        &mappings,
     );
     let server_packet_enum = gen_packet_enum(
         format_ident!("ServerBoundPacket"),
         &server_bound,
         &states_raw,
         true,
-        &mappings
+        &mappings,
     );
     let handle_packet = gen_handle_packet(&states_raw, &mappings);
     let sync_dispatch = gen_sync_dispatch(&server_bound, &mappings);
@@ -86,12 +86,18 @@ pub fn gen_packet_handlers() {
     super::format_in_place(packet_enums_dest_path.as_os_str());
     super::format_in_place(handler_dest_path.as_os_str());
 
-    println!("cargo:rerun-if-changed=./assets/Pickaxe/protocol.json");
-    println!("cargo:rerun-if-changed=./assets/Pickaxe/mappings.json");
+    println!("cargo:rerun-if-changed=buildscript/assets/protocol.json");
+    println!("cargo:rerun-if-changed=buildscript/assets/mappings.json");
     println!("cargo:rerun-if-changed=buildscript/packets.rs")
 }
 
-fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacketInfo], is_server_bound: bool, mappings: &Mappings) -> TokenStream {
+fn gen_packet_enum(
+    enum_name: Ident,
+    packet_arr: &[Packet],
+    states: &[StatePacketInfo],
+    is_server_bound: bool,
+    mappings: &Mappings,
+) -> TokenStream {
     let variant_names = packet_arr
         .iter()
         .map(|packet| format_ident!("{}", snake_to_pascal(&packet.name)))
@@ -116,31 +122,31 @@ fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacke
         .enumerate()
         .filter(|(_, packet)| !packet.internal)
         .map(|(index, packet)| {
-        let variant_name = &variant_names[index];
-        let id = Literal::i32_unsuffixed(
-            i32::from_str_radix(&packet.id[2 ..], 16)
-                .expect("Invalid packet ID encountered in JSON."),
-        );
-        let field_names = packet
-            .fields
-            .iter()
-            .map(|field| format_ident!("{}", &field.name))
-            .collect::<Vec<_>>();
-        let unpack_fields = if packet.fields.is_empty() {
-            None
-        } else {
-            Some(quote! { { #( #field_names ),* } })
-        };
-        let write_fields = packet
-            .codegen_fields(mappings, true)
-            .map(|(field, _)| gen_serialize_enum_field(&field, &format_ident!("buffer")));
-        quote! {
-            Self::#variant_name #unpack_fields => {
-                buffer.write_varying(&#id);
-                #( #write_fields )*
+            let variant_name = &variant_names[index];
+            let id = Literal::i32_unsuffixed(
+                i32::from_str_radix(&packet.id[2 ..], 16)
+                    .expect("Invalid packet ID encountered in JSON."),
+            );
+            let field_names = packet
+                .fields
+                .iter()
+                .map(|field| format_ident!("{}", &field.name))
+                .collect::<Vec<_>>();
+            let unpack_fields = if packet.fields.is_empty() {
+                None
+            } else {
+                Some(quote! { { #( #field_names ),* } })
+            };
+            let write_fields = packet
+                .codegen_fields(mappings, true)
+                .map(|(field, _)| gen_serialize_enum_field(&field, &format_ident!("buffer")));
+            quote! {
+                Self::#variant_name #unpack_fields => {
+                    buffer.write_varying(&#id);
+                    #( #write_fields )*
+                }
             }
-        }
-    });
+        });
     let state_deserializers = states
         .iter()
         .filter(|state_info| {
@@ -160,36 +166,36 @@ fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacke
             } else {
                 state_info.client_bound.as_ref().unwrap()
             };
-            let match_arms = packets
-                .iter()
-                .map(|packet| {
-                    let id = Literal::i32_unsuffixed(
-                        i32::from_str_radix(&packet.id[2..], 16)
-                            .expect("Invalid packet ID encountered in JSON.")
-                    );
-                    let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
-                    let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
-                    let read_fields = packet
-                        .codegen_fields(mappings, true)
-                        .map(|(codegen_field, field)| {
-                            match &field.deserialize_with {
-                                Some(deserializer) => {
-                                    let name = &codegen_field.name;
-                                    let deserializer: TokenStream = syn::parse_str(deserializer).unwrap();
-                                    quote! {
-                                        let #name = #deserializer;
-                                    }
-                                },
-                                None => gen_deserialize_field(&codegen_field, &format_ident!("buffer"))
+            let match_arms = packets.iter().map(|packet| {
+                let id = Literal::i32_unsuffixed(
+                    i32::from_str_radix(&packet.id[2 ..], 16)
+                        .expect("Invalid packet ID encountered in JSON."),
+                );
+                let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
+                let field_names = packet
+                    .fields
+                    .iter()
+                    .map(|field| format_ident!("{}", &field.name))
+                    .collect::<Vec<_>>();
+                let read_fields = packet.codegen_fields(mappings, true).map(
+                    |(codegen_field, field)| match &field.deserialize_with {
+                        Some(deserializer) => {
+                            let name = &codegen_field.name;
+                            let deserializer: TokenStream = syn::parse_str(deserializer).unwrap();
+                            quote! {
+                                let #name = #deserializer;
                             }
-                        });
-                    quote! {
-                        #id => {
-                            #( #read_fields )*
-                            Ok(#enum_name::#variant_name { #( #field_names ),* })
                         }
+                        None => gen_deserialize_field(&codegen_field, &format_ident!("buffer")),
+                    },
+                );
+                quote! {
+                    #id => {
+                        #( #read_fields )*
+                        Ok(#enum_name::#variant_name { #( #field_names ),* })
                     }
-                });
+                }
+            });
             quote! {
                 crate::network::ConnectionState::#state_name => {
                     match id {
@@ -201,7 +207,7 @@ fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacke
         });
 
     let default_case = if any_internal {
-        Some(quote!{ _ => unimplemented!("WriteToPacket unimplemented for {:?}", self) })
+        Some(quote! { _ => unimplemented!("WriteToPacket unimplemented for {:?}", self) })
     } else {
         None
     };
@@ -229,7 +235,7 @@ fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacke
                 unsafe {
                     buffer.set_len(truncated_len);
                 }
-    
+
                 #[inline(always)]
                 fn read_internal(
                     buffer: &mut PacketBuffer,
@@ -242,22 +248,22 @@ fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], states: &[StatePacke
                     } else {
                         id = buffer.read_varying::<i32>()?;
                     }
-    
+
                     match connection_state {
                         #( #state_deserializers, )*
                         _ => Err(crate::network::PacketSerdeError::Internal("Attempted to read packet in invalid connection state"))
                     }
                 }
                 let mut ret = read_internal(buffer, connection_state);
-    
+
                 if buffer.len() != truncated_len {
                     ret = Err(crate::network::PacketSerdeError::Internal("Packet buffer written to while being read from"));
                 }
-    
+
                 unsafe {
                     buffer.set_len(initial_len);
                 }
-    
+
                 ret
             }
         }
@@ -371,25 +377,28 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
 }
 
 fn gen_sync_dispatch(server_bound: &[Packet], mappings: &Mappings) -> TokenStream {
-    let match_arms = server_bound.iter().filter(|packet| !packet.asynchronous).map(|packet| {
-        let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
-        let field_names = packet
-            .fields
-            .iter()
-            .filter(|field| !field.unused)
-            .map(|field| format_ident!("{}", field.name));
-        let field_derefs = packet.field_derefs(mappings);
-        let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
-        let sender = if packet.sender_independent {
-            None
-        } else {
-            Some(quote! { sender, })
-        };
-        quote! {
-            crate::network::packet::ServerBoundPacket::#variant_name { #( #field_names ),* } =>
-                handler.#handler_name(#sender #( #field_derefs ),*).await
-        }
-    });
+    let match_arms = server_bound
+        .iter()
+        .filter(|packet| !packet.asynchronous)
+        .map(|packet| {
+            let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
+            let field_names = packet
+                .fields
+                .iter()
+                .filter(|field| !field.unused)
+                .map(|field| format_ident!("{}", field.name));
+            let field_derefs = packet.field_derefs(mappings);
+            let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
+            let sender = if packet.sender_independent {
+                None
+            } else {
+                Some(quote! { sender, })
+            };
+            quote! {
+                crate::network::packet::ServerBoundPacket::#variant_name { #( #field_names ),* } =>
+                    handler.#handler_name(#sender #( #field_derefs ),*).await
+            }
+        });
 
     quote! {
         pub async fn dispatch_sync_packet(wrapped_packet: &crate::network::packet::WrappedServerBoundPacket, handler: &mut crate::QuartzServer) {
@@ -457,7 +466,7 @@ impl Packet {
     pub fn codegen_fields<'a>(
         &'a self,
         mappings: &'a Mappings,
-        writing: bool
+        writing: bool,
     ) -> impl Iterator<Item = (CodegenField, &'a Field)> + 'a {
         self.fields.iter().map(move |field| {
             let name = format_ident!(
@@ -489,17 +498,23 @@ impl Packet {
                     "Failed to parse length expression for array type for field {} in packet {}",
                     &field.name, &self.name
                 ));
-                (CodegenField::array(
-                    name,
-                    ty,
-                    len,
-                    condition,
-                    is_option,
-                    varying,
-                    field.var_type.starts_with("u8"),
-                ), field)
+                (
+                    CodegenField::array(
+                        name,
+                        ty,
+                        len,
+                        condition,
+                        is_option,
+                        varying,
+                        field.var_type.starts_with("u8"),
+                    ),
+                    field,
+                )
             } else {
-                (CodegenField::regular(name, ty, condition, is_option, varying), field)
+                (
+                    CodegenField::regular(name, ty, condition, is_option, varying),
+                    field,
+                )
             }
         })
     }
