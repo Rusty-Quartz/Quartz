@@ -43,7 +43,7 @@ pub enum EntityMetadata {
     Float(f32),
     String(String),
     Chat(Component),
-    OptChat(#[packet_serde(bool_prefixed)] Option<Component>),
+    OptChat(#[packet_serde(bool_prefixed)] Option<Box<Component>>),
     Slot(Slot),
     Boolean(bool),
     Rotation(f32, f32, f32),
@@ -400,7 +400,7 @@ pub enum PlayerInfoAction {
         #[packet_serde(varying)]
         ping: i32,
         #[packet_serde(bool_prefixed)]
-        display_name: Option<Component>,
+        display_name: Option<Box<Component>>,
     },
     UpdateGamemode {
         #[packet_serde(varying)]
@@ -412,7 +412,7 @@ pub enum PlayerInfoAction {
     },
     UpdateDisplayName {
         #[packet_serde(bool_prefixed)]
-        display_name: Option<Component>,
+        display_name: Option<Box<Component>>,
     },
     RemovePlayer,
 }
@@ -520,7 +520,7 @@ impl ReadFromPacket for Slot {
 pub struct TabCompleteMatch {
     tab_match: String,
     #[packet_serde(bool_prefixed)]
-    tooltip: Option<Component>,
+    tooltip: Option<Box<Component>>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -549,7 +549,7 @@ pub struct MapIcon {
     z: i8,
     direction: i8,
     #[packet_serde(bool_prefixed)]
-    display_name: Option<Component>,
+    display_name: Option<Box<Component>>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -632,7 +632,7 @@ pub struct Advancement {
     #[packet_serde(bool_prefixed)]
     parent_id: Option<UnlocalizedName>,
     #[packet_serde(bool_prefixed)]
-    display_data: Option<AdvancementDisplay>,
+    display_data: Option<Box<AdvancementDisplay>>,
     #[packet_serde(len_prefixed)]
     criteria: Box<[UnlocalizedName]>,
     #[packet_serde(len_prefixed)]

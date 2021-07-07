@@ -168,36 +168,37 @@ fn gen_packet_enum(
             } else {
                 state_info.client_bound.as_ref().unwrap()
             };
-            let match_arms = packets.iter().map(|packet| {
-                let id = Literal::i32_unsuffixed(
-                    i32::from_str_radix(&packet.id[2 ..], 16)
-                        .expect("Invalid packet ID encountered in JSON."),
-                );
-                let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
-                let field_names = packet
-                    .fields
-                    .iter()
-                    .map(|field| format_ident!("{}", &field.name))
-                    .collect::<Vec<_>>();
-                let read_fields = packet.codegen_fields(mappings, true).map(
-                    |(codegen_field, field)| match &field.deserialize_with {
-                        Some(deserializer) => {
-                            let name = &codegen_field.name;
-                            let deserializer: TokenStream = syn::parse_str(deserializer).unwrap();
-                            quote! {
-                                let #name = #deserializer;
+            let match_arms = packets
+                .iter()
+                .map(|packet| {
+                    let id = Literal::i32_unsuffixed(
+                        i32::from_str_radix(&packet.id[2..], 16)
+                            .expect("Invalid packet ID encountered in JSON.")
+                    );
+                    let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
+                    let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
+                    let read_fields = packet
+                        .codegen_fields(mappings, true)
+                        .map(|(codegen_field, field)| {
+                            match &field.deserialize_with {
+                                Some(deserializer) => {
+                                    let name = &codegen_field.name;
+                                    let deserializer: TokenStream = syn::parse_str(deserializer).unwrap();
+                                    quote! {
+                                        let #name = #deserializer;
+                                    }
+                                },
+                                None => gen_deserialize_field(&quote! {crate}, &codegen_field, &format_ident!("buffer"))
                             }
+                        });
+                    quote! {
+                        #id => {
+                            #( #read_fields )*
+                            Ok(#enum_name::#variant_name { #( #field_names ),* })
                         }
-                        None => gen_deserialize_field(&codegen_field, &format_ident!("buffer")),
-                    },
-                );
-                quote! {
-                    #id => {
-                        #( #read_fields )*
-                        Ok(#enum_name::#variant_name { #( #field_names ),* })
                     }
-                }
-            });
+                });
+                
             quote! {
                 crate::network::ConnectionState::#state_name => {
                     match id {
@@ -301,7 +302,7 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
                     let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
                     let read_fields = packet
                         .codegen_fields(mappings, false)
-                        .map(|(field, _)| gen_deserialize_field(&field, &format_ident!("buffer")));
+                        .map(|(field, _)| gen_deserialize_field(&quote! {crate}, &field, &format_ident!("buffer")));
                     let handler = if packet.asynchronous {
                         let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
                         let field_borrows = packet.field_borrows(mappings);

@@ -11,8 +11,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     log::debug!(
         "{}, {}",
-        std::mem::size_of::<quartz::network::packet::ClientBoundPacket>(),
-        std::mem::size_of::<quartz::network::packet::ServerBoundPacket>(),
+        std::mem::size_of::<String>(),
+        std::mem::size_of::<std::borrow::Cow<'_, str>>(),
     );
 
     let config: Config;

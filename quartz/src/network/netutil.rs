@@ -194,7 +194,8 @@ impl PacketBuffer {
     }
 
     /// Copies bytes from this buffer to the given buffer, returning the number of bytes copied.
-    pub fn read_bytes(&mut self, dest: &mut [u8]) -> usize {
+    pub fn read_bytes<T: AsMut<[u8]>>(&mut self, mut dest: T) -> usize {
+        let dest = dest.as_mut();
         let len = self.remaining().min(dest.len());
         unsafe {
             self.read_bytes_unchecked(&mut dest[.. len]);
@@ -273,9 +274,10 @@ impl PacketBuffer {
     }
 
     /// Writes the given bytes to this buffer.
-    pub fn write_bytes(&mut self, blob: &[u8]) {
+    pub fn write_bytes<T: AsRef<[u8]>>(&mut self, blob: T) {
         debug_assert!(self.cursor <= self.len());
 
+        let blob = blob.as_ref();
         let remaining = self.remaining();
         if remaining < blob.len() {
             let remaining_allocated = self.capacity() - self.cursor;

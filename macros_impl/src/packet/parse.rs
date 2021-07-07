@@ -81,7 +81,9 @@ where
         side: Side,
     ) -> Result<()> {
         let is_array_u8 = match extract_type_from_container(&slice_ty)? {
-            Type::Path(path) => path.qself.is_none() && path.path.is_ident("u8"),
+            Type::Path(path) => path.qself.is_none()
+                && !path.path.segments.is_empty()
+                && path.path.segments.last().unwrap().ident == "u8",
             _ => return Err(Error::new_spanned(slice_ty, "Expected path type")),
         };
 

@@ -68,11 +68,11 @@ pub fn gen_enum_serializer_impl(input: DeriveInput, variants: &[EnumStructVarian
 pub fn gen_struct_deserializer_impl(input: DeriveInput, fields: &[Field]) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = &input.ident;
+    let the_crate = the_crate();
     let deserialize_fields = fields
         .iter()
-        .map(|field| gen_deserialize_field(field, &format_ident!("__buffer")));
+        .map(|field| gen_deserialize_field(&the_crate, field, &format_ident!("__buffer")));
     let field_names = fields.iter().map(|field| &field.name);
-    let the_crate = the_crate();
 
     quote! {
         impl #impl_generics #the_crate::network::ReadFromPacket for #name #ty_generics #where_clause {
@@ -152,17 +152,21 @@ fn write_fn_for_field(field: &Field) -> Ident {
             Span::call_site(),
         ),
         FieldType::Array { .. } => Ident::new(
-            if field.varying {
-                "write_array_varying"
+            if field.is_array_u8 {
+                "write_bytes"
             } else {
-                "write_array"
+                if field.varying {
+                    "write_array_varying"
+                } else {
+                    "write_array"
+                }
             },
             Span::call_site(),
         ),
     }
 }
 
-pub fn gen_deserialize_field(field: &Field, buffer_ident: &Ident) -> TokenStream {
+pub fn gen_deserialize_field(the_crate: &TokenStream, field: &Field, buffer_ident: &Ident) -> TokenStream {
     let name = &field.name;
     let ty = &field.raw_ty;
     let read_impl = match &field.ty {
@@ -174,16 +178,27 @@ pub fn gen_deserialize_field(field: &Field, buffer_ident: &Ident) -> TokenStream
             },
         FieldType::Array { len } => {
             let len = len.gen_read_length(buffer_ident);
-            if field.varying {
+            if field.is_array_u8 {
                 quote! {{
                     #len
-                    #buffer_ident.read_array_varying(__len)?
+                    let mut __array = vec![0u8; __len].into_boxed_slice();
+                    if #buffer_ident.read_bytes(&mut __array) != __len {
+                        return ::core::result::Result::Err(#the_crate::network::PacketSerdeError::EndOfBuffer);
+                    }
+                    __array
                 }}
             } else {
-                quote! {{
-                    #len
-                    #buffer_ident.read_array(__len)?
-                }}
+                if field.varying {
+                    quote! {{
+                        #len
+                        #buffer_ident.read_array_varying(__len)?
+                    }}
+                } else {
+                    quote! {{
+                        #len
+                        #buffer_ident.read_array(__len)?
+                    }}
+                }
             }
         }
     };
