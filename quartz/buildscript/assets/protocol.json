@@ -148,12 +148,8 @@
             "type": "varint"
           },
           {
-            "name": "slots_len",
-            "type": "varint"
-          },
-          {
             "name": "slots",
-            "type": "inventory_slot(slots_len as usize)",
+            "type": "inventory_slot",
             "array": true
           },
           {
@@ -715,24 +711,8 @@
             "type": "position"
           },
           {
-            "name": "name",
-            "type": "unlocalized_name"
-          },
-          {
-            "name": "target",
-            "type": "unlocalized_name"
-          },
-          {
-            "name": "pool",
-            "type": "unlocalized_name"
-          },
-          {
-            "name": "final_state",
-            "type": "string"
-          },
-          {
-            "name": "joint_type",
-            "type": "string"
+            "name": "data",
+            "type": "jigsaw_update_data"
           }
         ]
       },
@@ -1144,12 +1124,8 @@
         "id": "0x07",
         "fields": [
           {
-            "name": "count",
-            "type": "varint"
-          },
-          {
             "name": "statistic",
-            "type": "statistic(count as usize)",
+            "type": "statistic",
             "array": true
           }
         ]
@@ -1367,12 +1343,8 @@
             "type": "varint"
           },
           {
-            "name": "count",
-            "type": "varint"
-          },
-          {
             "name": "matches",
-            "type": "tab_complete_match(count as usize)",
+            "type": "tab_complete_match",
             "array": true
           }
         ]
@@ -1716,12 +1688,8 @@
             "type": "i32"
           },
           {
-            "name": "bit_mask_length",
-            "type": "varint"
-          },
-          {
             "name": "primary_bit_mask",
-            "type": "i64(bit_mask_length as usize)",
+            "type": "i64",
             "array": true
           },
           {
@@ -1729,30 +1697,17 @@
             "type": "nbt_tag"
           },
           {
-            "name": "biomes_length",
-            "type": "varint"
-          },
-          {
             "name": "biomes",
-            "type": "varint(biomes_length as usize)",
+            "type": "varint",
             "array": true
-          },
-          {
-            "name": "size",
-            "type": "varint"
           },
           {
             "name": "data",
-            "type": "chunk_section(size as usize)",
-            "array": true
-          },
-          {
-            "name": "number_of_block_entities",
-            "type": "varint"
+            "type": "section_data"
           },
           {
             "name": "block_entities",
-            "type": "nbt_tag(number_of_block_entities as usize)",
+            "type": "nbt_tag",
             "array": true
           }
         ]
@@ -1850,57 +1805,33 @@
             "type": "bool"
           },
           {
-            "name": "sky_light_mask_length",
-            "type": "varint"
-          },
-          {
             "name": "sky_light_mask",
-            "type": "i64(sky_light_mask_length as usize)",
+            "type": "i64",
             "array": true
-          },
-          {
-            "name": "block_light_mask_length",
-            "type": "varint"
           },
           {
             "name": "block_light_mask",
-            "type": "i64(block_light_mask_length as usize)",
+            "type": "i64",
             "array": true
-          },
-          {
-            "name": "empty_sky_light_mask_length",
-            "type": "varint"
           },
           {
             "name": "empty_sky_light_mask",
-            "type": "i64(empty_sky_light_mask_length as usize)",
+            "type": "i64",
             "array": true
-          },
-          {
-            "name": "empty_block_light_mask_length",
-            "type": "varint"
           },
           {
             "name": "empty_block_light_mask",
-            "type": "i64(empty_block_light_mask_length as usize)",
+            "type": "i64",
             "array": true
-          },
-          {
-            "name": "sky_light_count",
-            "type": "varint"
           },
           {
             "name": "sky_light_arrays",
-            "type": "block_lights(sky_light_count as usize)",
+            "type": "block_lights",
             "array": true
           },
           {
-            "name": "block_light_count",
-            "type": "varint"
-          },
-          {
             "name": "block_light_arrays",
-            "type": "block_lights(block_light_count as usize)",
+            "type": "block_lights",
             "array": true
           }
         ]
@@ -1927,25 +1858,21 @@
             "type": "i8"
           },
           {
-            "name": "world_count",
-            "type": "varint"
-          },
-          {
             "name": "world_names",
-            "type": "unlocalized_name(world_count as usize)",
+            "type": "unlocalized_name",
             "array": true
           },
           {
             "name": "dimension_codec",
-            "type": "nbt_tag"
+            "type": "box_nbt_tag"
           },
           {
             "name": "dimension",
-            "type": "nbt_tag"
+            "type": "box_nbt_tag"
           },
           {
             "name": "world_name",
-            "type": "unlocalized_name"
+            "type": "box_unlocalized_name"
           },
           {
             "name": "hashed_seed",
@@ -1999,12 +1926,8 @@
             "type": "bool"
           },
           {
-            "name": "icon_count",
-            "type": "varint"
-          },
-          {
             "name": "icon",
-            "type": "map_icon(icon_count as usize)",
+            "type": "map_icon",
             "array": true
           },
           {
@@ -2030,14 +1953,8 @@
             "condition": "columns > 0"
           },
           {
-            "name": "length",
-            "type": "varint",
-            "option": true,
-            "condition": "columns > 0"
-          },
-          {
             "name": "data",
-            "type": "u8(length.unwrap() as usize)",
+            "type": "u8",
             "option": true,
             "condition": "columns > 0",
             "array": true
@@ -2328,14 +2245,10 @@
             "type": "varint"
           },
           {
-            "name": "number_of_players",
-            "type": "varint"
-          },
-          {
             "name": "player",
-            "type": "wrapped_player_info_action(number_of_players as usize)",
+            "type": "wrapped_player_info_action",
             "array": true,
-            "deserialize_with": "{let mut res = Vec::new(); for _ in 0..number_of_players { res.push(crate::network::packet::WrappedPlayerInfoAction::read_action(action, buffer)?); } res}"
+            "deserialize_with": "{let mut res = Vec::new(); for _ in 0..buffer.read_varying::<i32>()? { res.push(crate::network::packet::WrappedPlayerInfoAction::read_action(action, buffer)?); } res.into_boxed_slice()}"
           }
         ]
       },
@@ -2459,23 +2372,13 @@
             "type": "bool"
           },
           {
-            "name": "array_size_1",
-            "type": "varint"
-          },
-          {
             "name": "recipe_ids_1",
-            "type": "unlocalized_name(array_size_1 as usize)",
+            "type": "unlocalized_name",
             "array": true
           },
           {
-            "name": "array_size_2",
-            "type": "varint",
-            "option": true,
-            "condition": "action == 0"
-          },
-          {
             "name": "recipe_ids_2",
-            "type": "unlocalized_name(array_size_2.unwrap() as usize)",
+            "type": "unlocalized_name",
             "option": true,
             "condition": "action == 0",
             "array": true
@@ -2601,12 +2504,8 @@
             "type": "bool"
           },
           {
-            "name": "blocks_array_size",
-            "type": "varint"
-          },
-          {
             "name": "blocks",
-            "type": "varlong(blocks_array_size as usize)",
+            "type": "varlong",
             "array": true
           }
         ]
@@ -2617,14 +2516,9 @@
         "id": "0x40",
         "fields": [
           {
-            "name": "has_id",
-            "type": "bool"
-          },
-          {
             "name": "identifier",
             "type": "string",
-            "option": true,
-            "condition": "has_id"
+            "option": true
           }
         ]
       },
@@ -2795,7 +2689,7 @@
           },
           {
             "name": "metadata",
-            "type": "Vec<crate::network::packet::EntityMetadataWrapper>"
+            "type": "Box<[crate::network::packet::EntityMetadataWrapper]>"
           }
         ]
       },
@@ -2848,7 +2742,7 @@
           },
           {
             "name": "equipment",
-            "type": "Vec<crate::network::packet::EquipmentSlot>"
+            "type": "Box<[crate::network::packet::EquipmentSlot]>"
           }
         ]
       },
@@ -2927,12 +2821,8 @@
             "type": "varint"
           },
           {
-            "name": "passenger_count",
-            "type": "varint"
-          },
-          {
             "name": "passengers",
-            "type": "varint(passenger_count as usize)",
+            "type": "varint",
             "array": true
           }
         ]
@@ -2993,14 +2883,8 @@
             "condition": "mode == 0 || mode == 2"
           },
           {
-            "name": "entity_count",
-            "type": "varint",
-            "option": true,
-            "condition": "mode == 0 || mode == 3 || mode == 4"
-          },
-          {
             "name": "entities",
-            "type": "string(entity_count.unwrap() as usize)",
+            "type": "string",
             "array": true,
             "option": true,
             "condition": "mode == 0 || mode == 3 || mode == 4"
@@ -3267,30 +3151,18 @@
             "type": "bool"
           },
           {
-            "name": "mapping_size",
-            "type": "varint"
-          },
-          {
             "name": "advancement_mappings",
-            "type": "advancement_map_element(mapping_size as usize)",
+            "type": "advancement_map_element",
             "array": true
-          },
-          {
-            "name": "list_size",
-            "type": "varint"
           },
           {
             "name": "identifiers",
-            "type": "unlocalized_name(list_size as usize)",
+            "type": "unlocalized_name",
             "array": true
           },
           {
-            "name": "progress_size",
-            "type": "varint"
-          },
-          {
             "name": "progress_mapping",
-            "type": "advancement_progress_map_element(progress_size as usize)",
+            "type": "advancement_progress_map_element",
             "array": true
           }
         ]
@@ -3305,12 +3177,8 @@
             "type": "varint"
           },
           {
-            "name": "number_of_properties",
-            "type": "varint"
-          },
-          {
             "name": "properties",
-            "type": "entity_property(number_of_properties as usize)",
+            "type": "entity_property",
             "array": true
           }
         ]
@@ -3348,12 +3216,8 @@
         "id": "0x65",
         "fields": [
           {
-            "name": "num_recipes",
-            "type": "varint"
-          },
-          {
             "name": "recipes",
-            "type": "recipe(num_recipes as usize)",
+            "type": "recipe",
             "array": true
           }
         ]
@@ -3364,12 +3228,8 @@
         "id": "0x66",
         "fields": [
           {
-            "name": "length",
-            "type": "varint"
-          },
-          {
             "name": "tags",
-            "type": "tag_array(length as usize)",
+            "type": "tag_array",
             "array": true
           }
         ]
@@ -3398,25 +3258,13 @@
         "id": "0x01",
         "fields": [
           {
-            "name": "shared_secret_length",
-            "unused": true,
-            "referenced": true,
-            "type": "varint"
-          },
-          {
             "name": "shared_secret",
-            "type": "u8(shared_secret_length as usize)",
+            "type": "u8",
             "array": true
           },
           {
-            "name": "verify_token_length",
-            "unused": true,
-            "referenced": true,
-            "type": "varint"
-          },
-          {
             "name": "verify_token",
-            "type": "u8(verify_token_length as usize)",
+            "type": "u8",
             "array": true
           }
         ]
@@ -3432,14 +3280,9 @@
             "type": "varint"
           },
           {
-            "name": "successful",
-            "type": "bool"
-          },
-          {
             "name": "data",
             "type": "u8(buffer.remaining())",
             "option": true,
-            "condition": "successful",
             "array": true
           }
         ]
@@ -3467,21 +3310,13 @@
             "type": "string"
           },
           {
-            "name": "public_key_length",
-            "type": "varint"
-          },
-          {
             "name": "public_key",
-            "type": "u8(public_key_length as usize)",
+            "type": "u8",
             "array": true
           },
           {
-            "name": "verify_token_length",
-            "type": "varint"
-          },
-          {
             "name": "verify_token",
-            "type": "u8(verify_token_length as usize)",
+            "type": "u8",
             "array": true
           }
         ]

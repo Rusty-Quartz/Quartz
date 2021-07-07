@@ -6,7 +6,7 @@ use crate::{
         *,
     },
     raw_console_unchecked,
-    world::chunk::{Chunk, ChunkProvider},
+    world::chunk::ChunkProvider,
     Registry,
     RUNNING,
 };

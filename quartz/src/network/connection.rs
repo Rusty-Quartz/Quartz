@@ -488,7 +488,7 @@ impl AsyncClientConnection {
 
             // The legacy ping packet has no length prefix, so only collect the packet if it's not legacy
             if !(self.connection_state == ConnectionState::Handshake
-                && self.read_buffer.peek().unwrap_or(0) as i32 == LEGACY_PING_PACKET_ID)
+                && self.read_buffer.peek_one().unwrap_or(0) as i32 == LEGACY_PING_PACKET_ID)
             {
                 return self
                     .io_handle

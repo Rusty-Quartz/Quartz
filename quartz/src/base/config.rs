@@ -18,6 +18,9 @@ pub struct Config {
     pub port: u16,
     /// The server's message of the day, written using CFMT format (see `chat::cfmt::parse_cfmt`).
     pub motd: Component,
+    /// Whether to run the server in online or offline mode
+    /// Offline mode skips the login state of the connection flow
+    pub online_mode: bool,
 }
 
 // Instantiate a config with default values
@@ -28,6 +31,7 @@ impl Default for Config {
             server_ip: "0.0.0.0".to_owned(),
             port: 25565,
             motd: Component::text("A Minecraft Server".to_owned()),
+            online_mode: true,
         }
     }
 }

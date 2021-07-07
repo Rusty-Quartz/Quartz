@@ -3,7 +3,9 @@ use proc_macro2::{Literal, TokenStream};
 use quartz_macros_impl::packet::{
     gen_deserialize_field,
     gen_serialize_enum_field,
+    ArrayLength,
     Field as CodegenField,
+    OptionCondition,
 };
 use quote::{format_ident, quote};
 use serde::Deserialize;
@@ -88,7 +90,7 @@ pub fn gen_packet_handlers() {
 
     println!("cargo:rerun-if-changed=buildscript/assets/protocol.json");
     println!("cargo:rerun-if-changed=buildscript/assets/mappings.json");
-    println!("cargo:rerun-if-changed=buildscript/packets.rs")
+    println!("cargo:rerun-if-changed=buildscript/packets.rs");
 }
 
 fn gen_packet_enum(
@@ -242,7 +244,7 @@ fn gen_packet_enum(
                     connection_state: crate::network::ConnectionState,
                 ) -> Result<#enum_name, crate::network::PacketSerdeError> {
                     let id;
-                    if connection_state == crate::network::ConnectionState::Handshake && buffer.peek()? == crate::network::LEGACY_PING_PACKET_ID as u8 {
+                    if connection_state == crate::network::ConnectionState::Handshake && buffer.peek_one()? == crate::network::LEGACY_PING_PACKET_ID as u8 {
                         id = crate::network::LEGACY_PING_PACKET_ID;
                         buffer.read_one()?;
                     } else {
@@ -346,7 +348,7 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
                 let buffer = &mut conn.read_buffer;
 
                 let id;
-                if conn.connection_state == ConnectionState::Handshake && buffer.peek()? == crate::network::LEGACY_PING_PACKET_ID as u8 {
+                if conn.connection_state == ConnectionState::Handshake && buffer.peek_one()? == crate::network::LEGACY_PING_PACKET_ID as u8 {
                     id = crate::network::LEGACY_PING_PACKET_ID;
                     buffer.read_one()?;
                 } else {
@@ -480,24 +482,27 @@ impl Packet {
             );
             let ty = field.rust_type(mappings).clone();
             let condition = if field.option {
-                Some(syn::parse_str(&field.condition).expect(&format!(
-                    "Failed to parse condition expression for field {} in packet {}",
-                    &field.name, &self.name
-                )))
+                Some(match &field.condition {
+                    Some(expr) => OptionCondition::Expr(syn::parse_str(expr).expect(&format!(
+                        "Failed to parse condition expression for field {} in packet {}",
+                        &field.name, &self.name
+                    ))),
+                    None => OptionCondition::Prefixed,
+                })
             } else {
                 None
             };
             let is_option = field.option;
             let varying = mappings.is_varying(&field.var_type);
             if field.array {
-                let len = syn::parse_str(parse_type_meta(&field.var_type).expect(&format!(
-                    "Expected length metadata for array type for field {} in packet {}",
-                    &field.name, &self.name
-                )))
-                .expect(&format!(
-                    "Failed to parse length expression for array type for field {} in packet {}",
-                    &field.name, &self.name
-                ));
+                let len = match parse_type_meta(&field.var_type) {
+                    Some(meta) => ArrayLength::Expr(syn::parse_str(meta).expect(&format!(
+                        "Failed to parse length expression for array type for field {} in packet \
+                         {}",
+                        &field.name, &self.name
+                    ))),
+                    None => ArrayLength::Prefixed,
+                };
                 (
                     CodegenField::array(
                         name,
@@ -528,7 +533,9 @@ impl Packet {
             .filter(|field| !field.unused)
             .map(move |field| {
                 let field_name = format_ident!("{}", field.name);
-                if !mappings.primitives.contains(&field.var_type) && !field.pass_raw {
+                if (field.array || !mappings.primitives.contains(&field.var_type))
+                    && !field.pass_raw
+                {
                     quote! { &#field_name }
                 } else {
                     quote! { #field_name }
@@ -576,7 +583,7 @@ struct Field {
     #[serde(default)]
     array: bool,
     #[serde(default)]
-    condition: String,
+    condition: Option<String>,
     #[serde(default)]
     deserialize_with: Option<String>,
     #[serde(skip)]
@@ -589,10 +596,10 @@ impl Field {
             syn::parse_str(&format!(
                 "{}{}{}{}{}",
                 if self.option { "Option<" } else { "" },
-                if self.array { "Vec<" } else { "" },
+                if self.array { "Box<[" } else { "" },
                 parse_type(&self.var_type, mappings),
-                if self.option { ">" } else { "" },
-                if self.array { ">" } else { "" }
+                if self.array { "]>" } else { "" },
+                if self.option { ">" } else { "" }
             ))
             .expect("Invalid type or type mapping encountered in JSON")
         })
@@ -606,13 +613,13 @@ impl Field {
         };
         match (self.option, self.array) {
             (true, true) => quote! {
-                #name: Option<Vec<#ty>>
+                #name: Option<Box<[#ty]>>
             },
             (true, false) => quote! {
                 #name: Option<#ty>
             },
             (false, true) => quote! {
-                #name: Vec<#ty>
+                #name: Box<[#ty]>
             },
             (false, false) => quote! {
                 #name: #ty

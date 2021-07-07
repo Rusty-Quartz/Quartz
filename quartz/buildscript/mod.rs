@@ -2,6 +2,8 @@ mod packets;
 pub use packets::gen_packet_handlers;
 mod blockstate;
 pub use blockstate::gen_blockstates;
+mod vec_map;
+pub use vec_map::VecMap;
 
 use std::{ffi::OsStr, process::Command};
 

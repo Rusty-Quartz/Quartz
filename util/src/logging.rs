@@ -69,16 +69,12 @@ pub fn init_logger(
 
     // Build the log4rs config
     let config = Config::builder()
-        .appender(
-            Appender::builder()
-                .filter(Box::new(CrateFilter::new(crate_filter)))
-                .build("console", Box::new(console)),
-        )
-        .appender(
-            Appender::builder()
-                .filter(Box::new(CrateFilter::new(crate_filter)))
-                .build("logfile", Box::new(logfile)),
-        )
+        .appender(Appender::builder()
+                // .filter(Box::new(CrateFilter::new(crate_filter)))
+                .build("console", Box::new(console)))
+        .appender(Appender::builder()
+                // .filter(Box::new(CrateFilter::new(crate_filter)))
+                .build("logfile", Box::new(logfile)))
         .build(
             Root::builder()
                 .appender("console")
@@ -113,7 +109,8 @@ impl CrateFilter {
 
 impl Filter for CrateFilter {
     fn filter(&self, record: &Record) -> Response {
-        if self.filter.is_none() || record.level() == Level::Warn || record.level() == Level::Error {
+        if self.filter.is_none() || record.level() == Level::Warn || record.level() == Level::Error
+        {
             return Response::Accept;
         }
 

@@ -4,11 +4,13 @@
         "varlong": "i64",
         "string": "String",
         "unlocalized_name": "quartz_util::UnlocalizedName",
+        "box_unlocalized_name": "Box<quartz_util::UnlocalizedName>",
         "uuid": "uuid::Uuid",
         "nbt_tag": "quartz_nbt::NbtCompound",
+        "box_nbt_tag": "Box<quartz_nbt::NbtCompound>",
         "position": "crate::world::location::BlockPosition",
         "slot": "crate::network::packet::Slot",
-        "chat": "quartz_chat::Component",
+        "chat": "Box<quartz_chat::Component>",
         "tab_complete_match": "crate::network::packet::TabCompleteMatch",
         "statistic": "crate::network::packet::Statistic",
         "block_lights": "crate::network::packet::BlockLights",
@@ -33,7 +35,8 @@
         "wrapped_player_info_action": "crate::network::packet::WrappedPlayerInfoAction",
         "player_info_action": "crate::network::packet::PlayerInfoAction",
         "tag_array": "crate::network::packet::TagArray",
-        "chunk_section": "crate::world::chunk::ClientSection"
+"section_data": "crate::network::packet::SectionData",
+        "jigsaw_update_data": "Box<crate::network::packet::JigsawUpdateData>"
     },
     "primitives": [
         "bool",

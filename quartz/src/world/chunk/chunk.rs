@@ -294,8 +294,9 @@ impl Section {
 
         ClientSection {
             block_count: num_blocks,
+            palette: None,
             bits_per_block: BITS_PER_BLOCK,
-            data,
+            data: Box::new(data),
         }
     }
 }
@@ -310,6 +311,7 @@ impl Default for Section {
 #[derive(Debug)]
 pub struct ClientSection {
     pub block_count: i16,
+    pub palette: Option<Box<[i32]>>,
     pub bits_per_block: u8,
-    pub data: [i64; SECTION_DATA_LENGTH as usize],
+    pub data: Box<[i64]>,
 }

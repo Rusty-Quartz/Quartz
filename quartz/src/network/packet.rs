@@ -1,6 +1,6 @@
 use crate::{
     network::{PacketBuffer, PacketSerdeError, ReadFromPacket, WriteToPacket},
-    world::location::BlockPosition,
+    world::{chunk::ClientSection, location::BlockPosition},
 };
 use quartz_chat::Component;
 use quartz_macros::{ReadFromPacket, WriteToPacket};
@@ -43,14 +43,14 @@ pub enum EntityMetadata {
     Float(f32),
     String(String),
     Chat(Component),
-    OptChat(bool, Option<Component>),
+    OptChat(#[packet_serde(bool_prefixed)] Option<Component>),
     Slot(Slot),
     Boolean(bool),
     Rotation(f32, f32, f32),
     Position(BlockPosition),
-    OptPosition(bool, Option<BlockPosition>),
+    OptPosition(#[packet_serde(bool_prefixed)] Option<BlockPosition>),
     Direction(#[packet_serde(varying)] i32),
-    OptUuid(bool, Option<Uuid>),
+    OptUuid(#[packet_serde(bool_prefixed)] Option<Uuid>),
     OptBlockId(#[packet_serde(varying)] i32),
     Nbt(NbtCompound),
     Particle(WrappedParticle),
@@ -62,12 +62,12 @@ pub enum EntityMetadata {
 #[derive(Debug)]
 pub struct EntityMetadataWrapper {
     index: u8,
-    data: EntityMetadata
+    data: EntityMetadata,
 }
 
-impl WriteToPacket for Vec<EntityMetadataWrapper> {
+impl WriteToPacket for Box<[EntityMetadataWrapper]> {
     fn write_to(&self, buffer: &mut PacketBuffer) {
-        for wrapper in self {
+        for wrapper in self.as_ref() {
             buffer.write_one(wrapper.index);
             let by = match &wrapper.data {
                 EntityMetadata::Byte(_) => 0,
@@ -98,14 +98,14 @@ impl WriteToPacket for Vec<EntityMetadataWrapper> {
     }
 }
 
-impl ReadFromPacket for Vec<EntityMetadataWrapper> {
+impl ReadFromPacket for Box<[EntityMetadataWrapper]> {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut result = Vec::new();
 
         loop {
             let index = buffer.read_one()?;
             if index == 0xFF {
-                return Ok(result);
+                return Ok(result.into_boxed_slice());
             }
 
             let meta_type = buffer.read_one()?;
@@ -117,48 +117,37 @@ impl ReadFromPacket for Vec<EntityMetadataWrapper> {
                 4 => EntityMetadata::Chat(buffer.read()?),
                 5 => {
                     let present = buffer.read()?;
-                    let component = if present {
-                        Some(buffer.read()?)
-                    } else {
-                        None
-                    };
-                    EntityMetadata::OptChat(present, component)
-                },
+                    let component = if present { Some(buffer.read()?) } else { None };
+                    EntityMetadata::OptChat(component)
+                }
                 6 => EntityMetadata::Slot(buffer.read()?),
                 7 => EntityMetadata::Boolean(buffer.read()?),
                 8 => EntityMetadata::Rotation(buffer.read()?, buffer.read()?, buffer.read()?),
                 9 => EntityMetadata::Position(buffer.read()?),
                 10 => {
                     let present = buffer.read()?;
-                    let position = if present {
-                        Some(buffer.read()?)
-                    } else {
-                        None
-                    };
-                    EntityMetadata::OptPosition(present, position)
-                },
+                    let position = if present { Some(buffer.read()?) } else { None };
+                    EntityMetadata::OptPosition(position)
+                }
                 11 => EntityMetadata::Direction(buffer.read_varying()?),
                 12 => {
                     let present = buffer.read()?;
-                    let uuid = if present {
-                        Some(buffer.read()?)
-                    } else {
-                        None
-                    };
-                    EntityMetadata::OptUuid(present, uuid)
-                },
+                    let uuid = if present { Some(buffer.read()?) } else { None };
+                    EntityMetadata::OptUuid(uuid)
+                }
                 13 => EntityMetadata::OptBlockId(buffer.read_varying()?),
                 14 => EntityMetadata::Nbt(buffer.read()?),
                 15 => EntityMetadata::Particle(buffer.read()?),
-                16 => EntityMetadata::VillagerData(buffer.read_varying()?, buffer.read_varying()?, buffer.read_varying()?),
+                16 => EntityMetadata::VillagerData(
+                    buffer.read_varying()?,
+                    buffer.read_varying()?,
+                    buffer.read_varying()?,
+                ),
                 17 => EntityMetadata::OptVarInt(buffer.read_varying()?),
                 18 => EntityMetadata::Pose(buffer.read_varying()?),
-                id @ _ => return Err(PacketSerdeError::InvalidEnum("EntityMetadata", id as i32))
+                id @ _ => return Err(PacketSerdeError::InvalidEnum("EntityMetadata", id as i32)),
             };
-            result.push(EntityMetadataWrapper {
-                index,
-                data
-            });
+            result.push(EntityMetadataWrapper { index, data });
         }
     }
 }
@@ -184,7 +173,7 @@ pub enum ParticleData {
         red: f32,
         green: f32,
         blue: f32,
-        scale: f32
+        scale: f32,
     },
     DustColorTransition {
         from_red: f32,
@@ -193,7 +182,7 @@ pub enum ParticleData {
         scale: f32,
         to_red: f32,
         to_green: f32,
-        to_blue: f32
+        to_blue: f32,
     },
     Effect,
     ElderGuardian,
@@ -222,7 +211,7 @@ pub enum ParticleData {
         dest_x: f64,
         dest_y: f64,
         dest_z: f64,
-        ticks: i32
+        ticks: i32,
     },
     ItemSlime,
     ItemSnowball,
@@ -274,11 +263,14 @@ pub enum ParticleData {
     WaxOn,
     WaxOff,
     ElectricSpark,
-    Scrape
+    Scrape,
 }
 
 impl ParticleData {
-    pub fn read_particle_data(id: i32, buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+    pub fn read_particle_data(
+        id: i32,
+        buffer: &mut PacketBuffer,
+    ) -> Result<Self, PacketSerdeError> {
         let data = match id {
             0 => ParticleData::AmbientEntityEffect,
             1 => ParticleData::AngryVillager,
@@ -299,7 +291,7 @@ impl ParticleData {
                 red: buffer.read()?,
                 green: buffer.read()?,
                 blue: buffer.read()?,
-                scale: buffer.read()?
+                scale: buffer.read()?,
             },
             16 => ParticleData::DustColorTransition {
                 from_red: buffer.read()?,
@@ -308,7 +300,7 @@ impl ParticleData {
                 scale: buffer.read()?,
                 to_red: buffer.read()?,
                 to_green: buffer.read()?,
-                to_blue: buffer.read()?
+                to_blue: buffer.read()?,
             },
             17 => ParticleData::Effect,
             18 => ParticleData::ElderGuardian,
@@ -390,7 +382,7 @@ impl ParticleData {
             86 => ParticleData::WaxOff,
             87 => ParticleData::ElectricSpark,
             88 => ParticleData::Scrape,
-            id @ _ => return Err(PacketSerdeError::InvalidEnum("ParticleData", id))
+            id @ _ => return Err(PacketSerdeError::InvalidEnum("ParticleData", id)),
         };
 
         Ok(data)
@@ -401,15 +393,13 @@ impl ParticleData {
 pub enum PlayerInfoAction {
     AddPlayer {
         name: String,
-        #[packet_serde(varying)]
-        number_of_properties: i32,
-        #[packet_serde(len = "number_of_properties as usize")]
-        properties: Vec<PlayerProperty>,
+        #[packet_serde(len_prefixed)]
+        properties: Box<[PlayerProperty]>,
         #[packet_serde(varying)]
         gamemode: i32,
         #[packet_serde(varying)]
         ping: i32,
-        has_display_name: bool,
+        #[packet_serde(bool_prefixed)]
         display_name: Option<Component>,
     },
     UpdateGamemode {
@@ -421,7 +411,7 @@ pub enum PlayerInfoAction {
         ping: i32,
     },
     UpdateDisplayName {
-        has_display_name: bool,
+        #[packet_serde(bool_prefixed)]
         display_name: Option<Component>,
     },
     RemovePlayer,
@@ -432,7 +422,7 @@ impl PlayerInfoAction {
         match action {
             0 => {
                 let name = buffer.read()?;
-                let number_of_properties = buffer.read_varying()?;
+                let number_of_properties = buffer.read_varying::<i32>()?;
                 let properties = buffer.read_array(number_of_properties as usize)?;
                 let gamemode = buffer.read_varying()?;
                 let ping = buffer.read_varying()?;
@@ -445,28 +435,22 @@ impl PlayerInfoAction {
 
                 Ok(PlayerInfoAction::AddPlayer {
                     name,
-                    number_of_properties,
                     properties,
                     gamemode,
                     ping,
-                    has_display_name,
-                    display_name
+                    display_name,
                 })
-            },
+            }
             1 => {
                 let gamemode = buffer.read_varying()?;
 
-                Ok(PlayerInfoAction::UpdateGamemode {
-                    gamemode
-                })
-            },
+                Ok(PlayerInfoAction::UpdateGamemode { gamemode })
+            }
             2 => {
                 let ping = buffer.read_varying()?;
 
-                Ok(PlayerInfoAction::UpdateLatency {
-                    ping
-                })
-            },
+                Ok(PlayerInfoAction::UpdateLatency { ping })
+            }
             3 => {
                 let has_display_name = buffer.read()?;
                 let display_name = if has_display_name {
@@ -475,12 +459,9 @@ impl PlayerInfoAction {
                     None
                 };
 
-                Ok(PlayerInfoAction::UpdateDisplayName {
-                    has_display_name,
-                    display_name
-                })
-            },
-            id @ _ => Err(PacketSerdeError::InvalidEnum("PlayerInfoAction", id))
+                Ok(PlayerInfoAction::UpdateDisplayName { display_name })
+            }
+            id @ _ => Err(PacketSerdeError::InvalidEnum("PlayerInfoAction", id)),
         }
     }
 }
@@ -501,7 +482,7 @@ impl WriteToPacket for Slot {
             buffer.write(&self.item_count.unwrap());
             match self.nbt.as_ref() {
                 Some(nbt) => buffer.write(nbt),
-                None => buffer.write_one(0) // TAG_End
+                None => buffer.write_one(0), // TAG_End
             }
         }
     }
@@ -513,12 +494,12 @@ impl ReadFromPacket for Slot {
         let (item_id, item_count, nbt) = if present {
             let item_id = buffer.read_varying()?;
             let item_count = buffer.read()?;
-            let nbt = match buffer.peek()? {
+            let nbt = match buffer.peek_one()? {
                 0 => {
                     let _ = buffer.read_one()?;
                     None
-                },
-                _ => Some(buffer.read()?)
+                }
+                _ => Some(buffer.read()?),
             };
 
             (Some(item_id), Some(item_count), nbt)
@@ -530,7 +511,7 @@ impl ReadFromPacket for Slot {
             present,
             item_id,
             item_count,
-            nbt
+            nbt,
         })
     }
 }
@@ -538,8 +519,7 @@ impl ReadFromPacket for Slot {
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct TabCompleteMatch {
     tab_match: String,
-    has_tooltip: bool,
-    #[packet_serde(condition = "has_tooltip")]
+    #[packet_serde(bool_prefixed)]
     tooltip: Option<Component>,
 }
 
@@ -558,7 +538,7 @@ pub struct BlockLights {
     #[packet_serde(varying)]
     pub length: i32,
     #[packet_serde(len = "2048")]
-    pub values: Vec<u8>,
+    pub values: Box<[u8]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -568,8 +548,7 @@ pub struct MapIcon {
     x: i8,
     z: i8,
     direction: i8,
-    has_display_name: bool,
-    #[packet_serde(condition = "has_display_name")]
+    #[packet_serde(bool_prefixed)]
     display_name: Option<Component>,
 }
 
@@ -577,8 +556,7 @@ pub struct MapIcon {
 pub struct VillagerTrade {
     input_item_1: Slot,
     output_item: Slot,
-    has_second_item: bool,
-    #[packet_serde(condition = "has_second_item")]
+    #[packet_serde(bool_prefixed)]
     input_item_2: Option<Slot>,
     disabled: bool,
     times_used: i32,
@@ -592,7 +570,7 @@ pub struct VillagerTrade {
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct InventorySlot {
     slot_number: i16,
-    slot: Slot
+    slot: Slot,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -601,7 +579,7 @@ pub struct EquipmentSlot {
     item: Slot,
 }
 
-impl WriteToPacket for Vec<EquipmentSlot> {
+impl WriteToPacket for Box<[EquipmentSlot]> {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         for (index, slot) in self.iter().enumerate() {
             if index + 1 < self.len() {
@@ -614,7 +592,7 @@ impl WriteToPacket for Vec<EquipmentSlot> {
     }
 }
 
-impl ReadFromPacket for Vec<EquipmentSlot> {
+impl ReadFromPacket for Box<[EquipmentSlot]> {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut ret = Vec::new();
         let mut slot: EquipmentSlot;
@@ -633,7 +611,7 @@ impl ReadFromPacket for Vec<EquipmentSlot> {
             }
         }
 
-        Ok(ret)
+        Ok(ret.into_boxed_slice())
     }
 }
 
@@ -651,36 +629,26 @@ pub struct AdvancementProgressMapElement {
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct Advancement {
-    has_parent: bool,
-    #[packet_serde(condition = "has_parent")]
+    #[packet_serde(bool_prefixed)]
     parent_id: Option<UnlocalizedName>,
-    has_display: bool,
-    #[packet_serde(condition = "has_display")]
+    #[packet_serde(bool_prefixed)]
     display_data: Option<AdvancementDisplay>,
-    #[packet_serde(varying)]
-    criteria_len: i32,
-    #[packet_serde(len = "criteria_len as usize")]
-    criteria: Vec<UnlocalizedName>,
-    #[packet_serde(varying)]
-    requirements_length: i32,
-    #[packet_serde(len = "requirements_length as usize")]
-    requirements: Vec<AdvancementRequirements>,
+    #[packet_serde(len_prefixed)]
+    criteria: Box<[UnlocalizedName]>,
+    #[packet_serde(len_prefixed)]
+    requirements: Box<[AdvancementRequirements]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct AdvancementRequirements {
-    #[packet_serde(varying)]
-    requirements_len: i32,
-    #[packet_serde(len = "requirements_len as usize")]
-    requirements: Vec<String>,
+    #[packet_serde(len_prefixed)]
+    requirements: Box<[String]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct AdvancementProgress {
-    #[packet_serde(varying)]
-    size: i32,
-    #[packet_serde(len = "size as usize")]
-    criteria: Vec<AdvancementProgressCriteria>,
+    #[packet_serde(len_prefixed)]
+    criteria: Box<[AdvancementProgressCriteria]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -707,17 +675,15 @@ pub struct AdvancementDisplay {
     #[packet_serde(condition = "(flags & 0x1) != 0")]
     background_texture: Option<UnlocalizedName>,
     x: f32,
-    y: f32
+    y: f32,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct EntityProperty {
     key: UnlocalizedName,
     value: f64,
-    #[packet_serde(varying)]
-    number_of_modifiers: i32,
-    #[packet_serde(len = "number_of_modifiers as usize")]
-    modifiers: Vec<AttributeModifier>,
+    #[packet_serde(len_prefixed)]
+    modifiers: Box<[AttributeModifier]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -732,7 +698,7 @@ pub struct Recipe {
     recipe_type: UnlocalizedName,
     recipe_id: String,
     #[packet_serde(greedy)]
-    data: Vec<u8>,
+    data: Box<[u8]>,
 }
 
 #[derive(Debug, WriteToPacket)]
@@ -746,10 +712,7 @@ impl ReadFromPacket for WrappedParticle {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let id = buffer.read()?;
         let data = ParticleData::read_particle_data(id, buffer)?;
-        Ok(WrappedParticle {
-            id,
-            data
-        })
+        Ok(WrappedParticle { id, data })
     }
 }
 
@@ -757,8 +720,7 @@ impl ReadFromPacket for WrappedParticle {
 pub struct PlayerProperty {
     name: String,
     value: String,
-    is_signed: bool,
-    #[packet_serde(condition = "is_signed")]
+    #[packet_serde(bool_prefixed)]
     signature: Option<String>,
 }
 
@@ -772,27 +734,58 @@ impl WrappedPlayerInfoAction {
     pub fn read_action(action: i32, buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let uuid = buffer.read()?;
         let action = PlayerInfoAction::read_action(action, buffer)?;
-        Ok(WrappedPlayerInfoAction {
-            uuid,
-            action
-        })
+        Ok(WrappedPlayerInfoAction { uuid, action })
     }
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct TagArray {
     tag_type: UnlocalizedName,
-    #[packet_serde(varying)]
-    length: i32,
-    #[packet_serde(len = "length as usize")]
-    data: Vec<Tag>,
+    #[packet_serde(len_prefixed)]
+    data: Box<[Tag]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct Tag {
     name: UnlocalizedName,
+    #[packet_serde(len_prefixed, varying)]
+    entries: Box<[i32]>,
+}
+
+#[derive(Debug, WriteToPacket, ReadFromPacket)]
+pub struct JigsawUpdateData {
+    name: UnlocalizedName,
+    target: UnlocalizedName,
+    pool: UnlocalizedName,
+    final_state: String,
+    joint_type: String,
+}
+
+#[derive(Debug, WriteToPacket)]
+pub struct SectionData {
     #[packet_serde(varying)]
-    count: i32,
-    #[packet_serde(len = "count as usize", varying)]
-    entries: Vec<i32>,
+    pub size: i32,
+    // Not actually the size but since we only derive Write this shouldn't matter
+    #[packet_serde(len = "size")]
+    pub sections: Box<[ClientSection]>,
+}
+
+impl ReadFromPacket for SectionData {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let size = buffer.read_varying::<i32>()?;
+        let len_bytes = size as usize + buffer.cursor();
+
+        let mut sections = Vec::new();
+        // We read ClientSections until the cursor has read enough bytes
+        // cursor could theoretically go over len_bytes but that could only happen if size is wrong
+        // in that case its fine for it to go over as we want to error eventually anyway on bad data
+        while buffer.cursor() < len_bytes {
+            sections.push(buffer.read()?);
+        }
+
+        Ok(SectionData {
+            size,
+            sections: sections.into_boxed_slice(),
+        })
+    }
 }

@@ -45,7 +45,7 @@ pub fn gen_blockstates() {
     super::format_in_place(dest_path.as_os_str());
 
     println!("cargo:rerun-if-changed=buildscript/assets/blocks.json");
-    println!("cargo:rerun-if-changes=buildscript/blockstate.rs")
+    println!("cargo:rerun-if-changes=buildscript/blockstate.rs");
 }
 
 fn find_shared_properties(data: &HashMap<String, RawBlockInfo>) -> Vec<PropertyData> {
