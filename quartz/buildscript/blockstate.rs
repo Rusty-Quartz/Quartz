@@ -297,9 +297,9 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
             let block_state_name = format_ident!("{}State", block_name);
             let root_state = block_info.states[0].id;
 
-            let mut vecs = (Vec::new(), Vec::new(), Vec::new());
-            let (field_names, field_names_str, type_names) = block_info.properties.iter().fold(&mut vecs, |vecs, (property_name, values)| {
-                let (field_names, field_names_str, type_names) = vecs;
+            let mut vecs = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+            let (field_names, field_names_str, type_names, type_aliases) = block_info.properties.iter().fold(&mut vecs, |vecs, (property_name, values)| {
+                let (field_names, field_names_str, type_names, type_aliases) = vecs;
 
                 let lowercase_name = get_original_property_name(&PropertyData {
                     name: property_name.to_owned(),
@@ -308,13 +308,14 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
                 });
 
                 let field_name = lowercase_name;
-                field_names.push(format_ident!("{}", field_name));
-                field_names_str.push(field_name);
+                field_names.push(format_ident!("{}", field_name.replace("type", "r#type")));
+                field_names_str.push(field_name.clone());
                 type_names.push(format_ident!("{}", snake_to_camel(&if values.get(0).unwrap().parse::<u8>().is_ok() {
                     property_name.clone()
                 } else {
                     property_name.replace('_', "")
                 })));
+                type_aliases.push(format_ident!("{}{}", block_name, snake_to_camel(&field_name)));
 
                 vecs
             });
@@ -357,6 +358,10 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
                         Self::const_default()
                     }
                 }
+
+                #(
+                    type #type_aliases = #type_names;
+                )*
             }
         })
         .collect::<Vec<_>>();
@@ -528,7 +533,7 @@ fn snake_to_camel(str: &str) -> String {
 fn get_original_property_name(property: &PropertyData) -> String {
     let mut split_name = property.name.split('_');
     let mut lowercase_name = String::new();
-    let offset = 1; //if property.block_name {1} else { if property.values.get(0).unwrap().parse::<u8>().is_ok() {2} else {1} };
+    let offset = 1;
 
     for i in 0 .. split_name.clone().count() - offset {
         lowercase_name.push_str(&format!(
