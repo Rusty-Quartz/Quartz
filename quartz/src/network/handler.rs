@@ -102,10 +102,8 @@ impl AsyncPacketHandler {
 
         conn.send_packet(&ClientBoundPacket::EncryptionRequest {
             server_id: "".to_owned(),
-            public_key_length: pub_key_der.len() as i32,
-            public_key: pub_key_der,
-            verify_token_length: verify_token.len() as i32,
-            verify_token: verify_token.to_vec(),
+            public_key: pub_key_der.into_boxed_slice(),
+            verify_token: verify_token.to_vec().into_boxed_slice(),
         })
         .await;
     }
@@ -113,8 +111,8 @@ impl AsyncPacketHandler {
     async fn handle_encryption_response(
         &mut self,
         conn: &mut AsyncClientConnection,
-        shared_secret: &Vec<u8>,
-        verify_token: &Vec<u8>,
+        shared_secret: &[u8],
+        verify_token: &[u8],
     ) {
         // Decrypt and check verify token
         let mut decrypted_verify = vec![0; self.key_pair.size() as usize];
@@ -135,10 +133,10 @@ impl AsyncPacketHandler {
             );
             return conn
                 .send_packet(&ClientBoundPacket::Disconnect {
-                    reason: Component::colored(
+                    reason: Box::new(Component::colored(
                         "Error verifying encryption".to_owned(),
                         PredefinedColor::Red,
-                    ),
+                    )),
                 })
                 .await;
         }
@@ -272,8 +270,7 @@ impl AsyncPacketHandler {
         &mut self,
         _conn: &mut AsyncClientConnection,
         _message_id: i32,
-        _successful: bool,
-        _data: &Option<Vec<u8>>,
+        _data: &Option<Box<[u8]>>,
     ) {
         // TODO: Implement login_plugin_response
     }
@@ -304,19 +301,19 @@ impl QuartzServer {
         */
         let dimension =
             match quartz_nbt::snbt::parse(include_str!("../../../assets/dimension.snbt")) {
-                Ok(nbt) => nbt,
+                Ok(nbt) => Box::new(nbt),
                 Err(e) => {
                     error!("Error in dimension snbt: {}", e);
-                    NbtCompound::new()
+                    Box::new(NbtCompound::new())
                 }
             };
 
         let dimension_codec =
             match quartz_nbt::snbt::parse(include_str!("../../../assets/dimension_codec.snbt")) {
-                Ok(nbt) => nbt,
+                Ok(nbt) => Box::new(nbt),
                 Err(e) => {
                     error!("Error in dimension codec snbt: {}", e);
-                    NbtCompound::new()
+                    Box::new(NbtCompound::new())
                 }
             };
 
@@ -326,11 +323,10 @@ impl QuartzServer {
                 is_hardcore: false,
                 gamemode: 0,
                 previous_gamemode: -1,
-                world_count: 1,
-                world_names: vec![UnlocalizedName::minecraft("overworld")],
+                world_names: vec![UnlocalizedName::minecraft("overworld")].into_boxed_slice(),
                 dimension_codec,
                 dimension,
-                world_name: UnlocalizedName::minecraft("overworld"),
+                world_name: Box::new(UnlocalizedName::minecraft("overworld")),
                 hashed_seed: 0,
                 max_players: 10,
                 view_distance: 12,
@@ -347,7 +343,7 @@ impl QuartzServer {
         self.client_list
             .send_packet(sender, ClientBoundPacket::PluginMessage {
                 channel: UnlocalizedName::minecraft("brand"),
-                data: brand_buf[..].to_vec(),
+                data: brand_buf[..].to_vec().into_boxed_slice(),
             })
             .await;
     }
@@ -519,11 +515,7 @@ impl QuartzServer {
         &mut self,
         sender: usize,
         location: &BlockPosition,
-        name: &UnlocalizedName,
-        target: &UnlocalizedName,
-        pool: &UnlocalizedName,
-        final_state: &str,
-        joint_type: &str,
+        data: &JigsawUpdateData
     ) {
     }
 
@@ -743,7 +735,7 @@ impl QuartzServer {
         &mut self,
         sender: usize,
         channel: &UnlocalizedName,
-        data: &Vec<u8>,
+        data: &[u8],
     ) {
     }
 
@@ -758,8 +750,7 @@ impl QuartzServer {
         slot: i16,
         button: i8,
         mode: i32,
-        slots_len: i32,
-        slots: &Vec<InventorySlot>,
+        slots: &[InventorySlot],
         clicked_slot: &Slot,
     ) {
     }
@@ -788,8 +779,7 @@ impl QuartzServer {
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::DeclareRecipes {
-                num_recipes: 0,
-                recipes: vec![],
+                recipes: vec![].into_boxed_slice(),
             })
             .await;
 
@@ -819,40 +809,34 @@ impl QuartzServer {
                 smoker_recipe_book_open: false,
                 blast_furnace_recipe_book_open: false,
                 blast_furnace_recipe_book_filter_active: false,
-                array_size_1: 0,
-                recipe_ids_1: vec![],
-                array_size_2: Some(0),
-                recipe_ids_2: Some(vec![]),
+                recipe_ids_1: vec![].into_boxed_slice(),
+                recipe_ids_2: Some(vec![].into_boxed_slice()),
             })
             .await;
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::PlayerInfo {
                 action: 0,
-                number_of_players: 1, //self.client_list.online_count() as i32,
                 player: vec![WrappedPlayerInfoAction {
                     uuid: Uuid::new_v4(),
                     action: PlayerInfoAction::AddPlayer {
                         name: "Test".to_owned(),
-                        number_of_properties: 0,
-                        properties: vec![],
+                        properties: vec![].into_boxed_slice(),
                         gamemode: 0,
                         ping: 120,
-                        has_display_name: false,
                         display_name: None,
                     },
-                }],
+                }].into_boxed_slice(),
             })
             .await;
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::PlayerInfo {
                 action: 2,
-                number_of_players: 1,
                 player: vec![WrappedPlayerInfoAction {
                     uuid: Uuid::new_v4(),
                     action: PlayerInfoAction::UpdateLatency { ping: 12 },
-                }],
+                }].into_boxed_slice(),
             })
             .await;
 
@@ -886,7 +870,7 @@ impl QuartzServer {
                     }
                 };
 
-                let mut mask = vec![0; 256 / 16];
+                let mut mask = vec![0; 256 / 16].into_boxed_slice();
 
                 for section_y in 0 .. (256 / 16) {
                     if !chunk.is_section_empty(section_y) {
@@ -894,8 +878,8 @@ impl QuartzServer {
                     }
                 }
 
-                let biomes = vec![0; 256];
-                let sections = chunk.get_client_sections();
+                let biomes = vec![0; 256].into_boxed_slice();
+                let sections = chunk.get_client_sections().into_boxed_slice();
 
                 let mut heightmaps = NbtCompound::new();
                 heightmaps.insert("MOTION_BLOCKING", vec![70_i64; 37]);
@@ -906,20 +890,16 @@ impl QuartzServer {
                     .send_packet(sender, ClientBoundPacket::ChunkData {
                         chunk_x: chunk_coords.x,
                         chunk_z: chunk_coords.z,
-                        bit_mask_length: mask.len() as i32,
                         primary_bit_mask: mask,
                         heightmaps,
-                        biomes_length: biomes.len() as i32,
                         biomes,
-                        number_of_block_entities: 0,
-                        block_entities: vec![],
-                        size: sections.len() as i32 * CLIENT_SECTION_SIZE,
+                        block_entities: vec![].into_boxed_slice(),
                         data: sections,
                     })
                     .await;
 
-                let sky_light_mask = vec![1_i64; (256 / 16) + 2];
-                let block_light_mask = vec![1_i64; (256 / 16) + 2];
+                let sky_light_mask = vec![1_i64; (256 / 16) + 2].into_boxed_slice();
+                let block_light_mask = vec![1_i64; (256 / 16) + 2].into_boxed_slice();
 
                 let mut sky_lights = Vec::new();
                 let mut block_lights = Vec::new();
@@ -927,12 +907,12 @@ impl QuartzServer {
                 for i in 0 .. 18 {
                     sky_lights.push(BlockLights {
                         length: 2048,
-                        values: vec![12; 2048],
+                        values: vec![12; 2048].into_boxed_slice(),
                     });
 
                     block_lights.push(BlockLights {
                         length: 2048,
-                        values: vec![12; 2048],
+                        values: vec![12; 2048].into_boxed_slice(),
                     })
                 }
 
@@ -941,18 +921,12 @@ impl QuartzServer {
                         chunk_x: chunk_coords.x,
                         chunk_z: chunk_coords.z,
                         trust_edges: true,
-                        sky_light_mask_length: (256 / 16) + 2,
                         sky_light_mask,
-                        block_light_mask_length: (256 / 16) + 2,
                         block_light_mask,
-                        empty_sky_light_mask_length: 0,
-                        empty_sky_light_mask: Vec::new(),
-                        empty_block_light_mask_length: 0,
-                        empty_block_light_mask: Vec::new(),
-                        sky_light_count: 18,
-                        sky_light_arrays: sky_lights,
-                        block_light_count: 18,
-                        block_light_arrays: block_lights,
+                        empty_sky_light_mask: Vec::new().into_boxed_slice(),
+                        empty_block_light_mask: Vec::new().into_boxed_slice(),
+                        sky_light_arrays: sky_lights.into_boxed_slice(),
+                        block_light_arrays: block_lights.into_boxed_slice(),
                     })
                     .await;
             }

@@ -43,14 +43,14 @@ pub enum EntityMetadata {
     Float(f32),
     String(String),
     Chat(Component),
-    OptChat(bool, Option<Component>),
+    OptChat(#[packet_serde(bool_prefixed)] Option<Component>),
     Slot(Slot),
     Boolean(bool),
     Rotation(f32, f32, f32),
     Position(BlockPosition),
-    OptPosition(bool, Option<BlockPosition>),
+    OptPosition(#[packet_serde(bool_prefixed)] Option<BlockPosition>),
     Direction(#[packet_serde(varying)] i32),
-    OptUuid(bool, Option<Uuid>),
+    OptUuid(#[packet_serde(bool_prefixed)] Option<Uuid>),
     OptBlockId(#[packet_serde(varying)] i32),
     Nbt(NbtCompound),
     Particle(WrappedParticle),
@@ -65,9 +65,9 @@ pub struct EntityMetadataWrapper {
     data: EntityMetadata
 }
 
-impl WriteToPacket for Vec<EntityMetadataWrapper> {
+impl WriteToPacket for Box<[EntityMetadataWrapper]> {
     fn write_to(&self, buffer: &mut PacketBuffer) {
-        for wrapper in self {
+        for wrapper in self.as_ref() {
             buffer.write_one(wrapper.index);
             let by = match &wrapper.data {
                 EntityMetadata::Byte(_) => 0,
@@ -98,14 +98,14 @@ impl WriteToPacket for Vec<EntityMetadataWrapper> {
     }
 }
 
-impl ReadFromPacket for Vec<EntityMetadataWrapper> {
+impl ReadFromPacket for Box<[EntityMetadataWrapper]> {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut result = Vec::new();
 
         loop {
             let index = buffer.read_one()?;
             if index == 0xFF {
-                return Ok(result);
+                return Ok(result.into_boxed_slice());
             }
 
             let meta_type = buffer.read_one()?;
@@ -122,7 +122,7 @@ impl ReadFromPacket for Vec<EntityMetadataWrapper> {
                     } else {
                         None
                     };
-                    EntityMetadata::OptChat(present, component)
+                    EntityMetadata::OptChat(component)
                 },
                 6 => EntityMetadata::Slot(buffer.read()?),
                 7 => EntityMetadata::Boolean(buffer.read()?),
@@ -135,7 +135,7 @@ impl ReadFromPacket for Vec<EntityMetadataWrapper> {
                     } else {
                         None
                     };
-                    EntityMetadata::OptPosition(present, position)
+                    EntityMetadata::OptPosition(position)
                 },
                 11 => EntityMetadata::Direction(buffer.read_varying()?),
                 12 => {
@@ -145,7 +145,7 @@ impl ReadFromPacket for Vec<EntityMetadataWrapper> {
                     } else {
                         None
                     };
-                    EntityMetadata::OptUuid(present, uuid)
+                    EntityMetadata::OptUuid(uuid)
                 },
                 13 => EntityMetadata::OptBlockId(buffer.read_varying()?),
                 14 => EntityMetadata::Nbt(buffer.read()?),
@@ -401,15 +401,13 @@ impl ParticleData {
 pub enum PlayerInfoAction {
     AddPlayer {
         name: String,
-        #[packet_serde(varying)]
-        number_of_properties: i32,
-        #[packet_serde(len = "number_of_properties as usize")]
-        properties: Vec<PlayerProperty>,
+        #[packet_serde(len_prefixed)]
+        properties: Box<[PlayerProperty]>,
         #[packet_serde(varying)]
         gamemode: i32,
         #[packet_serde(varying)]
         ping: i32,
-        has_display_name: bool,
+        #[packet_serde(bool_prefixed)]
         display_name: Option<Component>,
     },
     UpdateGamemode {
@@ -421,7 +419,7 @@ pub enum PlayerInfoAction {
         ping: i32,
     },
     UpdateDisplayName {
-        has_display_name: bool,
+        #[packet_serde(bool_prefixed)]
         display_name: Option<Component>,
     },
     RemovePlayer,
@@ -432,7 +430,7 @@ impl PlayerInfoAction {
         match action {
             0 => {
                 let name = buffer.read()?;
-                let number_of_properties = buffer.read_varying()?;
+                let number_of_properties = buffer.read_varying::<i32>()?;
                 let properties = buffer.read_array(number_of_properties as usize)?;
                 let gamemode = buffer.read_varying()?;
                 let ping = buffer.read_varying()?;
@@ -445,11 +443,9 @@ impl PlayerInfoAction {
 
                 Ok(PlayerInfoAction::AddPlayer {
                     name,
-                    number_of_properties,
                     properties,
                     gamemode,
                     ping,
-                    has_display_name,
                     display_name
                 })
             },
@@ -476,7 +472,6 @@ impl PlayerInfoAction {
                 };
 
                 Ok(PlayerInfoAction::UpdateDisplayName {
-                    has_display_name,
                     display_name
                 })
             },
@@ -513,7 +508,7 @@ impl ReadFromPacket for Slot {
         let (item_id, item_count, nbt) = if present {
             let item_id = buffer.read_varying()?;
             let item_count = buffer.read()?;
-            let nbt = match buffer.peek()? {
+            let nbt = match buffer.peek_one()? {
                 0 => {
                     let _ = buffer.read_one()?;
                     None
@@ -538,8 +533,7 @@ impl ReadFromPacket for Slot {
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct TabCompleteMatch {
     tab_match: String,
-    has_tooltip: bool,
-    #[packet_serde(condition = "has_tooltip")]
+    #[packet_serde(bool_prefixed)]
     tooltip: Option<Component>,
 }
 
@@ -558,7 +552,7 @@ pub struct BlockLights {
     #[packet_serde(varying)]
     pub length: i32,
     #[packet_serde(len = "2048")]
-    pub values: Vec<u8>,
+    pub values: Box<[u8]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -568,8 +562,7 @@ pub struct MapIcon {
     x: i8,
     z: i8,
     direction: i8,
-    has_display_name: bool,
-    #[packet_serde(condition = "has_display_name")]
+    #[packet_serde(bool_prefixed)]
     display_name: Option<Component>,
 }
 
@@ -577,8 +570,7 @@ pub struct MapIcon {
 pub struct VillagerTrade {
     input_item_1: Slot,
     output_item: Slot,
-    has_second_item: bool,
-    #[packet_serde(condition = "has_second_item")]
+    #[packet_serde(bool_prefixed)]
     input_item_2: Option<Slot>,
     disabled: bool,
     times_used: i32,
@@ -601,7 +593,7 @@ pub struct EquipmentSlot {
     item: Slot,
 }
 
-impl WriteToPacket for Vec<EquipmentSlot> {
+impl WriteToPacket for Box<[EquipmentSlot]> {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         for (index, slot) in self.iter().enumerate() {
             if index + 1 < self.len() {
@@ -614,7 +606,7 @@ impl WriteToPacket for Vec<EquipmentSlot> {
     }
 }
 
-impl ReadFromPacket for Vec<EquipmentSlot> {
+impl ReadFromPacket for Box<[EquipmentSlot]> {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut ret = Vec::new();
         let mut slot: EquipmentSlot;
@@ -633,7 +625,7 @@ impl ReadFromPacket for Vec<EquipmentSlot> {
             }
         }
 
-        Ok(ret)
+        Ok(ret.into_boxed_slice())
     }
 }
 
@@ -651,36 +643,26 @@ pub struct AdvancementProgressMapElement {
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct Advancement {
-    has_parent: bool,
-    #[packet_serde(condition = "has_parent")]
+    #[packet_serde(bool_prefixed)]
     parent_id: Option<UnlocalizedName>,
-    has_display: bool,
-    #[packet_serde(condition = "has_display")]
+    #[packet_serde(bool_prefixed)]
     display_data: Option<AdvancementDisplay>,
-    #[packet_serde(varying)]
-    criteria_len: i32,
-    #[packet_serde(len = "criteria_len as usize")]
-    criteria: Vec<UnlocalizedName>,
-    #[packet_serde(varying)]
-    requirements_length: i32,
-    #[packet_serde(len = "requirements_length as usize")]
-    requirements: Vec<AdvancementRequirements>,
+    #[packet_serde(len_prefixed)]
+    criteria: Box<[UnlocalizedName]>,
+    #[packet_serde(len_prefixed)]
+    requirements: Box<[AdvancementRequirements]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct AdvancementRequirements {
-    #[packet_serde(varying)]
-    requirements_len: i32,
-    #[packet_serde(len = "requirements_len as usize")]
-    requirements: Vec<String>,
+    #[packet_serde(len_prefixed)]
+    requirements: Box<[String]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct AdvancementProgress {
-    #[packet_serde(varying)]
-    size: i32,
-    #[packet_serde(len = "size as usize")]
-    criteria: Vec<AdvancementProgressCriteria>,
+    #[packet_serde(len_prefixed)]
+    criteria: Box<[AdvancementProgressCriteria]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -714,10 +696,8 @@ pub struct AdvancementDisplay {
 pub struct EntityProperty {
     key: UnlocalizedName,
     value: f64,
-    #[packet_serde(varying)]
-    number_of_modifiers: i32,
-    #[packet_serde(len = "number_of_modifiers as usize")]
-    modifiers: Vec<AttributeModifier>,
+    #[packet_serde(len_prefixed)]
+    modifiers: Box<[AttributeModifier]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
@@ -732,7 +712,7 @@ pub struct Recipe {
     recipe_type: UnlocalizedName,
     recipe_id: String,
     #[packet_serde(greedy)]
-    data: Vec<u8>,
+    data: Box<[u8]>,
 }
 
 #[derive(Debug, WriteToPacket)]
@@ -757,8 +737,7 @@ impl ReadFromPacket for WrappedParticle {
 pub struct PlayerProperty {
     name: String,
     value: String,
-    is_signed: bool,
-    #[packet_serde(condition = "is_signed")]
+    #[packet_serde(bool_prefixed)]
     signature: Option<String>,
 }
 
@@ -782,17 +761,22 @@ impl WrappedPlayerInfoAction {
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct TagArray {
     tag_type: UnlocalizedName,
-    #[packet_serde(varying)]
-    length: i32,
-    #[packet_serde(len = "length as usize")]
-    data: Vec<Tag>,
+    #[packet_serde(len_prefixed)]
+    data: Box<[Tag]>,
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct Tag {
     name: UnlocalizedName,
-    #[packet_serde(varying)]
-    count: i32,
-    #[packet_serde(len = "count as usize", varying)]
-    entries: Vec<i32>,
+    #[packet_serde(len_prefixed, varying)]
+    entries: Box<[i32]>,
+}
+
+#[derive(Debug, WriteToPacket, ReadFromPacket)]
+pub struct JigsawUpdateData {
+    name: UnlocalizedName,
+    target: UnlocalizedName,
+    pool: UnlocalizedName,
+    final_state: String,
+    joint_type: String
 }

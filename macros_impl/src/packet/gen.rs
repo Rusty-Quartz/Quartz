@@ -2,7 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{DeriveInput, Ident};
 
-use super::parse::{EnumStructVariant, Field, FieldType};
+use super::{OptionCondition, parse::{EnumStructVariant, Field, FieldType, ArrayLength}};
 use crate::the_crate;
 
 pub fn gen_struct_serializer_impl(input: DeriveInput, fields: &[Field]) -> TokenStream {
@@ -89,13 +89,26 @@ pub fn gen_serialize_struct_field(field: &Field, buffer_ident: &Ident) -> TokenS
     let write_fn = write_fn_for_field(field);
 
     if field.is_option {
+        let field_ref = quote! { __value };
+        let write_condition = field.condition
+            .as_ref()
+            .map(|condition| condition.gen_write_condition(&quote! { self.#name }, buffer_ident))
+            .flatten();
+        let len_prefix = field.opt_write_length_prefix(&field_ref, buffer_ident);
         quote! {
-            if let ::core::option::Option::Some(__value) = &self.#name {
-                #buffer_ident.#write_fn(__value);
+            #write_condition
+            if let ::core::option::Option::Some(#field_ref) = &self.#name {
+                #len_prefix
+                #buffer_ident.#write_fn(#field_ref);
             }
         }
     } else {
-        quote! { #buffer_ident.#write_fn(&self.#name); }
+        let field_ref = quote! { self.#name };
+        let len_prefix = field.opt_write_length_prefix(&field_ref, buffer_ident);
+        quote! {
+            #len_prefix
+            #buffer_ident.#write_fn(&#field_ref);
+        }
     }
 }
 
@@ -104,13 +117,27 @@ pub fn gen_serialize_enum_field(field: &Field, buffer_ident: &Ident) -> TokenStr
     let write_fn = write_fn_for_field(field);
 
     if field.is_option {
+        let field_ref = quote! { __value };
+        let write_condition = field.condition
+            .as_ref()
+            .map(|condition| condition.gen_write_condition(&quote! { #name }, buffer_ident))
+            .flatten();
+        let len_prefix = field.opt_write_length_prefix(&field_ref, buffer_ident);
+        
         quote! {
-            if let ::core::option::Option::Some(__value) = #name {
-                #buffer_ident.#write_fn(__value);
+            #write_condition
+            if let ::core::option::Option::Some(#field_ref) = #name {
+                #len_prefix
+                #buffer_ident.#write_fn(#field_ref);
             }
         }
     } else {
-        quote! { #buffer_ident.#write_fn(#name); }
+        let field_ref = quote! { #name };
+        let len_prefix = field.opt_write_length_prefix(&field_ref, buffer_ident);
+        quote! {
+            #len_prefix
+            #buffer_ident.#write_fn(#field_ref);
+        }
     }
 }
 
@@ -145,12 +172,20 @@ pub fn gen_deserialize_field(field: &Field, buffer_ident: &Ident) -> TokenStream
             } else {
                 quote! { #buffer_ident.read()? }
             },
-        FieldType::Array { len } =>
+        FieldType::Array { len } => {
+            let len = len.gen_read_length(buffer_ident);
             if field.varying {
-                quote! { #buffer_ident.read_array_varying(#len)? }
+                quote! {{
+                    #len
+                    #buffer_ident.read_array_varying(__len)?
+                }}
             } else {
-                quote! { #buffer_ident.read_array(#len)? }
-            },
+                quote! {{
+                    #len
+                    #buffer_ident.read_array(__len)?
+                }}
+            }
+        }
     };
     let read_impl = if field.is_option {
         quote! { ::core::option::Option::Some(#read_impl) }
@@ -159,15 +194,63 @@ pub fn gen_deserialize_field(field: &Field, buffer_ident: &Ident) -> TokenStream
     };
 
     match &field.condition {
-        Some(condition) => quote! {
-            let #name: #ty = if #condition {
-                #read_impl
-            } else {
-                ::core::default::Default::default()
-            };
+        Some(condition) => {
+            let condition = condition.gen_read_condition(buffer_ident);
+            quote! {
+                let #name: #ty = if #condition {
+                    #read_impl
+                } else {
+                    ::core::default::Default::default()
+                };
+            }
         },
         None => quote! {
             let #name: #ty = #read_impl;
         },
+    }
+}
+
+impl Field {
+    fn opt_write_length_prefix(&self, field_ref: &TokenStream, buffer_ident: &Ident) -> Option<TokenStream> {
+        match &self.ty {
+            FieldType::Array { len } => len.gen_write_length(field_ref, buffer_ident),
+            _ => None
+        }
+    }
+}
+
+impl ArrayLength {
+    fn gen_read_length(&self, buffer_ident: &Ident) -> TokenStream {
+        match self {
+            ArrayLength::Expr(expr) => quote! { let __len = #expr; },
+            ArrayLength::Prefixed => quote! { let __len = #buffer_ident.read_varying::<i32>()? as usize; },
+            ArrayLength::Greedy => quote! { let __len = #buffer_ident.remaining(); }
+        }
+    }
+
+    fn gen_write_length(&self, field_ref: &TokenStream, buffer_ident: &Ident) -> Option<TokenStream> {
+        match self {
+            // The field would have already been written
+            ArrayLength::Expr(_) => None,
+            ArrayLength::Prefixed => Some(quote! { #buffer_ident.write_varying(&(#field_ref.len() as i32)); }),
+            // Length inferred
+            ArrayLength::Greedy => None
+        }
+    }
+}
+
+impl OptionCondition {
+    fn gen_read_condition(&self, buffer_ident: &Ident) -> TokenStream {
+        match self {
+            OptionCondition::Expr(expr) => quote! { #expr },
+            OptionCondition::Prefixed => quote! { #buffer_ident.read::<bool>()? }
+        }
+    }
+
+    fn gen_write_condition(&self, field_ref: &TokenStream, buffer_ident: &Ident) -> Option<TokenStream> {
+        match self {
+            OptionCondition::Expr(_) => None,
+            OptionCondition::Prefixed => Some(quote! { #buffer_ident.write(&#field_ref.is_some()); })
+        }
     }
 }

@@ -16,13 +16,14 @@ pub fn the_crate() -> TokenStream {
     }
 }
 
-pub fn is_vec(ty: &Type) -> bool {
+pub fn is_boxed_slice(ty: &Type) -> bool {
     match ty {
         Type::Path(path) =>
             path.qself.is_none()
                 && path.path.leading_colon.is_none()
                 && !path.path.segments.is_empty()
-                && path.path.segments.last().unwrap().ident == "Vec",
+                && path.path.segments.last().unwrap().ident == "Box"
+                && matches!(extract_type_from_container(ty), Ok(Type::Slice(_))),
         _ => false,
     }
 }
@@ -40,6 +41,7 @@ pub fn is_option(ty: &Type) -> bool {
 
 pub fn extract_type_from_container(ty: &Type) -> Result<Type> {
     match ty {
+        Type::Slice(slice) => Ok(slice.elem.as_ref().clone()),
         Type::Path(path) => {
             let type_params = &path.path.segments.last().unwrap().arguments;
 

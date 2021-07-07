@@ -9,6 +9,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     logging::init_logger(Some("quartz"), console_interface.clone())?;
 
+    log::debug!(
+        "{}, {}",
+        std::mem::size_of::<quartz::network::packet::ClientBoundPacket>(),
+        std::mem::size_of::<quartz::network::packet::ServerBoundPacket>(),
+    );
+
     let config: Config;
     match load_config(Path::new("./config.json")) {
         Ok(cfg) => config = cfg,

@@ -50,6 +50,7 @@ impl PacketBuffer {
     /// Increases the length of this buffer to its capacity.
     #[inline]
     pub fn inflate(&mut self) {
+        // Safety: u8 is always valid, and we only set the length up to the amount we have allocated
         unsafe {
             self.inner.set_len(self.inner.capacity());
         }
@@ -59,9 +60,11 @@ impl PacketBuffer {
     #[inline]
     pub fn resize(&mut self, size: usize) {
         if size > self.inner.capacity() {
+            // inner cap >= inner len + size - inner len = size
             self.inner.reserve(size - self.inner.len());
         }
 
+        // Safety: see computation above
         unsafe {
             self.inner.set_len(size);
         }
@@ -76,7 +79,10 @@ impl PacketBuffer {
             return;
         }
 
-        self.inner.reserve(n - self.cursor);
+        // inner cap >= inner len + n - (inner len - cursor) = n + cursor
+        self.inner.reserve(n - self.remaining());
+
+        // Safety: see computation above
         unsafe {
             self.inner.set_len(self.cursor + n);
         }
@@ -85,11 +91,8 @@ impl PacketBuffer {
     /// Returs the position of the cursor in the buffer.
     #[inline]
     pub fn cursor(&self) -> usize {
-        if cfg!(debug_assertions) && self.cursor > self.len() {
-            self.len()
-        } else {
-            self.cursor
-        }
+        debug_assert!(self.cursor <= self.len());
+        self.cursor
     }
 
     /// Sets this buffer's cursor to the beginning of the buffer.
@@ -126,6 +129,7 @@ impl PacketBuffer {
         // what they're doing.
         unsafe {
             let ptr = self.inner.as_mut_ptr();
+            // Subtraction checked above
             let new_len = self.inner.len() - self.cursor;
             // Copy remaining bytes
             ptr::copy(ptr.add(self.cursor), ptr, new_len);
@@ -156,11 +160,25 @@ impl PacketBuffer {
     /// Returns the next byte in the buffer without shifting the cursor. If the cursor is at the end of the
     /// buffer, then `0` is returned.
     #[inline]
-    pub fn peek(&self) -> Result<u8, PacketSerdeError> {
+    pub fn peek_one(&self) -> Result<u8, PacketSerdeError> {
         self.inner
             .get(self.cursor)
             .copied()
             .ok_or(PacketSerdeError::EndOfBuffer)
+    }
+
+    pub fn peek<T: ReadFromPacket>(&mut self) -> Result<T, PacketSerdeError> {
+        let cursor_start = self.cursor;
+        let result = self.read::<T>();
+        self.cursor = cursor_start;
+        result
+    }
+
+    pub fn peek_varying<T: ReadFromPacket>(&mut self) -> Result<T, PacketSerdeError> {
+        let cursor_start = self.cursor;
+        let result = self.read_varying::<T>();
+        self.cursor = cursor_start;
+        result
     }
 
     /// Reads a byte from the buffer, returning `0` if no bytes remain.
@@ -208,24 +226,24 @@ impl PacketBuffer {
     pub fn read_array<T: ReadFromPacket>(
         &mut self,
         len: usize,
-    ) -> Result<Vec<T>, PacketSerdeError> {
+    ) -> Result<Box<[T]>, PacketSerdeError> {
         let mut dest = Vec::with_capacity(len);
         for _ in 0 .. len {
             dest.push(T::read_from(self)?);
         }
-        Ok(dest)
+        Ok(dest.into_boxed_slice())
     }
 
     #[inline]
     pub fn read_array_varying<T: ReadFromPacket>(
         &mut self,
         len: usize,
-    ) -> Result<Vec<T>, PacketSerdeError> {
+    ) -> Result<Box<[T]>, PacketSerdeError> {
         let mut dest = Vec::with_capacity(len);
         for _ in 0 .. len {
             dest.push(T::varying_read_from(self)?);
         }
-        Ok(dest)
+        Ok(dest.into_boxed_slice())
     }
 
     #[inline]
@@ -244,11 +262,11 @@ impl PacketBuffer {
     /// Writes a byte to this buffer, expanding the buffer if needed.
     #[inline]
     pub fn write_one(&mut self, byte: u8) {
-        if self.cursor >= self.inner.len() {
-            self.inner.push(byte);
-        } else {
-            unsafe {
-                *self.inner.get_unchecked_mut(self.cursor) = byte;
+        match self.inner.get_mut(self.cursor) {
+            Some(by) => *by = byte,
+            None => {
+                debug_assert!(self.cursor == self.inner.len());
+                self.inner.push(byte);
             }
         }
         self.cursor += 1;
@@ -256,16 +274,14 @@ impl PacketBuffer {
 
     /// Writes the given bytes to this buffer.
     pub fn write_bytes(&mut self, blob: &[u8]) {
-        // TODO: remove when unsafe set_len calls are fully debugged
-        if self.cursor > self.len() {
-            self.cursor = self.len();
-        }
+        debug_assert!(self.cursor <= self.len());
 
         let remaining = self.remaining();
         if remaining < blob.len() {
             let remaining_allocated = self.capacity() - self.cursor;
             if remaining_allocated < blob.len() {
-                self.inner.reserve(blob.len() - self.remaining());
+                // inner cap >= inner len + blob len - (inner len - cursor) = blob len + cursor
+                self.inner.reserve(blob.len() - remaining);
             }
 
             // Safety: above we allocate enough memory to fit `blob`, and after the write is
@@ -362,11 +378,31 @@ pub trait ReadFromPacket: Sized {
     }
 }
 
+impl<T: ReadFromPacket> ReadFromPacket for Box<T> {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        T::read_from(buffer).map(Box::new)
+    }
+
+    fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        T::varying_read_from(buffer).map(Box::new)
+    }
+}
+
 pub trait WriteToPacket {
     fn write_to(&self, buffer: &mut PacketBuffer);
 
     fn varying_write_to(&self, buffer: &mut PacketBuffer) {
         self.write_to(buffer);
+    }
+}
+
+impl<T: WriteToPacket> WriteToPacket for Box<T> {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        (&**self).write_to(buffer)
+    }
+
+    fn varying_write_to(&self, buffer: &mut PacketBuffer) {
+        (&**self).varying_write_to(buffer)
     }
 }
 
@@ -438,7 +474,8 @@ impl ReadFromPacket for i32 {
     fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut buf = [0u8; 5];
 
-        let len = buffer.remaining().min(buf.len());
+        let remaining = buffer.remaining();
+        let len = remaining.min(buf.len());
         unsafe {
             let src = buffer.inner.as_ptr().add(buffer.cursor());
             ptr::copy_nonoverlapping(src, buf.as_mut_ptr(), len);
@@ -453,13 +490,13 @@ impl ReadFromPacket for i32 {
             result |= ((by & 0x7F) as i32) << (7 * i);
             i += 1;
 
+            if i > remaining {
+                return Err(PacketSerdeError::EndOfBuffer);
+            }
+
             if (by & 0x80) == 0 {
                 buffer.cursor += i;
                 return Ok(result);
-            }
-
-            if i >= len {
-                return Err(PacketSerdeError::EndOfBuffer);
             }
         }
 
@@ -485,7 +522,8 @@ impl ReadFromPacket for i64 {
     fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut buf = [0u8; 10];
 
-        let len = buffer.remaining().min(buf.len());
+        let remaining = buffer.remaining();
+        let len = remaining.min(buf.len());
         unsafe {
             let src = buffer.inner.as_ptr().add(buffer.cursor());
             ptr::copy_nonoverlapping(src, buf.as_mut_ptr(), len);
@@ -500,13 +538,13 @@ impl ReadFromPacket for i64 {
             result |= ((by & 0x7F) as i64) << (7 * i);
             i += 1;
 
+            if i > remaining {
+                return Err(PacketSerdeError::EndOfBuffer);
+            }
+
             if (by & 0x80) == 0 {
                 buffer.cursor += i;
                 return Ok(result);
-            }
-
-            if i >= len {
-                return Err(PacketSerdeError::EndOfBuffer);
             }
         }
 

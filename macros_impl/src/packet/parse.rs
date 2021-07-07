@@ -1,7 +1,6 @@
 use super::Side;
-use crate::{extract_type_from_container, is_option, is_vec};
-use proc_macro2::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use crate::{extract_type_from_container, is_option, is_boxed_slice};
+use quote::format_ident;
 use syn::{
     parenthesized,
     parse::{Parse, ParseStream},
@@ -72,39 +71,40 @@ where
 {
     let mut fields = Vec::new();
 
-    fn process_vec(
+    fn process_array(
         fields: &mut Vec<Field>,
         name: Ident,
-        ty: Type,
+        boxed_slice_ty: Type,
+        slice_ty: Type,
         params: PacketSerdeParams,
         is_option: bool,
         side: Side,
     ) -> Result<()> {
-        let is_array_u8 = match extract_type_from_container(&ty)? {
+        let is_array_u8 = match extract_type_from_container(&slice_ty)? {
             Type::Path(path) => path.qself.is_none() && path.path.is_ident("u8"),
-            _ => return Err(Error::new_spanned(ty, "Expected path type")),
+            _ => return Err(Error::new_spanned(slice_ty, "Expected path type")),
         };
 
         let len = if params.greedy {
             if !is_array_u8 {
                 return Err(Error::new_spanned(
-                    ty,
-                    "Only Vec<u8> can be market as greedy",
+                    boxed_slice_ty,
+                    "Only Box<[u8]> can be market as greedy",
                 ));
             }
 
-            quote! { __buffer.remaining() }
+            ArrayLength::Greedy
         } else {
             if side == Side::Read && params.len.is_none() {
-                return Err(Error::new_spanned(ty, "Vecs must have a length expression"));
+                return Err(Error::new_spanned(boxed_slice_ty, "Arrays must have a length expression or be marked as `len_prefixed`"));
             }
 
-            params.len.to_token_stream()
+            params.len.unwrap()
         };
 
         fields.push(Field::array(
             name,
-            ty,
+            boxed_slice_ty,
             len,
             params.condition,
             is_option,
@@ -137,15 +137,17 @@ where
         };
 
         let ty = field_def.ty.clone();
-        if is_vec(&ty) {
-            process_vec(&mut fields, name, ty, params, false, side)?;
+        if is_boxed_slice(&ty) {
+            // Unwrap guaranteed by is_boxed_slice
+            let slice_ty = extract_type_from_container(&ty).unwrap();
+            process_array(&mut fields, name, ty, slice_ty, params, false, side)?;
             continue;
         }
 
         if params.greedy {
             return Err(Error::new_spanned(
                 ty,
-                "Only Vec<u8> can be market as greedy",
+                "Only Box<[u8]> can be market as greedy",
             ));
         }
 
@@ -158,8 +160,10 @@ where
             }
 
             let inner_ty = extract_type_from_container(&ty)?;
-            if is_vec(&inner_ty) {
-                process_vec(&mut fields, name, inner_ty, params, true, side)?;
+            if is_boxed_slice(&inner_ty) {
+                // Unwrap guaranteed by is_boxed_slice
+                let slice_ty = extract_type_from_container(&inner_ty).unwrap();
+                process_array(&mut fields, name, inner_ty, slice_ty, params, true, side)?;
             } else {
                 if params.len.is_some() {
                     return Err(Error::new_spanned(
@@ -183,7 +187,14 @@ where
         if params.len.is_some() {
             return Err(Error::new_spanned(
                 attr,
-                "Only Vecs (arrays) can have a length expression",
+                "Only boxed slices (arrays) can have a length",
+            ));
+        }
+
+        if params.condition.is_some() {
+            return Err(Error::new_spanned(
+                attr,
+                "Only boxed options can have a condition",
             ));
         }
 
@@ -202,8 +213,8 @@ where
 struct PacketSerdeParams {
     varying: bool,
     greedy: bool,
-    len: Option<Expr>,
-    condition: Option<Expr>,
+    len: Option<ArrayLength>,
+    condition: Option<OptionCondition>,
 }
 
 impl Parse for PacketSerdeParams {
@@ -231,19 +242,33 @@ impl Parse for PacketSerdeParams {
                 }
                 "len" => {
                     if params.len.is_some() {
-                        return Err(Error::new_spanned(ident, "Duplicate parameter"));
+                        return Err(Error::new_spanned(ident, "Duplicate length parameter"));
                     }
 
                     content.parse::<Token![=]>()?;
-                    params.len = Some(syn::parse_str(&content.parse::<LitStr>()?.value())?);
+                    params.len = Some(ArrayLength::Expr(syn::parse_str(&content.parse::<LitStr>()?.value())?));
+                }
+                "len_prefixed" => {
+                    if params.len.is_some() {
+                        return Err(Error::new_spanned(ident, "Duplicate length parameter"));
+                    }
+
+                    params.len = Some(ArrayLength::Prefixed);
                 }
                 "condition" => {
                     if params.condition.is_some() {
-                        return Err(Error::new_spanned(ident, "Duplicate parameter"));
+                        return Err(Error::new_spanned(ident, "Duplicate condition parameter"));
                     }
 
                     content.parse::<Token![=]>()?;
-                    params.condition = Some(syn::parse_str(&content.parse::<LitStr>()?.value())?);
+                    params.condition = Some(OptionCondition::Expr(syn::parse_str(&content.parse::<LitStr>()?.value())?));
+                }
+                "bool_prefixed" => {
+                    if params.condition.is_some() {
+                        return Err(Error::new_spanned(ident, "Duplicate condition parameter"));
+                    }
+
+                    params.condition = Some(OptionCondition::Prefixed);
                 }
                 _ =>
                     return Err(Error::new_spanned(
@@ -273,6 +298,17 @@ impl Default for PacketSerdeParams {
     }
 }
 
+pub enum ArrayLength {
+    Expr(Expr),
+    Prefixed,
+    Greedy
+}
+
+pub enum OptionCondition {
+    Expr(Expr),
+    Prefixed
+}
+
 pub struct EnumStructVariant {
     pub name: Ident,
     pub fields: Vec<Field>,
@@ -283,7 +319,7 @@ pub struct Field {
     pub name: Ident,
     pub raw_ty: Type,
     pub ty: FieldType,
-    pub condition: Option<Expr>,
+    pub condition: Option<OptionCondition>,
     pub is_option: bool,
     pub varying: bool,
     pub is_array_u8: bool,
@@ -293,7 +329,7 @@ impl Field {
     pub fn regular(
         name: Ident,
         ty: Type,
-        condition: Option<Expr>,
+        condition: Option<OptionCondition>,
         is_option: bool,
         varying: bool,
     ) -> Self {
@@ -311,8 +347,8 @@ impl Field {
     pub fn array(
         name: Ident,
         ty: Type,
-        len: TokenStream,
-        condition: Option<Expr>,
+        len: ArrayLength,
+        condition: Option<OptionCondition>,
         is_option: bool,
         varying: bool,
         is_array_u8: bool,
@@ -331,5 +367,5 @@ impl Field {
 
 pub enum FieldType {
     Regular,
-    Array { len: TokenStream },
+    Array { len: ArrayLength },
 }
