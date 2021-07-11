@@ -35,7 +35,7 @@
         "wrapped_player_info_action": "crate::network::packet::WrappedPlayerInfoAction",
         "player_info_action": "crate::network::packet::PlayerInfoAction",
         "tag_array": "crate::network::packet::TagArray",
-"section_data": "crate::network::packet::SectionData",
+        "section_data": "crate::network::packet::SectionData",
         "jigsaw_update_data": "Box<crate::network::packet::JigsawUpdateData>"
     },
     "primitives": [
