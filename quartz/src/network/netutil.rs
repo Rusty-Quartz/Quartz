@@ -635,14 +635,12 @@ impl ReadFromPacket for NbtCompound {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut cursor = Cursor::new(&buffer.inner);
         cursor.set_position(buffer.cursor() as u64);
-        // log::debug!("root_id: {:#04X?}", buffer.peek());
         let ret = match quartz_nbt::read::read_nbt_uncompressed(&mut cursor) {
             Ok((nbt, _)) => Ok(nbt),
             Err(error) => Err(PacketSerdeError::Nbt(error)),
         };
         let position = cursor.position() as usize;
         buffer.set_cursor(position);
-        // log::debug!("compound tag: {:?}", ret);
         ret
     }
 }
@@ -883,6 +881,7 @@ pub enum PacketSerdeError {
     OpenSSL(ErrorStack),
     InvalidEnum(&'static str, i32),
     Internal(&'static str),
+    InvalidRecipe(Box<str>),
 }
 
 impl Display for PacketSerdeError {
@@ -907,6 +906,7 @@ impl Display for PacketSerdeError {
             PacketSerdeError::InvalidEnum(enum_type, id) =>
                 write!(f, "Received invalid enum ID for type {}: {}", enum_type, id),
             PacketSerdeError::Internal(msg) => Display::fmt(msg, f),
+            PacketSerdeError::InvalidRecipe(msg) => Display::fmt(msg, f),
         }
     }
 }

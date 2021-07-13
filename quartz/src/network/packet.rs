@@ -506,7 +506,6 @@ impl ReadFromPacket for Slot {
         } else {
             (None, None, None)
         };
-
         Ok(Slot {
             present,
             item_id,
@@ -693,12 +692,291 @@ pub struct AttributeModifier {
     operation: i8,
 }
 
-#[derive(Debug, WriteToPacket, ReadFromPacket)]
+#[derive(Debug, WriteToPacket)]
 pub struct Recipe {
     recipe_type: UnlocalizedName,
     recipe_id: String,
-    #[packet_serde(greedy)]
-    data: Box<[u8]>,
+    data: RecipeData,
+}
+
+impl ReadFromPacket for Recipe {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let recipe_type: UnlocalizedName = buffer.read()?;
+        let recipe_id = buffer.read()?;
+        let data = match recipe_type.to_string().as_str() {
+            "minecraft:crafting_shapeless" => {
+                let group = buffer.read()?;
+                let ingredients_len = buffer.read_varying::<i32>()? as usize;
+                RecipeData::ShapelessCrafting {
+                    group,
+                    ingredients: buffer.read_array(ingredients_len)?,
+                    result: buffer.read()?,
+                }
+            }
+            "minecraft:crafting_shaped" => {
+                let width = buffer.read_varying()?;
+                let height = buffer.read_varying()?;
+                RecipeData::ShapedCrafting {
+                    group: buffer.read()?,
+                    ingredients: buffer.read_array((width * height) as usize)?,
+                    width,
+                    height,
+                    result: buffer.read()?,
+                }
+            }
+            "minecraft:smelting" => {
+                let group = buffer.read()?;
+                let ingredient = buffer.read()?;
+                let result = buffer.read()?;
+                let experience = buffer.read()?;
+                let cooking_time = buffer.read_varying()?;
+                RecipeData::Smelting {
+                    group,
+                    ingredient,
+                    result,
+                    experience,
+                    cooking_time,
+                }
+            }
+            "minecraft:blasting" => RecipeData::Blasting {
+                group: buffer.read()?,
+                ingredient: buffer.read()?,
+                result: buffer.read()?,
+                experience: buffer.read()?,
+                cooking_time: buffer.read_varying()?,
+            },
+            "minecraft:smoking" => RecipeData::Smoking {
+                group: buffer.read()?,
+                ingredient: buffer.read()?,
+                result: buffer.read()?,
+                experience: buffer.read()?,
+                cooking_time: buffer.read_varying()?,
+            },
+            "minecraft:campfire_cooking" => RecipeData::CampfireCooking {
+                group: buffer.read()?,
+                ingredient: buffer.read()?,
+                result: buffer.read()?,
+                experience: buffer.read()?,
+                cooking_time: buffer.read_varying()?,
+            },
+            "minecraft:stonecutting" => RecipeData::Stonecutting {
+                group: buffer.read()?,
+                ingredient: buffer.read()?,
+                result: buffer.read()?,
+            },
+            "minecraft:smithing" => RecipeData::Smithing {
+                base: buffer.read()?,
+                addition: buffer.read()?,
+                result: buffer.read()?,
+            },
+            "minecraft:crafting_special_armordye" => RecipeData::ArmorDye,
+            "minecraft:crafting_special_bookcloning" => RecipeData::BookCloning,
+            "minecraft:crafting_special_mapcloning" => RecipeData::MapExtending,
+            "minecraft:crafting_special_mapextending" => RecipeData::MapExtending,
+            "minecraft:crafting_special_firework_rocket" => RecipeData::FireworkRocket,
+            "minecraft:crafting_special_firework_star" => RecipeData::FireworkStar,
+            "minecraft:crafting_special_firework_star_fade" => RecipeData::FireworkStarFade,
+            "minecraft:crafting_special_repairitem" => RecipeData::RepairTool,
+            "minecraft:crafting_special_tippedarrow" => RecipeData::TippedArrow,
+            "minecraft:crafting_special_bannerduplicate" => RecipeData::DuplicateBanner,
+            "minecraft:crafting_special_banneraddpattern" => RecipeData::AddPatternBanner,
+            "minecraft:crafting_special_shielddecoration" => RecipeData::DecorateShield,
+            "minecraft:crafting_special_shulkerboxcoloring" => RecipeData::ColorShulkerBox,
+            "minecraft:crafting_special_suspiciousstew" => RecipeData::SuspiciousStew,
+            _ =>
+                return Err(PacketSerdeError::InvalidRecipe(
+                    format!("Unknown recipe type {} recieved", recipe_type).into_boxed_str(),
+                )),
+        };
+
+        Ok(Recipe {
+            recipe_type,
+            recipe_id,
+            data,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum RecipeData {
+    ShapelessCrafting {
+        group: String,
+        ingredients: Box<[Ingredient]>,
+        result: Slot,
+    },
+
+    ShapedCrafting {
+        width: i32,
+        height: i32,
+        group: String,
+        ingredients: Box<[Ingredient]>,
+        result: Slot,
+    },
+
+    Smelting {
+        group: String,
+        ingredient: Ingredient,
+        result: Slot,
+        experience: f32,
+        cooking_time: i32,
+    },
+
+    Blasting {
+        group: String,
+        ingredient: Ingredient,
+        result: Slot,
+        experience: f32,
+        cooking_time: i32,
+    },
+
+    Smoking {
+        group: String,
+        ingredient: Ingredient,
+        result: Slot,
+        experience: f32,
+        cooking_time: i32,
+    },
+
+    CampfireCooking {
+        group: String,
+        ingredient: Ingredient,
+        result: Slot,
+        experience: f32,
+        cooking_time: i32,
+    },
+
+    Stonecutting {
+        group: String,
+        ingredient: Ingredient,
+        result: Slot,
+    },
+
+    Smithing {
+        base: Ingredient,
+        addition: Ingredient,
+        result: Slot,
+    },
+    ArmorDye,
+    BookCloning,
+    MapCloning,
+    MapExtending,
+    FireworkRocket,
+    FireworkStar,
+    FireworkStarFade,
+    RepairTool,
+    TippedArrow,
+    DuplicateBanner,
+    AddPatternBanner,
+    DecorateShield,
+    ColorShulkerBox,
+    SuspiciousStew,
+}
+
+impl WriteToPacket for RecipeData {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        match self {
+            RecipeData::ShapelessCrafting {
+                group,
+                ingredients,
+                result,
+            } => {
+                buffer.write(group);
+                buffer.write_varying(&(ingredients.len() as i32));
+                buffer.write_array(ingredients);
+                buffer.write(result);
+            }
+            RecipeData::ShapedCrafting {
+                width,
+                height,
+                group,
+                ingredients,
+                result,
+            } => {
+                buffer.write_varying(width);
+                buffer.write_varying(height);
+                buffer.write(group);
+                buffer.write_array(ingredients);
+                buffer.write(result);
+            }
+            RecipeData::Smelting {
+                group,
+                ingredient,
+                result,
+                experience,
+                cooking_time,
+            } => {
+                buffer.write(group);
+                buffer.write(ingredient);
+                buffer.write(result);
+                buffer.write(experience);
+                buffer.write_varying(cooking_time);
+            }
+            RecipeData::Blasting {
+                group,
+                ingredient,
+                result,
+                experience,
+                cooking_time,
+            } => {
+                buffer.write(group);
+                buffer.write(ingredient);
+                buffer.write(result);
+                buffer.write(experience);
+                buffer.write_varying(cooking_time);
+            }
+            RecipeData::Smoking {
+                group,
+                ingredient,
+                result,
+                experience,
+                cooking_time,
+            } => {
+                buffer.write(group);
+                buffer.write(ingredient);
+                buffer.write(result);
+                buffer.write(experience);
+                buffer.write_varying(cooking_time);
+            }
+            RecipeData::CampfireCooking {
+                group,
+                ingredient,
+                result,
+                experience,
+                cooking_time,
+            } => {
+                buffer.write(group);
+                buffer.write(ingredient);
+                buffer.write(result);
+                buffer.write(experience);
+                buffer.write_varying(cooking_time);
+            }
+            RecipeData::Stonecutting {
+                group,
+                ingredient,
+                result,
+            } => {
+                buffer.write(group);
+                buffer.write(ingredient);
+                buffer.write(result);
+            }
+            RecipeData::Smithing {
+                base,
+                addition,
+                result,
+            } => {
+                buffer.write(base);
+                buffer.write(addition);
+                buffer.write(result);
+            }
+            _ => {}
+        }
+    }
+}
+
+#[derive(Debug, ReadFromPacket, WriteToPacket)]
+pub struct Ingredient {
+    #[packet_serde(len_prefixed)]
+    items: Box<[Slot]>,
 }
 
 #[derive(Debug, WriteToPacket)]
