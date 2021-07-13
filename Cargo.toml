@@ -6,3 +6,6 @@ members = [
     "macros_impl",
     "util"
 ]
+
+[profile.release]
+lto = "fat"

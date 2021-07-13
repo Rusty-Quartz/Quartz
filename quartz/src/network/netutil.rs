@@ -16,7 +16,7 @@ use std::{
 use uuid::Uuid;
 
 use crate::world::{
-    chunk::{ClientSection, SECTION_DATA_LENGTH},
+    chunk::{ClientSection},
     location::BlockPosition,
 };
 
@@ -151,9 +151,11 @@ impl PacketBuffer {
         self.cursor = 0;
     }
 
-    /// Returns a mutable reference to the inner vec of this buffer.
+    /// Returns a mutable reference to the inner vec of this buffer. Even though this operation is not
+    /// inherently unsafe, incorrectly modifying the returned reference can lead to undefined behavior
+    /// down the line if the cursor position is not handled correctly.
     #[inline]
-    pub fn inner_mut(&mut self) -> &mut Vec<u8> {
+    pub unsafe fn inner_mut(&mut self) -> &mut Vec<u8> {
         &mut self.inner
     }
 
@@ -867,6 +869,7 @@ impl ReadFromPacket for ClientSection {
     }
 }
 
+// TODO: add From<NbtIoError> when quartz_nbt is updated
 #[derive(Debug)]
 pub enum PacketSerdeError {
     EndOfBuffer,

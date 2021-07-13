@@ -137,8 +137,9 @@ impl IOHandle {
                 let data_len = packet_data.cursor();
 
                 // Compress the packet data and write to the operation buffer
+                // Safety: we don't interact with the cursor of `operation_buffer` after this
                 let mut encoder =
-                    ZlibEncoder::new(self.operation_buffer.inner_mut(), Compression::default());
+                    ZlibEncoder::new(unsafe { self.operation_buffer.inner_mut() }, Compression::default());
                 encoder.write_all(&packet_data[..])?;
                 encoder.finish()?;
 

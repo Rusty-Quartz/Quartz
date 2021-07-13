@@ -87,7 +87,12 @@ where
             _ => return Err(Error::new_spanned(slice_ty, "Expected path type")),
         };
 
+        if is_array_u8 && params.nbt {
+            return Err(Error::new_spanned(boxed_slice_ty, "Type is not an NBT object"));
+        }
+
         let len = if params.greedy {
+            // Ensures it's not NBT either
             if !is_array_u8 {
                 return Err(Error::new_spanned(
                     boxed_slice_ty,
@@ -112,6 +117,7 @@ where
             is_option,
             params.varying,
             is_array_u8,
+            params.nbt
         ));
         Ok(())
     }
@@ -180,6 +186,7 @@ where
                     params.condition,
                     true,
                     params.varying,
+                    params.nbt
                 ));
             }
 
@@ -206,6 +213,7 @@ where
             params.condition,
             false,
             params.varying,
+            params.nbt
         ));
     }
 
@@ -215,6 +223,7 @@ where
 struct PacketSerdeParams {
     varying: bool,
     greedy: bool,
+    nbt: bool,
     len: Option<ArrayLength>,
     condition: Option<OptionCondition>,
 }
@@ -233,6 +242,10 @@ impl Parse for PacketSerdeParams {
                         return Err(Error::new_spanned(ident, "Duplicate parameter"));
                     }
 
+                    if params.nbt {
+                        return Err(Error::new_spanned(ident, "Parameter incompatible with `nbt`"));
+                    }
+
                     params.varying = true;
                 }
                 "greedy" => {
@@ -241,6 +254,17 @@ impl Parse for PacketSerdeParams {
                     }
 
                     params.greedy = true;
+                }
+                "nbt" => {
+                    if params.nbt {
+                        return Err(Error::new_spanned(ident, "Duplicate parameter"));
+                    }
+
+                    if params.greedy {
+                        return Err(Error::new_spanned(ident, "Parameter incompatible with `varying`"));
+                    }
+
+                    params.nbt = true;
                 }
                 "len" => {
                     if params.len.is_some() {
@@ -294,6 +318,7 @@ impl Default for PacketSerdeParams {
         PacketSerdeParams {
             varying: false,
             greedy: false,
+            nbt: false,
             len: None,
             condition: None,
         }
@@ -325,6 +350,7 @@ pub struct Field {
     pub is_option: bool,
     pub varying: bool,
     pub is_array_u8: bool,
+    pub is_nbt: bool
 }
 
 impl Field {
@@ -334,6 +360,7 @@ impl Field {
         condition: Option<OptionCondition>,
         is_option: bool,
         varying: bool,
+        is_nbt: bool
     ) -> Self {
         Field {
             name,
@@ -343,6 +370,7 @@ impl Field {
             is_option,
             varying,
             is_array_u8: false,
+            is_nbt
         }
     }
 
@@ -354,7 +382,10 @@ impl Field {
         is_option: bool,
         varying: bool,
         is_array_u8: bool,
+        is_nbt: bool
     ) -> Self {
+        assert!(!(is_array_u8 && is_nbt), "An array field cannot both be a byte buffer and an NBT object");
+
         Field {
             name,
             raw_ty: ty,
@@ -363,6 +394,7 @@ impl Field {
             is_option,
             varying,
             is_array_u8,
+            is_nbt
         }
     }
 }

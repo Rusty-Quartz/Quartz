@@ -513,12 +513,13 @@ impl Packet {
                         is_option,
                         varying,
                         field.var_type.starts_with("u8"),
+                        field.ser_as_nbt
                     ),
                     field,
                 )
             } else {
                 (
-                    CodegenField::regular(name, ty, condition, is_option, varying),
+                    CodegenField::regular(name, ty, condition, is_option, varying, field.ser_as_nbt),
                     field,
                 )
             }
@@ -583,6 +584,8 @@ struct Field {
     option: bool,
     #[serde(default)]
     array: bool,
+    #[serde(default)]
+    ser_as_nbt: bool,
     #[serde(default)]
     condition: Option<String>,
     #[serde(default)]
