@@ -1,13 +1,8 @@
+use indexmap::IndexMap;
 use proc_macro2::{Ident, Literal, TokenStream};
 use quote::{format_ident, quote};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, HashMap},
-    env,
-    fs,
-    path::Path,
-    slice::Iter,
-};
+use std::{collections::BTreeMap, env, fs, path::Path, slice::Iter};
 use syn::Expr;
 
 pub fn gen_blockstates() {
@@ -16,9 +11,10 @@ pub fn gen_blockstates() {
     let dest_path = Path::new(&out_dir).join("blockstate_output.rs");
 
     // Load in the block info from blocks.json
-    let mut data =
-        serde_json::from_str::<HashMap<String, RawBlockInfo>>(include_str!("./assets/blocks.json"))
-            .expect("Error parsing blocks.json");
+    let mut data = serde_json::from_str::<IndexMap<String, RawBlockInfo>>(include_str!(
+        "./assets/blocks.json"
+    ))
+    .expect("Error parsing blocks.json");
 
     // Find the shared properties
     let property_data = find_shared_properties(&data);
@@ -48,8 +44,8 @@ pub fn gen_blockstates() {
     println!("cargo:rerun-if-changes=buildscript/blockstate.rs");
 }
 
-fn find_shared_properties(data: &HashMap<String, RawBlockInfo>) -> Vec<PropertyData> {
-    let mut possible_conflicts: HashMap<String, Vec<String>> = HashMap::new();
+fn find_shared_properties(data: &IndexMap<String, RawBlockInfo>) -> Vec<PropertyData> {
+    let mut possible_conflicts: IndexMap<String, Vec<String>> = IndexMap::new();
 
     // Find all properties and find all blocks that share the same property name
     for (block_name, state_info) in data.iter() {
@@ -77,7 +73,7 @@ fn find_shared_properties(data: &HashMap<String, RawBlockInfo>) -> Vec<PropertyD
     let mut property_data: Vec<PropertyData> = Vec::new();
 
     for (property_name, blocks) in possible_conflicts.iter() {
-        let mut property_conflicts: HashMap<Vec<String>, (String, Vec<String>)> = HashMap::new();
+        let mut property_conflicts: IndexMap<Vec<String>, (String, Vec<String>)> = IndexMap::new();
         let mut lowercase_name = property_name.clone();
         lowercase_name.make_ascii_lowercase();
         let mut enum_name = property_name.clone();
@@ -223,7 +219,7 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> TokenStream {
 }
 
 fn update_block_property_names(
-    block_data: &mut HashMap<String, RawBlockInfo>,
+    block_data: &mut IndexMap<String, RawBlockInfo>,
     property_data: &Vec<PropertyData>,
 ) {
     for property in property_data {
@@ -244,7 +240,7 @@ fn update_block_property_names(
 }
 
 fn gen_default_states(
-    block_data: &mut HashMap<String, RawBlockInfo>,
+    block_data: &mut IndexMap<String, RawBlockInfo>,
     property_data: &Vec<PropertyData>,
 ) {
     for (block_name, block_info) in block_data.iter_mut() {
@@ -286,7 +282,7 @@ fn gen_default_states(
     }
 }
 
-fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
+fn gen_structs(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
     let structs = block_data
         .iter()
         .filter(|(_uln_name, block_info)| {
@@ -320,7 +316,7 @@ fn gen_structs(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
                 vecs
             });
 
-            let id_eq = gen_id_eq(&mut type_names.iter().zip(field_names.iter()).collect::<Vec<_>>().iter());
+            let id_eq = gen_id_eq(&mut type_names.iter().zip(field_names.iter()).rev().collect::<Vec<_>>().iter());
 
             let default_vals = block_info.default_state.iter().map(|(_name, val)| {
                 syn::parse_str::<Expr>(val).expect("How do we have an invalid expr")
@@ -389,7 +385,7 @@ fn gen_id_eq(states: &mut Iter<(&Ident, &Ident)>) -> Option<TokenStream> {
     })
 }
 
-fn gen_struct_enum(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
+fn gen_struct_enum(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
     let output = block_data
         .iter()
         .map(|(uln_name, block_data)| {
@@ -463,7 +459,7 @@ fn gen_struct_enum(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
     }
 }
 
-fn gen_name_lookup(block_data: &HashMap<String, RawBlockInfo>) -> TokenStream {
+fn gen_name_lookup(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
     let lookups = block_data.iter().map(|(uln_name, block_data)| {
         let identifier = Literal::string(&uln_name[
             uln_name
