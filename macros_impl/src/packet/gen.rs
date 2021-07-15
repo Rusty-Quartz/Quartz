@@ -114,7 +114,38 @@ pub fn gen_serialize_struct_field(field: &Field, buffer_ident: &Ident) -> TokenS
 
 pub fn gen_serialize_enum_field(field: &Field, buffer_ident: &Ident) -> TokenStream {
     let name = &field.name;
-    let write_fn = write_fn_for_field(field);
+    
+    let gen_write_impl = |field_ref: &TokenStream| {
+        if field.is_nbt {
+            if matches!(field.ty, FieldType::Array { .. }) {
+                let len_prefix = field.opt_write_length_prefix(field_ref, buffer_ident);
+
+                quote! {
+                    let position = #buffer_ident.cursor();
+                    let mut cursor = Cursor::new(unsafe { #buffer_ident.inner_mut() });
+                    cursor.set_position(position as u64);
+                    #len_prefix
+                    for __e in #field_ref.iter() {
+                        let _ = ::quartz_nbt::serde::serialize_into_unchecked(&mut cursor, __e, None, ::quartz_nbt::io::Flavor::Uncompressed);
+                    }
+                    let position = cursor.position() as usize;
+                    #buffer_ident.set_cursor(position);
+                }
+            } else {
+                quote! {
+                    let position = #buffer_ident.cursor();
+                    let mut cursor = Cursor::new(unsafe { #buffer_ident.inner_mut() });
+                    cursor.set_position(position as u64);
+                    let _ = ::quartz_nbt::serde::serialize_into_unchecked(&mut cursor, #field_ref, None, ::quartz_nbt::io::Flavor::Uncompressed);
+                    let position = cursor.position() as usize;
+                    #buffer_ident.set_cursor(position);
+                }
+            }
+        } else {
+            let write_fn = write_fn_for_field(field);
+            quote! { #buffer_ident.#write_fn(#field_ref); }
+        }
+    };
 
     if field.is_option {
         let field_ref = quote! { __value };
@@ -123,20 +154,23 @@ pub fn gen_serialize_enum_field(field: &Field, buffer_ident: &Ident) -> TokenStr
             .map(|condition| condition.gen_write_condition(&quote! { #name }, buffer_ident))
             .flatten();
         let len_prefix = field.opt_write_length_prefix(&field_ref, buffer_ident);
+        let write_impl = gen_write_impl(&field_ref);
         
         quote! {
             #write_condition
             if let ::core::option::Option::Some(#field_ref) = #name {
                 #len_prefix
-                #buffer_ident.#write_fn(#field_ref);
+                #write_impl
             }
         }
     } else {
         let field_ref = quote! { #name };
         let len_prefix = field.opt_write_length_prefix(&field_ref, buffer_ident);
+        let write_impl = gen_write_impl(&field_ref);
+
         quote! {
             #len_prefix
-            #buffer_ident.#write_fn(#field_ref);
+            #write_impl
         }
     }
 }
@@ -171,10 +205,21 @@ pub fn gen_deserialize_field(the_crate: &TokenStream, field: &Field, buffer_iden
     let ty = &field.raw_ty;
     let read_impl = match &field.ty {
         FieldType::Regular =>
-            if field.varying {
-                quote! { #buffer_ident.read_varying()? }
+            if field.is_nbt {
+                quote! {{
+                    let mut position = #buffer_ident.cursor();
+                    let mut cursor = ::std::io::Cursor::new(&#buffer_ident[..]);
+                    cursor.set_position(position as u64);
+                    let res = ::quartz_nbt::serde::deserialize_from(&mut cursor);
+                    #buffer_ident.set_cursor(cursor.position() as usize);
+                    res?
+                }}
             } else {
-                quote! { #buffer_ident.read()? }
+                if field.varying {
+                    quote! { #buffer_ident.read_varying()? }
+                } else {
+                    quote! { #buffer_ident.read()? }
+                }
             },
         FieldType::Array { len } => {
             let len = len.gen_read_length(buffer_ident);
@@ -188,16 +233,37 @@ pub fn gen_deserialize_field(the_crate: &TokenStream, field: &Field, buffer_iden
                     __array
                 }}
             } else {
-                if field.varying {
+                if field.is_nbt {
                     quote! {{
                         #len
-                        #buffer_ident.read_array_varying(__len)?
+                        let mut dest = Vec::with_capacity(__len);
+                        let mut position = #buffer_ident.cursor();
+                        let mut cursor = ::std::io::Cursor::new(&#buffer_ident[..]);
+                        cursor.set_position(position as u64);
+                        for _ in 0..__len {
+                            match ::quartz_nbt::serde::deserialize_from(&mut cursor) {
+                                Ok(nbt) => dest.push(nbt),
+                                Err(e) => {
+                                    #buffer_ident.set_cursor(cursor.position() as usize);
+                                    return e;
+                                }
+                            }
+                        }
+                        #buffer_ident.set_cursor(cursor.position() as usize);
+                        dest
                     }}
                 } else {
-                    quote! {{
-                        #len
-                        #buffer_ident.read_array(__len)?
-                    }}
+                    if field.varying {
+                        quote! {{
+                            #len
+                            #buffer_ident.read_array_varying(__len)?
+                        }}
+                    } else {
+                        quote! {{
+                            #len
+                            #buffer_ident.read_array(__len)?
+                        }}
+                    }
                 }
             }
         }

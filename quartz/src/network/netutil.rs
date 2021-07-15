@@ -16,7 +16,7 @@ use std::{
 use uuid::Uuid;
 
 use crate::world::{
-    chunk::{ClientSection, SECTION_DATA_LENGTH},
+    chunk::{ClientSection},
     location::BlockPosition,
 };
 
@@ -151,9 +151,11 @@ impl PacketBuffer {
         self.cursor = 0;
     }
 
-    /// Returns a mutable reference to the inner vec of this buffer.
+    /// Returns a mutable reference to the inner vec of this buffer. Even though this operation is not
+    /// inherently unsafe, incorrectly modifying the returned reference can lead to undefined behavior
+    /// down the line if the cursor position is not handled correctly.
     #[inline]
-    pub fn inner_mut(&mut self) -> &mut Vec<u8> {
+    pub unsafe fn inner_mut(&mut self) -> &mut Vec<u8> {
         &mut self.inner
     }
 
@@ -428,14 +430,10 @@ impl ReadFromPacket for i8 {
 
 impl ReadFromPacket for u16 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor() + 1 >= buffer.inner.len() {
-            return Err(PacketSerdeError::EndOfBuffer);
-        }
-
         let mut buf = [0; 2];
-        // Safety: length check performed above
-        unsafe {
-            buffer.read_bytes_unchecked(&mut buf);
+
+        if buffer.read_bytes(&mut buf) != buf.len() {
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         Ok(BigEndian::read_u16(&buf))
@@ -444,14 +442,10 @@ impl ReadFromPacket for u16 {
 
 impl ReadFromPacket for i16 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor() + 1 >= buffer.inner.len() {
-            return Err(PacketSerdeError::EndOfBuffer);
-        }
-
         let mut buf = [0; 2];
-        // Safety: length check performed above
-        unsafe {
-            buffer.read_bytes_unchecked(&mut buf);
+
+        if buffer.read_bytes(&mut buf) != buf.len() {
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         Ok(BigEndian::read_i16(&buf))
@@ -460,41 +454,22 @@ impl ReadFromPacket for i16 {
 
 impl ReadFromPacket for i32 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor() + 3 >= buffer.inner.len() {
-            return Err(PacketSerdeError::EndOfBuffer);
-        }
-
         let mut buf = [0; 4];
-        // Safety: length check performed above
-        unsafe {
-            buffer.read_bytes_unchecked(&mut buf);
+
+        if buffer.read_bytes(&mut buf) != buf.len() {
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         Ok(BigEndian::read_i32(&buf))
     }
 
     fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        let mut buf = [0u8; 5];
-
-        let remaining = buffer.remaining();
-        let len = remaining.min(buf.len());
-        unsafe {
-            let src = buffer.inner.as_ptr().add(buffer.cursor());
-            ptr::copy_nonoverlapping(src, buf.as_mut_ptr(), len);
-        }
-
         let mut result = 0i32;
         let mut by;
-        let mut i = 0;
 
-        while i < buf.len() {
-            by = buf[i];
+        for i in 0..5 {
+            by = buffer.read_one()?;
             result |= ((by & 0x7F) as i32) << (7 * i);
-            i += 1;
-
-            if i > remaining {
-                return Err(PacketSerdeError::EndOfBuffer);
-            }
 
             if (by & 0x80) == 0 {
                 buffer.cursor += i;
@@ -508,41 +483,22 @@ impl ReadFromPacket for i32 {
 
 impl ReadFromPacket for i64 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor() + 7 >= buffer.inner.len() {
-            return Err(PacketSerdeError::EndOfBuffer);
-        }
-
         let mut buf = [0; 8];
-        // Safety: length check performed above
-        unsafe {
-            buffer.read_bytes_unchecked(&mut buf);
+
+        if buffer.read_bytes(&mut buf) != buf.len() {
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         Ok(BigEndian::read_i64(&buf))
     }
 
     fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        let mut buf = [0u8; 10];
-
-        let remaining = buffer.remaining();
-        let len = remaining.min(buf.len());
-        unsafe {
-            let src = buffer.inner.as_ptr().add(buffer.cursor());
-            ptr::copy_nonoverlapping(src, buf.as_mut_ptr(), len);
-        }
-
         let mut result = 0i64;
         let mut by;
-        let mut i = 0;
 
-        while i < buf.len() {
-            by = buf[i];
+        for i in 0..10 {
+            by = buffer.read_one()?;
             result |= ((by & 0x7F) as i64) << (7 * i);
-            i += 1;
-
-            if i > remaining {
-                return Err(PacketSerdeError::EndOfBuffer);
-            }
 
             if (by & 0x80) == 0 {
                 buffer.cursor += i;
@@ -556,14 +512,10 @@ impl ReadFromPacket for i64 {
 
 impl ReadFromPacket for u128 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor() + 15 >= buffer.inner.len() {
-            return Err(PacketSerdeError::EndOfBuffer);
-        }
-
         let mut buf = [0; 16];
-        // Safety: length check performed above
-        unsafe {
-            buffer.read_bytes_unchecked(&mut buf);
+
+        if buffer.read_bytes(&mut buf) != buf.len() {
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         Ok(BigEndian::read_u128(&buf))
@@ -572,14 +524,10 @@ impl ReadFromPacket for u128 {
 
 impl ReadFromPacket for f32 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor() + 3 >= buffer.inner.len() {
-            return Err(PacketSerdeError::EndOfBuffer);
-        }
-
         let mut buf = [0; 4];
-        // Safety: length check performed above
-        unsafe {
-            buffer.read_bytes_unchecked(&mut buf);
+
+        if buffer.read_bytes(&mut buf) != buf.len() {
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         Ok(BigEndian::read_f32(&buf))
@@ -588,14 +536,10 @@ impl ReadFromPacket for f32 {
 
 impl ReadFromPacket for f64 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        if buffer.cursor() + 7 >= buffer.inner.len() {
-            return Err(PacketSerdeError::EndOfBuffer);
-        }
-
         let mut buf = [0; 8];
-        // Safety: length check performed above
-        unsafe {
-            buffer.read_bytes_unchecked(&mut buf);
+
+        if buffer.read_bytes(&mut buf) != buf.len() {
+            return Err(PacketSerdeError::EndOfBuffer);
         }
 
         Ok(BigEndian::read_f64(&buf))
@@ -865,6 +809,7 @@ impl ReadFromPacket for ClientSection {
     }
 }
 
+// TODO: add From<NbtIoError> when quartz_nbt is updated
 #[derive(Debug)]
 pub enum PacketSerdeError {
     EndOfBuffer,
