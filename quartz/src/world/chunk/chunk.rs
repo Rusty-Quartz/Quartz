@@ -2,7 +2,7 @@ use crate::{
     base::{BlockEntity, BlockState, StateID},
     block::{BlockStateImpl, StateBuilder},
     world::{
-        chunk::{encoder::CompactStateBuffer, ChunkIOError},
+        chunk::{encoder::CompactStateBuffer, ChunkIoError},
         location::{BlockPosition, Coordinate, CoordinatePair},
     },
     Registry,
@@ -33,7 +33,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn from_nbt(nbt: &NbtCompound) -> Result<Chunk, ChunkIOError> {
+    pub fn from_nbt(nbt: &NbtCompound) -> Result<Chunk, ChunkIoError> {
         let mut chunk = Chunk {
             block_offset: CoordinatePair::new(0, 0),
             section_mapping: [0u8; MAX_SECTION_COUNT],
@@ -71,11 +71,11 @@ impl Chunk {
 
                 // Initialize the state builder
                 let block_name = UnlocalizedName::from_str(state_name)
-                    .map_err(|error| ChunkIOError::InvalidNbtData(error.to_owned()))?;
+                    .map_err(|error| ChunkIoError::InvalidNbtData(error.to_owned()))?;
                 let mut state_builder = match BlockState::builder(&block_name) {
                     Some(builder) => builder,
                     None => {
-                        return Err(ChunkIOError::InvalidNbtData(format!(
+                        return Err(ChunkIoError::InvalidNbtData(format!(
                             "Unknown block state encountered: {}",
                             state_name
                         )));
@@ -118,7 +118,7 @@ impl Chunk {
                     .map(|index| palette.get(index))
                     .flatten()
                     .copied()
-                    .ok_or(ChunkIOError::InvalidNbtData(
+                    .ok_or(ChunkIoError::InvalidNbtData(
                         "Failed to map state index to palette.".to_owned(),
                     ))?;
                 unsafe {
@@ -133,7 +133,7 @@ impl Chunk {
                 // If the lighting section exists, verify its length and copy it
                 Ok(lighting) => {
                     if lighting.len() != 2048 {
-                        return Err(ChunkIOError::InvalidNbtData(format!(
+                        return Err(ChunkIoError::InvalidNbtData(format!(
                             "Invalid SkyLight field length: {}",
                             lighting.len()
                         )));
@@ -146,7 +146,7 @@ impl Chunk {
                     }
                 }
                 // If the tag was missing, when write all zeroes
-                Err(NbtReprError::Structure(NbtStructureError::MissingTag)) => unsafe {
+                Err(NbtReprError::Structure(_)) => unsafe {
                     ptr::write_bytes(lighting_raw, 0, 2048);
                 },
                 // Any other error is a hard error

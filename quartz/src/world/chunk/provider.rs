@@ -8,7 +8,7 @@ use futures_lite::{
     io::{AsyncReadExt, AsyncSeekExt},
 };
 use log::{error, warn};
-use quartz_nbt::{NbtCompound, read::{read_nbt_gz_compressed, read_nbt_zlib_compressed}};
+use quartz_nbt::{NbtCompound, io::{Flavor, NbtIoError, read_nbt}};
 use quartz_util::hash::NumHasher;
 use smol::{
     channel::{self, Receiver, Sender},
@@ -110,7 +110,7 @@ impl ChunkProvider {
         request: ProviderRequest,
         regions: RegionHandler,
         chunk_sender: Sender<Chunk>,
-    ) -> io::Result<()> {
+    ) -> Result<(), NbtIoError> {
         match request {
             ProviderRequest::LoadFull(coords) => {
                 let mut region_guard = regions.lock_regions().await;
@@ -415,7 +415,7 @@ impl Region {
     async fn load_chunk_nbt(
         &mut self,
         absolute_position: Coordinate,
-    ) -> io::Result<Option<NbtCompound>> {
+    ) -> Result<Option<NbtCompound>, NbtIoError> {
         let chunk_info = match self
             .chunk_info
             .get_mut(self.index_absolute(absolute_position.as_chunk().into()))
@@ -425,7 +425,7 @@ impl Region {
                 return Err(IoError::new(
                     ErrorKind::InvalidInput,
                     "Attempted to load chunk outside of region",
-                )),
+                ).into()),
         };
 
         if chunk_info.is_uninitialized() {
@@ -451,8 +451,8 @@ impl Region {
 
         let (nbt, _) = match buf[0] {
             // GZip compression (not used in practice)
-            1 => read_nbt_gz_compressed(&mut StdCursor::new(&buf[1 ..]))?,
-            2 => read_nbt_zlib_compressed(&mut StdCursor::new(&buf[1 ..]))?,
+            1 => read_nbt(&mut StdCursor::new(&buf[1 ..]), Flavor::GzCompressed)?,
+            2 => read_nbt(&mut StdCursor::new(&buf[1 ..]), Flavor::ZlibCompressed)?,
             _ =>
                 return Err(IoError::new(
                     ErrorKind::InvalidData,
@@ -460,7 +460,7 @@ impl Region {
                         "Encountered invalid compression scheme ({}) for chunk at {}",
                         buf[0], absolute_position.as_chunk()
                     ),
-                )),
+                ).into()),
         };
 
         Ok(Some(nbt))

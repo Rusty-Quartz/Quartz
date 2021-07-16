@@ -6,46 +6,46 @@ use std::{
 };
 
 #[derive(Debug)]
-pub enum ChunkIOError {
-    IO(IOError),
-    NbtStructure(NbtStructureError),
+pub enum ChunkIoError {
+    StdIo(IOError),
+    Nbt(NbtReprError),
     InvalidNbtData(String),
 }
 
-impl Display for ChunkIOError {
+impl Display for ChunkIoError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            ChunkIOError::IO(error) => Display::fmt(error, f),
-            ChunkIOError::NbtStructure(error) => Display::fmt(error, f),
-            ChunkIOError::InvalidNbtData(msg) => write!(f, "Invalid NBT Data: {}", msg),
+            ChunkIoError::StdIo(error) => Display::fmt(error, f),
+            ChunkIoError::Nbt(error) => Display::fmt(error, f),
+            ChunkIoError::InvalidNbtData(msg) => write!(f, "Invalid NBT Data: {}", msg),
         }
     }
 }
 
-impl Error for ChunkIOError {
+impl Error for ChunkIoError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            ChunkIOError::IO(error) => Some(error),
-            ChunkIOError::NbtStructure(error) => Some(error),
-            ChunkIOError::InvalidNbtData(_) => None,
+            ChunkIoError::StdIo(error) => Some(error),
+            ChunkIoError::Nbt(error) => Some(error),
+            ChunkIoError::InvalidNbtData(_) => None,
         }
     }
 }
 
-impl From<IOError> for ChunkIOError {
+impl From<IOError> for ChunkIoError {
     fn from(x: IOError) -> Self {
-        ChunkIOError::IO(x)
+        ChunkIoError::StdIo(x)
     }
 }
 
-impl From<NbtStructureError> for ChunkIOError {
+impl From<NbtReprError> for ChunkIoError {
+    fn from(x: NbtReprError) -> Self {
+        ChunkIoError::Nbt(x)
+    }
+}
+
+impl From<NbtStructureError> for ChunkIoError {
     fn from(x: NbtStructureError) -> Self {
-        ChunkIOError::NbtStructure(x)
-    }
-}
-
-impl From<NbtReprError<NbtStructureError>> for ChunkIOError {
-    fn from(x: NbtReprError<NbtStructureError>) -> Self {
-        ChunkIOError::NbtStructure(x.into())
+        ChunkIoError::Nbt(x.into())
     }
 }

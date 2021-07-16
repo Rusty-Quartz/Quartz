@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ByteOrder};
 use openssl::error::ErrorStack;
 use quartz_chat::Component;
-use quartz_nbt::NbtCompound;
+use quartz_nbt::{NbtCompound, io::{Flavor, NbtIoError, read_nbt, write_nbt}};
 use quartz_util::UnlocalizedName;
 use std::{
     error::Error,
@@ -577,7 +577,7 @@ impl ReadFromPacket for NbtCompound {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut cursor = Cursor::new(&buffer.inner);
         cursor.set_position(buffer.cursor() as u64);
-        let ret = match quartz_nbt::read::read_nbt_uncompressed(&mut cursor) {
+        let ret = match read_nbt(&mut cursor, Flavor::Uncompressed) {
             Ok((nbt, _)) => Ok(nbt),
             Err(error) => Err(PacketSerdeError::Nbt(error)),
         };
@@ -756,7 +756,7 @@ impl WriteToPacket for NbtCompound {
         let position = buffer.cursor();
         let mut cursor = Cursor::new(&mut buffer.inner);
         cursor.set_position(position as u64);
-        let _ = quartz_nbt::write::write_nbt_uncompressed(&mut cursor, "", self);
+        let _ = write_nbt(&mut cursor, None, self, Flavor::Uncompressed);
         let position = cursor.position() as usize;
         buffer.set_cursor(position);
     }
@@ -818,7 +818,7 @@ pub enum PacketSerdeError {
     Utf8Error(Utf8Error),
     InvalidUnlocalizedName(<UnlocalizedName as FromStr>::Err),
     SerdeJson(serde_json::Error),
-    Nbt(io::Error),
+    Nbt(NbtIoError),
     Network(io::Error),
     OpenSSL(ErrorStack),
     InvalidEnum(&'static str, i32),
