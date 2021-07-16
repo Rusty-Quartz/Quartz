@@ -606,11 +606,11 @@ impl ToComponent for NbtCompound {
         let mut components = Vec::with_capacity(2 + 3 * self.len());
 
         // Grab the elements and push the first one
-        let elements = self.as_ref().iter().collect::<Vec<(&String, &NbtTag)>>();
+        let elements = self.inner().iter();
         components.push(Component::text("{"));
 
         // Push the rest of the elements
-        for element in elements.iter() {
+        for element in elements {
             // The key contains special characters and needs to be quoted/escaped
             if NbtTag::should_quote(element.0) {
                 // Convert the key to an SNBT string
