@@ -292,6 +292,15 @@ fn update_block_property_names(
         }
     }
 
+    block_data.into_iter().filter(|(_name, data)| data.properties.len() == 0).for_each(|(name, data)| {output.insert(name.to_owned(), BlockInfo {
+        properties: data.properties.clone(),
+                        fields: BTreeMap::new(),
+                        default: data.default,
+                        intrem_id: data.interm_id,
+                        default_state: data.default_state.clone(),
+                        states: data.states.clone(),
+            });
+        });
     output
 }
 
