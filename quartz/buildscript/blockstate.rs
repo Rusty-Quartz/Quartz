@@ -17,10 +17,10 @@ pub fn gen_blockstates() {
     .expect("Error parsing blocks.json");
 
     // Find the shared properties
-    let property_data = find_shared_properties(&data);
+    let property_data = find_shared_properties(&mut data);
     let enums = create_property_enums(&property_data);
 
-    update_block_property_names(&mut data, &property_data);
+    let mut data = update_block_property_names(&data, &property_data);
     gen_default_states(&mut data, &property_data);
     let structs = gen_structs(&data);
     let struct_enum = gen_struct_enum(&data);
@@ -44,12 +44,13 @@ pub fn gen_blockstates() {
     println!("cargo:rerun-if-changes=buildscript/blockstate.rs");
 }
 
-fn find_shared_properties(data: &IndexMap<String, RawBlockInfo>) -> Vec<PropertyData> {
+fn find_shared_properties(data: &mut IndexMap<String, RawBlockInfo>) -> Vec<PropertyData> {
     let mut possible_conflicts: IndexMap<String, Vec<String>> = IndexMap::new();
+    possible_conflicts.insert("boolean".to_owned(), Vec::new());
 
     // Find all properties and find all blocks that share the same property name
     for (block_name, state_info) in data.iter() {
-        for (property_name, _) in state_info.properties.iter() {
+        for (property_name, vals) in state_info.properties.iter() {
             let mut name_split = property_name.split('_');
             let mut cased_name = String::new();
             for i in 0 .. name_split.clone().count() {
@@ -59,7 +60,12 @@ fn find_shared_properties(data: &IndexMap<String, RawBlockInfo>) -> Vec<Property
                 cased_name.push_str(&format!("{}{}", if i > 0 { "_" } else { "" }, second_word));
             }
 
-            if possible_conflicts.contains_key(&cased_name) {
+            if vals == &vec!["true".to_owned(), "false".to_owned()] {
+                possible_conflicts
+                    .get_mut("boolean")
+                    .unwrap()
+                    .push(block_name.clone());
+            } else if possible_conflicts.contains_key(&cased_name) {
                 possible_conflicts
                     .get_mut(&cased_name)
                     .unwrap()
@@ -74,64 +80,71 @@ fn find_shared_properties(data: &IndexMap<String, RawBlockInfo>) -> Vec<Property
 
     for (property_name, blocks) in possible_conflicts.iter() {
         let mut property_conflicts: IndexMap<Vec<String>, (String, Vec<String>)> = IndexMap::new();
-        let mut lowercase_name = property_name.clone();
-        lowercase_name.make_ascii_lowercase();
+        let lowercase_name = property_name.to_ascii_lowercase();
         let mut enum_name = property_name.clone();
         enum_name.push('_');
         let mut property_values: Vec<String> = Vec::new();
         let mut property_blocks: Vec<String> = Vec::new();
 
-        for block in blocks {
-            let block_properties = data
-                .get(block)
-                .unwrap()
-                .properties
-                .get(&lowercase_name)
-                .unwrap();
+        if property_name == "boolean" {
+            property_conflicts.insert(
+                vec!["true".to_owned(), "false".to_owned()],
+                ("Boolean".to_owned(), blocks.clone()),
+            );
+        } else {
+            for block in blocks {
+                let block_properties = data
+                    .get(block)
+                    .unwrap()
+                    .properties
+                    .get(&lowercase_name)
+                    .unwrap();
 
-            // If this is the first block in the property
-            if property_values.is_empty() {
-                property_values = block_properties.clone();
-                property_blocks.push(block.clone());
-            } else {
-                // If the property values match
-                if vec_match(&property_values, block_properties) {
+                // If this is the first block in the property
+                if property_values.is_empty() {
+                    property_values = block_properties.clone();
                     property_blocks.push(block.clone());
                 } else {
-                    match property_conflicts.get_mut(block_properties) {
-                        // If an alt with the same properties already exists
-                        Some((_alt, block_vec)) => {
-                            block_vec.push(block.clone());
-                        }
+                    // If the property values match
+                    if &property_values == block_properties {
+                        property_blocks.push(block.clone());
+                    } else {
+                        match property_conflicts.get_mut(block_properties) {
+                            // If an alt with the same properties already exists
+                            Some((_alt, block_vec)) => {
+                                block_vec.push(block.clone());
+                            }
 
-                        None => {
-                            let differences = get_differences(&property_values, block_properties);
-
-                            let mut ending: String =
-                                differences.iter().map(|v| v[.. 1].to_owned()).collect();
-                            ending.make_ascii_uppercase();
-
-                            if ending.len() == 0 {
+                            None => {
                                 let differences =
-                                    get_differences(block_properties, &property_values);
+                                    get_differences(&property_values, block_properties);
+
                                 let mut ending: String =
                                     differences.iter().map(|v| v[.. 1].to_owned()).collect();
                                 ending.make_ascii_uppercase();
-                                enum_name.push_str(&ending);
-                            }
 
-                            property_conflicts.insert(
-                                block_properties.clone(),
-                                (format!("{}_{}", property_name, ending), vec![block.clone()]),
-                            );
+                                if ending.len() == 0 {
+                                    let differences =
+                                        get_differences(block_properties, &property_values);
+                                    let mut ending: String =
+                                        differences.iter().map(|v| v[.. 1].to_owned()).collect();
+                                    ending.make_ascii_uppercase();
+                                    enum_name.push_str(&ending);
+                                }
+
+                                property_conflicts.insert(
+                                    block_properties.clone(),
+                                    (format!("{}_{}", property_name, ending), vec![block.clone()]),
+                                );
+                            }
                         }
                     }
                 }
             }
+            // Insert the current property data in order to be able to just loop over property_conflicts
+            property_conflicts.insert(property_values, (enum_name, property_blocks));
         }
 
-        // Insert the current property data in order to be able to just loop over property_conflicts
-        property_conflicts.insert(property_values, (enum_name, property_blocks));
 
         for (values, (name, blocks)) in &property_conflicts {
             let name = if blocks.len() == 1 {
@@ -219,28 +232,71 @@ fn create_property_enums(property_data: &Vec<PropertyData>) -> TokenStream {
 }
 
 fn update_block_property_names(
-    block_data: &mut IndexMap<String, RawBlockInfo>,
+    block_data: &IndexMap<String, RawBlockInfo>,
     property_data: &Vec<PropertyData>,
-) {
+) -> IndexMap<String, BlockInfo> {
+    let mut output = IndexMap::new();
     for property in property_data {
         // replace the original name with the enum name
         let og_name = get_original_property_name(property);
 
         for block in &property.blocks {
-            let block_properties = block_data.get_mut(block).unwrap();
+            let block_properties = block_data.get(block).unwrap();
+            let block_info = output.get_mut(block);
+            let block_info = match block_info {
+                Some(b) => b,
+                None => {
+                    output.insert(block.to_owned(), BlockInfo {
+                        properties: block_properties.properties.clone(),
+                        fields: BTreeMap::new(),
+                        default: block_properties.default,
+                        intrem_id: block_properties.interm_id,
+                        default_state: block_properties.default_state.clone(),
+                        states: block_properties.states.clone(),
+                    });
+                    output.get_mut(block).unwrap()
+                }
+            };
 
-            let vals = block_properties.properties.get(&og_name).unwrap().clone();
-            block_properties.properties.remove(&og_name);
-            block_properties.properties.insert(
-                property.name.clone(), /*.replace("Type", "r#type")*/
-                vals,
-            );
+            if property.name == "Boolean" {
+                let (fields, properties): (Vec<_>, Vec<_>) = block_info
+                    .properties
+                    .iter()
+                    .filter(|p| {
+                        p.0 != "boolean" && p.1 == &vec!["true".to_owned(), "false".to_owned()]
+                    })
+                    .map(|(name, vals)| {
+                        (
+                            (name.clone(), "boolean".to_owned()),
+                            ("boolean".to_owned(), vals.clone()),
+                        )
+                    })
+                    .unzip();
+                block_info.properties.extend(properties.into_iter());
+
+                fields.iter().for_each(|(og_name, _)| {
+                    block_info.properties.remove(og_name);
+                });
+
+                block_info.fields.extend(fields.into_iter());
+            } else {
+                let vals = block_info.properties.remove(&og_name).unwrap();
+                block_info.properties.insert(property.name.clone(), vals);
+                if block_info.fields.contains_key(&og_name) {
+                    block_info.fields.remove(&og_name);
+                }
+                block_info
+                    .fields
+                    .insert(og_name.clone(), property.name.clone());
+            }
         }
     }
+
+    output
 }
 
 fn gen_default_states(
-    block_data: &mut IndexMap<String, RawBlockInfo>,
+    block_data: &mut IndexMap<String, BlockInfo>,
     property_data: &Vec<PropertyData>,
 ) {
     for (block_name, block_info) in block_data.iter_mut() {
@@ -254,13 +310,25 @@ fn gen_default_states(
         let mut default_state = BTreeMap::new();
 
         for (prop_name, value) in default_state_raw {
-            let property = property_data
-                .iter()
-                .find(|prop| {
-                    get_original_property_name(prop) == prop_name
-                        && prop.blocks.contains(block_name)
-                })
-                .unwrap();
+            let property = if "boolean"
+                == block_info
+                    .fields
+                    .get(&prop_name)
+                    .unwrap_or(&"__".to_owned())
+            {
+                property_data
+                    .iter()
+                    .find(|prop| prop.name == "Boolean")
+                    .unwrap()
+            } else {
+                property_data
+                    .iter()
+                    .find(|prop| {
+                        get_original_property_name(prop) == prop_name
+                            && prop.blocks.contains(block_name)
+                    })
+                    .unwrap()
+            };
 
             let prop_value = if value.parse::<u8>().is_ok() {
                 format!("{}{}", snake_to_camel(&prop_name), value.clone())
@@ -282,7 +350,7 @@ fn gen_default_states(
     }
 }
 
-fn gen_structs(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
+fn gen_structs(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
     let structs = block_data
         .iter()
         .filter(|(_uln_name, block_info)| {
@@ -294,16 +362,11 @@ fn gen_structs(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
             let root_state = block_info.states[0].id;
 
             let mut vecs = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-            let (field_names, field_names_str, type_names, type_aliases) = block_info.properties.iter().fold(&mut vecs, |vecs, (property_name, values)| {
+            let (field_names, field_names_str, type_names, type_aliases) = block_info.fields.iter().fold(&mut vecs, |vecs, (field_name, property_name)| {
                 let (field_names, field_names_str, type_names, type_aliases) = vecs;
 
-                let lowercase_name = get_original_property_name(&PropertyData {
-                    name: property_name.to_owned(),
-                    values: values.to_owned(),
-                    blocks: Vec::new(),
-                });
-
-                let field_name = lowercase_name;
+                let values = block_info.properties.get(property_name).unwrap().clone();
+                
                 field_names.push(format_ident!("{}", field_name.replace("type", "r#type")));
                 field_names_str.push(field_name.clone());
                 type_names.push(format_ident!("{}", snake_to_camel(&if values.get(0).unwrap().parse::<u8>().is_ok() {
@@ -311,16 +374,21 @@ fn gen_structs(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
                 } else {
                     property_name.replace('_', "")
                 })));
-                type_aliases.push(format_ident!("{}{}", block_name, snake_to_camel(&field_name)));
+
+                if snake_to_camel(&field_name).contains(&block_name) {
+                    type_aliases.push(format_ident!("{}", snake_to_camel(&field_name)))
+                } else {
+                    type_aliases.push(format_ident!("{}{}", block_name, snake_to_camel(&field_name)));
+                }
 
                 vecs
             });
 
             let id_eq = gen_id_eq(&mut type_names.iter().zip(field_names.iter()).rev().collect::<Vec<_>>().iter());
 
-            let default_vals = block_info.default_state.iter().map(|(_name, val)| {
-                syn::parse_str::<Expr>(val).expect("How do we have an invalid expr")
-            }).collect::<Vec<_>>();
+            let (default_fields, default_vals): (Vec<_>, Vec<_>) = block_info.default_state.iter().map(|(name, val)| {
+                (format_ident!("{}", name.replace("type", "r#type")), syn::parse_str::<Expr>(val).expect("How do we have an invalid expr"))
+            }).unzip();
 
             quote! {
                 #[derive(Clone, Copy, Debug)]
@@ -331,7 +399,7 @@ fn gen_structs(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
                 impl #block_state_name {
                     const fn const_default() -> Self {
                         #block_state_name {
-                            #(#field_names: #default_vals),*
+                            #(#default_fields: #default_vals),*
                         }
                     }
 
@@ -385,7 +453,7 @@ fn gen_id_eq(states: &mut Iter<(&Ident, &Ident)>) -> Option<TokenStream> {
     })
 }
 
-fn gen_struct_enum(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
+fn gen_struct_enum(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
     let output = block_data
         .iter()
         .map(|(uln_name, block_data)| {
@@ -459,7 +527,7 @@ fn gen_struct_enum(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
     }
 }
 
-fn gen_name_lookup(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
+fn gen_name_lookup(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
     let lookups = block_data.iter().map(|(uln_name, block_data)| {
         let identifier = Literal::string(&uln_name[
             uln_name
@@ -472,7 +540,7 @@ fn gen_name_lookup(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
         let block_str = snake_to_camel(&get_block_name(uln_name));
         let block = format_ident!("{}", block_str);
         let block_state = format_ident!("{}State", block_str);
-        let internal_id = block_data.interm_id;
+        let internal_id = block_data.intrem_id;
 
         if block_data.properties.len() == 0 {
             quote! {
@@ -489,19 +557,6 @@ fn gen_name_lookup(block_data: &IndexMap<String, RawBlockInfo>) -> TokenStream {
         pub(crate) static BLOCK_LOOKUP_BY_NAME: phf::Map<&'static str, BlockStateMetadata> = phf_map! {
             #(#lookups),*
         };
-    }
-}
-
-fn vec_match(first: &Vec<String>, second: &Vec<String>) -> bool {
-    if first.len() != second.len() {
-        false
-    } else {
-        for i in 0 .. first.len() {
-            if first.get(i) != second.get(i) {
-                return false;
-            }
-        }
-        true
     }
 }
 
@@ -538,8 +593,7 @@ fn get_original_property_name(property: &PropertyData) -> String {
             split_name.next().unwrap()
         ))
     }
-    lowercase_name.make_ascii_lowercase();
-    lowercase_name
+    lowercase_name.to_ascii_lowercase()
 }
 
 fn get_differences(first: &Vec<String>, second: &Vec<String>) -> Vec<String> {
@@ -556,6 +610,17 @@ fn get_differences(first: &Vec<String>, second: &Vec<String>) -> Vec<String> {
 
 type StateID = u16;
 
+#[derive(Debug, Clone)]
+struct BlockInfo {
+    properties: BTreeMap<String, Vec<String>>,
+    // fields is stored Type -> field name because we are generally looping over properties
+    fields: BTreeMap<String, String>,
+    default: StateID,
+    intrem_id: usize,
+    default_state: BTreeMap<String, String>,
+    states: Vec<RawStateInfo>,
+}
+
 #[derive(Serialize, Deserialize)]
 struct RawBlockInfo {
     // Use a BTreeMap for ordering so that we can compute state IDs
@@ -568,13 +633,14 @@ struct RawBlockInfo {
     states: Vec<RawStateInfo>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct RawStateInfo {
     id: StateID,
     #[serde(default = "BTreeMap::new")]
     properties: BTreeMap<String, String>,
 }
 
+#[derive(Debug)]
 struct PropertyData {
     name: String,
     values: Vec<String>,
