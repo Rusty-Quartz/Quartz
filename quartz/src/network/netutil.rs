@@ -472,7 +472,6 @@ impl ReadFromPacket for i32 {
             result |= ((by & 0x7F) as i32) << (7 * i);
 
             if (by & 0x80) == 0 {
-                buffer.cursor += i;
                 return Ok(result);
             }
         }
@@ -501,7 +500,6 @@ impl ReadFromPacket for i64 {
             result |= ((by & 0x7F) as i64) << (7 * i);
 
             if (by & 0x80) == 0 {
-                buffer.cursor += i;
                 return Ok(result);
             }
         }
