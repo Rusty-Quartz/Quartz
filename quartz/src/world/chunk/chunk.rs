@@ -1,6 +1,7 @@
 use crate::{
     base::{BlockEntity, BlockState, StateID},
-    block::{BlockStateImpl, StateBuilder},
+    block::{states::BlockStateData, BlockStateImpl, StateBuilder},
+    network::packet::BlockLights,
     world::{
         chunk::{encoder::CompactStateBuffer, ChunkIoError},
         location::{BlockPosition, Coordinate, CoordinatePair},
@@ -9,7 +10,7 @@ use crate::{
 };
 use log::warn;
 use num_traits::Zero;
-use quartz_nbt::{NbtCompound, NbtList, NbtReprError, NbtStructureError};
+use quartz_nbt::{NbtCompound, NbtList, NbtReprError};
 use quartz_util::{
     hash::NumHasher,
     math::fast_log2_64,
@@ -27,18 +28,23 @@ pub const MAX_SECTION_COUNT: usize = 32;
 
 pub struct Chunk {
     block_offset: CoordinatePair,
-    section_mapping: [u8; MAX_SECTION_COUNT],
+    section_mapping: [i8; MAX_SECTION_COUNT],
     sections: Vec<Section>,
     block_entities: HashMap<u64, SingleAccessor<BlockEntity>, NumHasher>,
+    // We store the heightmaps just as nbt, this could be improved in the future to reduce memory usage
+    heightmaps: NbtCompound,
+    biomes: [i32; 1024],
 }
 
 impl Chunk {
     pub fn from_nbt(nbt: &NbtCompound) -> Result<Chunk, ChunkIoError> {
         let mut chunk = Chunk {
             block_offset: CoordinatePair::new(0, 0),
-            section_mapping: [0u8; MAX_SECTION_COUNT],
+            section_mapping: [-1i8; MAX_SECTION_COUNT],
             sections: Vec::new(),
             block_entities: HashMap::with_hasher(NumHasher),
+            heightmaps: NbtCompound::new(),
+            biomes: [0; 1024],
         };
 
         // All of the actual data is stored in the inner "Level" tag
@@ -47,6 +53,18 @@ impl Chunk {
         // Chunk coordinates
         chunk.block_offset.x = level.get::<_, i32>("xPos")? * 16;
         chunk.block_offset.z = level.get::<_, i32>("zPos")? * 16;
+
+        chunk.heightmaps = level.get::<_, &NbtCompound>("Heightmaps")?.clone();
+
+        match level.get::<_, &Vec<i32>>("Biomes") {
+            Ok(biomes) =>
+            // Since we store biomes in a fixed sized array I don't know how else to do this
+            // biomes will never be larger than 1024 so indexing chunk.biomes won't panic
+                for i in 0 .. biomes.len() {
+                    chunk.biomes[i] = biomes[i]
+                },
+            Err(_) => {}
+        };
 
         // Iterate over the sections (16x16x16 voxels) that contain block and lighting info
         for section in level
@@ -127,7 +145,7 @@ impl Chunk {
             }
 
             // Safety: same as for block_states
-            let lighting_raw = unsafe { ptr::addr_of_mut!((*raw_section).lighting) as *mut u8 };
+            let sky_light_raw = unsafe { ptr::addr_of_mut!((*raw_section).sky_light) as *mut u8 };
 
             match section.get::<_, &[i8]>("SkyLight") {
                 // If the lighting section exists, verify its length and copy it
@@ -142,18 +160,46 @@ impl Chunk {
                     // Safety: i8 and u8 have equivalent representations, and the length was asserted above
                     unsafe {
                         let src = lighting.as_ptr() as *const u8;
-                        ptr::copy_nonoverlapping(src, lighting_raw, 2048);
+                        ptr::copy_nonoverlapping(src, sky_light_raw, 2048);
                     }
                 }
                 // If the tag was missing, when write all zeroes
                 Err(NbtReprError::Structure(_)) => unsafe {
-                    ptr::write_bytes(lighting_raw, 0, 2048);
+                    ptr::write_bytes(sky_light_raw, 0, 2048);
                 },
                 // Any other error is a hard error
                 Err(e) => return Err(e.into()),
             }
 
-            chunk.section_mapping[section.get::<_, i8>("Y")? as usize] = chunk.sections.len() as u8;
+            // Safety: same as for block_states
+            let block_light_raw =
+                unsafe { ptr::addr_of_mut!((*raw_section).block_light) as *mut u8 };
+
+            match section.get::<_, &[i8]>("BlockLight") {
+                // If the lighting section exists, verify its length and copy it
+                Ok(lighting) => {
+                    if lighting.len() != 2048 {
+                        return Err(ChunkIoError::InvalidNbtData(format!(
+                            "Invalid SkyLight field length: {}",
+                            lighting.len()
+                        )));
+                    }
+
+                    // Safety: i8 and u8 have equivalent representations, and the length was asserted above
+                    unsafe {
+                        let src = lighting.as_ptr() as *const u8;
+                        ptr::copy_nonoverlapping(src, block_light_raw, 2048);
+                    }
+                }
+                // If the tag was missing, when write all zeroes
+                Err(NbtReprError::Structure(_)) => unsafe {
+                    ptr::write_bytes(block_light_raw, 0, 2048);
+                },
+                // Any other error is a hard error
+                Err(e) => return Err(e.into()),
+            }
+
+            chunk.section_mapping[section.get::<_, i8>("Y")? as usize] = chunk.sections.len() as i8;
 
             // Safety: section has been fully initialized
             unsafe {
@@ -215,7 +261,93 @@ impl Chunk {
     }
 
     pub fn is_section_empty(&self, y: usize) -> bool {
-        self.sections[self.section_mapping[y] as usize].is_empty()
+        let index = self.section_mapping[y];
+        index == -1 || self.sections[index as usize].is_empty()
+    }
+
+    pub fn get_heightmaps(&self) -> NbtCompound {
+        self.heightmaps.clone()
+    }
+
+    /// Loops over the sections and produces a bitmask where a bit set means the section is not empty
+    ///
+    /// The lowest section is the least significant bit
+    // the bitmask is most likely a vec in order to support variable world heights
+    // TODO: properly support chunks with more than 64 sections
+    pub fn get_bitmask(&self) -> Vec<i64> {
+        let mut mask = 0;
+        for index in self.section_mapping.iter().rev() {
+            mask = mask << 1;
+            if *index != -1 {
+                let section = &self.sections[*index as usize];
+                mask |= !section.is_empty() as i64;
+            }
+        }
+        vec![mask]
+    }
+
+    pub fn get_biomes(&self) -> Vec<i32> {
+        self.biomes.to_vec()
+    }
+
+    /// Gets the blocklights and blocklight bitmask for the chunk
+    pub fn get_blocklights(&self) -> (Vec<i64>, Vec<i64>, Vec<BlockLights>) {
+        let mut mask = 0;
+        let mut empty_mask = 0;
+        let mut blocklights = Vec::new();
+        for index in self.section_mapping.iter().rev() {
+            mask = mask << 1;
+            empty_mask = empty_mask << 1;
+            if *index != -1 {
+                let section = &self.sections[*index as usize];
+                if section.has_block_light() {
+                    mask |= 1;
+                    blocklights.push(section.get_block_light());
+                } else {
+                    empty_mask |= 1;
+                }
+            } else {
+                empty_mask |= 1;
+            }
+        }
+        // shift off the lowest bit because mojang has us send a mask entry for one below the world
+        // TODO: add bitmask support to negative y-values
+        // reverse because masks and sections are in oposite orders
+        mask = mask << 1;
+        empty_mask = empty_mask << 1;
+        empty_mask |= 1;
+        blocklights.reverse();
+        (vec![mask], vec![empty_mask], blocklights)
+    }
+
+    /// Gets the skylights and skylight bitmask for the chunk
+    pub fn get_skylights(&self) -> (Vec<i64>, Vec<i64>, Vec<BlockLights>) {
+        let mut mask = 0;
+        let mut empty_mask = 0;
+        let mut skylights = Vec::new();
+        for index in self.section_mapping.iter().rev() {
+            mask = mask << 1;
+            empty_mask = empty_mask << 1;
+            if *index != -1 {
+                let section = &self.sections[*index as usize];
+                if section.has_sky_light() {
+                    mask |= 1;
+                    skylights.push(section.get_sky_light());
+                } else {
+                    empty_mask |= 1;
+                }
+            } else {
+                empty_mask |= 1;
+            }
+        }
+        // shift off the lowest bit because mojang has us send a mask entry for one below the world
+        // TODO: add bitmask support to negative y-values
+        mask = mask << 1;
+        empty_mask = empty_mask << 1;
+        empty_mask |= 1;
+        // reverse because masks and sections are in oposite orders
+        skylights.reverse();
+        (vec![mask], vec![empty_mask], skylights)
     }
 }
 
@@ -229,29 +361,23 @@ impl Debug for Chunk {
 /// Hardcoded value of how many bits to use per block in the palette
 pub const BITS_PER_BLOCK: u8 = 15;
 
-/// The length of the data section of a ClientSection
-pub const SECTION_DATA_LENGTH: i32 = (16 * 16 * 16) * BITS_PER_BLOCK as i32 / 64;
-
-/// The size of a ClientSection in bytes
-// The final 2 added is the size of the varint repr of SECTION_DATA_LENGTH
-// TODO: maybe add a const fn varint_size so we know the size of SECTION_DATA_LENGTH
-pub const CLIENT_SECTION_SIZE: i32 = 2 + 1 + (8 * SECTION_DATA_LENGTH) + 2;
-
 struct Section {
     block_states: [StateID; 4096],
-    lighting: [u8; 2048],
+    sky_light: [u8; 2048],
+    block_light: [u8; 2048],
 }
 
 impl Section {
     const fn new() -> Self {
         Section {
             block_states: [0; 4096],
-            lighting: [0; 2048],
+            sky_light: [0; 2048],
+            block_light: [0; 2048],
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.block_states.eq(&[0; 4096])
+        self.block_states == [0; 4096]
     }
 
     fn block_id(&self, index: usize) -> StateID {
@@ -260,43 +386,91 @@ impl Section {
             .copied()
             .unwrap_or(StateID::zero())
     }
-}
 
-impl Section {
     fn get_client_section(&self) -> ClientSection {
-        let mut data = [0_i64; SECTION_DATA_LENGTH as usize];
+        let (bits_per_block, palette) = self.gen_palette();
+
+        let mut data = Vec::new();
         let mut num_blocks = 0;
+        let mut current_long = 0_i64;
+        let mut space_in_long = 64_u8;
 
-        let value_mask = (1 << BITS_PER_BLOCK) - 1_u32;
-
-
-        for block_num in 0 .. self.block_states.len() as u32 {
-            let start_long = (block_num * BITS_PER_BLOCK as u32) / 64;
-            let start_offset = (block_num * BITS_PER_BLOCK as u32) % 64;
-            let end_long = ((block_num + 1) * BITS_PER_BLOCK as u32 - 1) / 64;
-
-            let mut state = self.block_id(block_num as usize) as u64;
-
-            if state != 0 {
+        for state in self.block_states.iter().rev() {
+            let state = *state;
+            if state != BlockStateData::Air.id()
+                && state != BlockStateData::CaveAir.id()
+                && state != BlockStateData::VoidAir.id()
+            {
                 num_blocks += 1;
             }
 
-            state = state & value_mask as u64;
+            let pal_index = if let Some(pal) = &palette {
+                // the state has to be in the palette
+                let pal_index = pal.iter().position(|u| *u == state as i32).unwrap();
+                pal_index as i64
+            } else {
+                state as i64
+            };
 
-            let data_entry = data.get_mut(start_long as usize).unwrap();
-            *data_entry |= (state << start_offset as usize) as i64;
+            current_long |= pal_index as i64;
 
-            if start_long != end_long {
-                // debug!("start: {}    end: {}", start_long, end_long);
-                *data_entry |= (state >> (64 - start_offset as u64)) as i64;
+            space_in_long -= bits_per_block;
+
+            if space_in_long < bits_per_block {
+                data.push(current_long);
+                current_long = 0;
+                space_in_long = 64;
+            } else {
+                current_long = current_long << bits_per_block;
             }
         }
 
+        data.reverse();
+
         ClientSection {
             block_count: num_blocks,
-            palette: None,
-            bits_per_block: BITS_PER_BLOCK,
-            data: Box::new(data),
+            palette,
+            bits_per_block,
+            data: data.into_boxed_slice(),
+        }
+    }
+
+    fn gen_palette(&self) -> (u8, Option<Box<[i32]>>) {
+        let mut found_ids = Vec::new();
+        found_ids.push(0);
+        for state in self.block_states {
+            if !found_ids.contains(&(state as i32)) {
+                found_ids.push(state as i32)
+            }
+        }
+        let bits_per_block = crate::util::math::fast_log2_64(found_ids.len() as u64) as u8;
+
+        if bits_per_block < 4 {
+            (4, Some(found_ids.into_boxed_slice()))
+        } else if bits_per_block > 8 {
+            (BITS_PER_BLOCK, None)
+        } else {
+            (bits_per_block, Some(found_ids.into_boxed_slice()))
+        }
+    }
+
+    fn has_block_light(&self) -> bool {
+        self.block_light != [0; 2048]
+    }
+
+    fn get_block_light(&self) -> BlockLights {
+        BlockLights {
+            values: Box::new(self.block_light.clone()),
+        }
+    }
+
+    fn has_sky_light(&self) -> bool {
+        self.sky_light != [0; 2048]
+    }
+
+    fn get_sky_light(&self) -> BlockLights {
+        BlockLights {
+            values: Box::new(self.sky_light.clone()),
         }
     }
 }

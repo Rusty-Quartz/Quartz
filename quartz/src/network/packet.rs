@@ -534,9 +534,7 @@ pub struct Statistic {
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct BlockLights {
-    #[packet_serde(varying)]
-    pub length: i32,
-    #[packet_serde(len = "2048")]
+    #[packet_serde(len_prefixed)]
     pub values: Box<[u8]>,
 }
 
@@ -1039,13 +1037,20 @@ pub struct JigsawUpdateData {
     joint_type: String,
 }
 
-#[derive(Debug, WriteToPacket)]
+#[derive(Debug)]
 pub struct SectionData {
-    #[packet_serde(varying)]
-    pub size: i32,
     // Not actually the size but since we only derive Write this shouldn't matter
-    #[packet_serde(len = "size")]
     pub sections: Box<[ClientSection]>,
+}
+
+impl WriteToPacket for SectionData {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        let mut data_buff = PacketBuffer::new(4096);
+        data_buff.write_array(&self.sections);
+
+        buffer.write_varying(&(data_buff.cursor() as i32));
+        buffer.write_bytes(&data_buff[..]);
+    }
 }
 
 impl ReadFromPacket for SectionData {
@@ -1062,7 +1067,6 @@ impl ReadFromPacket for SectionData {
         }
 
         Ok(SectionData {
-            size,
             sections: sections.into_boxed_slice(),
         })
     }
