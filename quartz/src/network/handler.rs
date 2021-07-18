@@ -89,7 +89,11 @@ impl AsyncPacketHandler {
             conn.forward_to_server(ServerBoundPacket::LoginSuccessServer {
                 uuid: Uuid::from_u128(0),
                 username: name.clone(),
-            })
+            });
+
+            conn.connection_state = ConnectionState::Play;
+
+            return;
         }
 
         // Store username for later
@@ -332,7 +336,7 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::JoinGame {
                 entity_id: 0,
                 is_hardcore: false,
-                gamemode: 0,
+                gamemode: 1,
                 previous_gamemode: -1,
                 world_names: vec![UnlocalizedName::minecraft("overworld")].into_boxed_slice(),
                 dimension_codec,
@@ -867,6 +871,8 @@ impl QuartzServer {
             }
         }
 
+        // hard code 2 sec sleep to wait for chunks to be ready
+        // TODO: change this when we have a better way to know when chunks are loaded
         std::thread::sleep(Duration::from_millis(2000));
         self.chunk_provider.flush_queue().await;
         let mut regions = self.chunk_provider.regions.lock_chunks().await;
@@ -883,19 +889,14 @@ impl QuartzServer {
                     }
                 };
 
-                let mut mask = vec![0; 256 / 16].into_boxed_slice();
-
-                for section_y in 0 .. (256 / 16) {
-                    if !chunk.is_section_empty(section_y) {
-                        mask[section_y] = 1;
-                    }
-                }
-
-                let biomes = vec![0; 256].into_boxed_slice();
                 let sections = chunk.get_client_sections().into_boxed_slice();
-
-                let mut heightmaps = NbtCompound::new();
-                heightmaps.insert("MOTION_BLOCKING", vec![70_i64; 37]);
+                // code to output sections for debugging
+                // don't delete until we are sure we're sending sections correctly
+                // std::fs::write(
+                //     format!("./section_data/chunk_{}_{}.txt", x, z),
+                //     format!("{:02X?}", sections),
+                // )
+                // .unwrap();
 
                 let chunk_coords: CoordinatePair = chunk.coordinates().as_chunk().into();
 
@@ -903,46 +904,31 @@ impl QuartzServer {
                     .send_packet(sender, ClientBoundPacket::ChunkData {
                         chunk_x: chunk_coords.x,
                         chunk_z: chunk_coords.z,
-                        primary_bit_mask: mask,
-                        heightmaps,
-                        biomes,
+                        primary_bit_mask: chunk.get_bitmask().into_boxed_slice(),
+                        heightmaps: chunk.get_heightmaps(),
+                        biomes: chunk.get_biomes().into_boxed_slice(),
+                        // TODO: send block entities for chunk when we support them
                         block_entities: vec![].into_boxed_slice(),
-                        data: SectionData {
-                            size: sections.len() as i32 * 8,
-                            sections,
-                        },
+                        data: SectionData { sections },
                     })
                     .await;
 
-                let sky_light_mask = vec![1_i64; (256 / 16) + 2].into_boxed_slice();
-                let block_light_mask = vec![1_i64; (256 / 16) + 2].into_boxed_slice();
-
-                let mut sky_lights = Vec::new();
-                let mut block_lights = Vec::new();
-
-                for i in 0 .. 18 {
-                    sky_lights.push(BlockLights {
-                        length: 2048,
-                        values: vec![12; 2048].into_boxed_slice(),
-                    });
-
-                    block_lights.push(BlockLights {
-                        length: 2048,
-                        values: vec![12; 2048].into_boxed_slice(),
-                    })
-                }
+                let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) =
+                    chunk.get_skylights();
+                let (block_light_mask, empty_block_light_mask, block_light_arrays) =
+                    chunk.get_blocklights();
 
                 self.client_list
                     .send_packet(sender, ClientBoundPacket::UpdateLight {
                         chunk_x: chunk_coords.x,
                         chunk_z: chunk_coords.z,
                         trust_edges: true,
-                        sky_light_mask,
-                        block_light_mask,
-                        empty_sky_light_mask: Vec::new().into_boxed_slice(),
-                        empty_block_light_mask: Vec::new().into_boxed_slice(),
-                        sky_light_arrays: sky_lights.into_boxed_slice(),
-                        block_light_arrays: block_lights.into_boxed_slice(),
+                        sky_light_mask: sky_light_mask.into_boxed_slice(),
+                        block_light_mask: block_light_mask.into_boxed_slice(),
+                        empty_sky_light_mask: empty_sky_light_mask.into_boxed_slice(),
+                        empty_block_light_mask: empty_block_light_mask.into_boxed_slice(),
+                        sky_light_arrays: sky_light_arrays.into_boxed_slice(),
+                        block_light_arrays: block_light_arrays.into_boxed_slice(),
                     })
                     .await;
             }
@@ -959,7 +945,7 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::PlayerPositionAndLook {
                 dismount_vehicle: true,
                 x: 0.0,
-                y: 0.0,
+                y: 17.0,
                 z: 0.0,
                 yaw: 0.0,
                 pitch: 0.0,
