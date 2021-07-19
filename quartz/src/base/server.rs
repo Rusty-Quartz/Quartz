@@ -77,7 +77,7 @@ impl QuartzServer {
     /// Initializes the server. This loads all blocks, items, and other game data, initializes commands
     /// and plugins, and starts the TCP server.
     pub fn init(&mut self) {
-        RUNNING.store(self.init_internal(), Ordering::SeqCst);
+        RUNNING.store(self.init_internal(), Ordering::Release);
     }
 
     fn init_internal(&mut self) -> bool {
@@ -172,7 +172,7 @@ impl QuartzServer {
             thread::spawn(move || {
                 let interface = unsafe { raw_console_unchecked() };
 
-                while RUNNING.load(Ordering::Relaxed) {
+                while RUNNING.load(Ordering::Acquire) {
                     // Check for a new command every 50ms
                     match interface.read_line_step(Some(Duration::from_millis(50))) {
                         Ok(result) => match result {
@@ -247,7 +247,7 @@ impl QuartzServer {
                 // Successful connection
                 Ok((socket, _addr)) => {
                     // Don't bother handling the connection if the server is shutting down
-                    if !RUNNING.load(Ordering::SeqCst) {
+                    if !RUNNING.load(Ordering::Acquire) {
                         return;
                     }
 
@@ -313,7 +313,7 @@ impl QuartzServer {
 impl Drop for QuartzServer {
     fn drop(&mut self) {
         // In case this is reached due to a panic
-        RUNNING.store(false, Ordering::SeqCst);
+        RUNNING.store(false, Ordering::Release);
 
         // Send a connection to the server daemon to shut it down
         match unsafe { config_unchecked() }.try_lock() {
