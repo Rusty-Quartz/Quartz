@@ -284,6 +284,7 @@
       {
         "dispatch": true,
         "name": "keep_alive",
+        "async": true,
         "id": "0x0F",
         "fields": [
           {
