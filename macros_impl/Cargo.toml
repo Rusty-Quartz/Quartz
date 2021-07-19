@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-proc-macro2 = "1.0.24"
-proc-macro-crate = "1.0.0"
-quote = "1.0.8"
-syn = { version = "1.0.55", features = ["full"] }
+proc-macro2 = "1.0"
+proc-macro-crate = "1.0"
+quote = "1.0"
+syn = { version = "1.0", features = ["full"] }

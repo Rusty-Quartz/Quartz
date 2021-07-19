@@ -16,13 +16,10 @@ path = "src/lib.rs"
 # Internal dependencies
 quartz_chat = { path = "../chat" }
 quartz_util = { path = "../util" }
-quartz_commands = { path = "../../quartz_commands" }
 quartz_macros = { path = "../macros" }
 
 # External dependencies
-array-init = "2.0.0"
 byteorder = "1.4.3"
-chrono = "0.4.19"
 enum_dispatch = "0.3.7"
 flate2 = "1.0.20"
 futures-lite = "1.12.0"
@@ -31,11 +28,10 @@ itertools = "0.10.1"
 lazy_static = "1.4.0"
 linefeed = "0.6.0"
 log = "0.4.14"
-log4rs = "1.0.0"
-num-traits = "0.2.14"
 once_cell = "1.8.0"
 openssl = "0.10.34"
 phf = { version = "0.9.0", features = ["macros"] }
+quartz_commands = "0.1.0"
 quartz_nbt = "0.2.1"
 rand = "0.8.4"
 regex = "1.5"

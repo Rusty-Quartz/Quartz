@@ -20,6 +20,10 @@ pub type BlockEntity = StaticBlockEntity;
 pub type Registry = StaticRegistry;
 pub type CommandExecutor = StaticCommandExecutor;
 
+pub const fn null_state_id() -> StateID {
+    0u16
+}
+
 pub struct StaticRegistry {
     blocks: &'static [Block],
     global_palette: Box<[StaticBlockState]>,

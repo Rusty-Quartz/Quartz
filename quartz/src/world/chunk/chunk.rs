@@ -1,5 +1,5 @@
 use crate::{
-    base::{BlockEntity, BlockState, StateID},
+    base::{BlockEntity, BlockState, StateID, null_state_id},
     block::{states::BlockStateData, BlockStateImpl, StateBuilder},
     network::packet::BlockLights,
     world::{
@@ -9,7 +9,6 @@ use crate::{
     Registry,
 };
 use log::warn;
-use num_traits::Zero;
 use quartz_nbt::{NbtCompound, NbtList, NbtReprError};
 use quartz_util::{
     hash::NumHasher,
@@ -79,7 +78,7 @@ impl Chunk {
                 Err(_) => continue,
             };
 
-            let mut palette = vec![StateID::zero(); raw_palette.len()].into_boxed_slice();
+            let mut palette = vec![null_state_id(); raw_palette.len()].into_boxed_slice();
             let mut index: usize = 0;
 
             // Iterate over the block states in the palette
@@ -384,7 +383,7 @@ impl Section {
         self.block_states
             .get(index)
             .copied()
-            .unwrap_or(StateID::zero())
+            .unwrap_or(null_state_id())
     }
 
     fn get_client_section(&self) -> ClientSection {

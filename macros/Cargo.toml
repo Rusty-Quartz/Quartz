@@ -8,4 +8,4 @@ proc-macro = true
 
 [dependencies]
 quartz_macros_impl = { path = '../macros_impl' }
-syn = { version = "1.0.55", features = ["full"] }
+syn = { version = "1.0", features = ["full"] }
