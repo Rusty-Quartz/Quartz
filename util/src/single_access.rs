@@ -5,6 +5,9 @@ use std::{
     ptr,
 };
 
+/// Similar to [`SingleAccessorBox`], except that this structure allocates its value on the stack.
+///
+/// [`SingleAccessorBox`]: crate::single_access::SingleAccessorBox
 pub struct SingleAccessor<T> {
     value: UnsafeCell<T>,
     taken: Cell<bool>,
@@ -13,6 +16,7 @@ pub struct SingleAccessor<T> {
 unsafe impl<T: Send> Send for SingleAccessor<T> {}
 
 impl<T> SingleAccessor<T> {
+    /// Creates a new `SingleAccessor` with the given value.
     #[inline]
     pub const fn new(value: T) -> Self {
         SingleAccessor {
@@ -21,6 +25,8 @@ impl<T> SingleAccessor<T> {
         }
     }
 
+    /// Attempts to take exclusive access to the data guarded by this structure. If this fails
+    /// because access is already taken, then `None` is returned.
     #[inline]
     pub fn take(&self) -> Option<AccessGuard<'_, T>> {
         if self.taken.replace(true) {
@@ -28,14 +34,18 @@ impl<T> SingleAccessor<T> {
         }
 
         Some(AccessGuard {
-            value: &self.value,
+            value: self.value.get(),
             flag: &self.taken,
         })
     }
 }
 
+/// A smart pointer created by the [`take`] method of [`SingleAccessor`] to enforce its access constraints.
+///
+/// [`SingleAccessor`]: crate::single_access::SingleAccessorBox
+/// [`take`]: crate::single_access::SingleAccessor::take
 pub struct AccessGuard<'a, T> {
-    value: &'a UnsafeCell<T>,
+    value: *mut T,
     flag: &'a Cell<bool>,
 }
 
@@ -49,13 +59,13 @@ impl<'a, T> Deref for AccessGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.value.get() }
+        unsafe { &*self.value }
     }
 }
 
 impl<'a, T> DerefMut for AccessGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.value.get() }
+        unsafe { &mut *self.value }
     }
 }
 
@@ -134,15 +144,11 @@ impl<T: ?Sized> Drop for SingleAccessorBox<T> {
 
 /// A smart pointer created by the [`take`] method of [`SingleAccessorBox`] to enforce its access constraints.
 ///
-/// The name of this smart pointer comes from the fact that it overwrites the source of its internal pointer
-/// after storing a copy, in a sense moving the value. When this pointer is dropped, the source value is
-/// restored.
-///
 /// [`SingleAccessorBox`]: crate::single_access::SingleAccessorBox
 /// [`take`]: crate::single_access::SingleAccessorBox::take
 pub struct BoxAccessGuard<'a, T: ?Sized> {
-    source: &'a Cell<*mut T>,
     value: *mut T,
+    source: &'a Cell<*mut T>,
 }
 
 impl<'a, T: ?Sized> BoxAccessGuard<'a, T> {
@@ -162,7 +168,7 @@ impl<'a, T: ?Sized> BoxAccessGuard<'a, T> {
         // Set the data part of the pointer in the cell to null
         source.set(value.set_ptr_value(ptr::null_mut()));
 
-        Some(BoxAccessGuard { source, value })
+        Some(BoxAccessGuard { value, source })
     }
 }
 

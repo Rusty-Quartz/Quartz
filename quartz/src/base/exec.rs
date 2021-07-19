@@ -24,7 +24,7 @@ static COMMAND_EXECUTOR: OnceCell<CommandExecutor> = OnceCell::new();
 /// Returns whether or not the server is running.
 #[inline]
 pub fn is_running() -> bool {
-    RUNNING.load(Ordering::SeqCst)
+    RUNNING.load(Ordering::Acquire)
 }
 
 pub fn config() -> &'static Mutex<Config> {
@@ -81,7 +81,7 @@ pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
     smol::block_on(async {
         let mut clock = ServerClock::new(50);
 
-        while RUNNING.load(Ordering::Relaxed) {
+        while RUNNING.load(Ordering::Acquire) {
             if let Some(mut guard) = DIAGNOSTICS.try_lock() {
                 guard.microseconds_per_tick = clock.micros_ema;
             }

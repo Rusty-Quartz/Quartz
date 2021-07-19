@@ -67,7 +67,7 @@ impl IOHandle {
     /// using the temporary buffer for the encryption.
     async fn write_encrypted(
         encrypter: Option<&mut Crypter>,
-        source: &mut PacketBuffer,
+        source: &[u8],
         temp: &mut PacketBuffer,
         stream: &mut TcpStream,
     ) -> Result<()> {
@@ -137,7 +137,8 @@ impl IOHandle {
                 let data_len = packet_data.cursor();
 
                 // Compress the packet data and write to the operation buffer
-                // Safety: we don't interact with the cursor of `operation_buffer` after this
+                // Safety: we don't interact with the cursor of `operation_buffer` after this,
+                // and the cursor is set to zero anyway, which is always valid
                 let mut encoder =
                     ZlibEncoder::new(unsafe { self.operation_buffer.inner_mut() }, Compression::default());
                 encoder.write_all(&packet_data[..])?;
@@ -157,7 +158,7 @@ impl IOHandle {
 
                 result = IOHandle::write_encrypted(
                     self.encrypter.as_mut(),
-                    packet_data,
+                    &packet_data[..],
                     &mut self.operation_buffer,
                     stream,
                 )
@@ -174,7 +175,7 @@ impl IOHandle {
 
                 result = IOHandle::write_encrypted(
                     self.encrypter.as_mut(),
-                    &mut self.operation_buffer,
+                    &self.operation_buffer[..],
                     packet_data,
                     stream,
                 )
@@ -189,7 +190,7 @@ impl IOHandle {
 
             result = IOHandle::write_encrypted(
                 self.encrypter.as_mut(),
-                &mut self.operation_buffer,
+                &self.operation_buffer[..],
                 packet_data,
                 stream,
             )
