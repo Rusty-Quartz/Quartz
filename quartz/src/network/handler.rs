@@ -27,7 +27,7 @@ use serde_json::json;
 use std::{
     str::FromStr,
     sync::{mpsc::Sender, Arc},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 use uuid::Uuid;
 
@@ -42,6 +42,8 @@ pub(crate) struct AsyncPacketHandler {
     key_pair: Arc<Rsa<Private>>,
     username: String,
     verify_token: Vec<u8>,
+    keep_alive: i64,
+    last_keep_alive: SystemTime,
 }
 
 impl AsyncPacketHandler {
@@ -50,6 +52,8 @@ impl AsyncPacketHandler {
             key_pair,
             username: String::new(),
             verify_token: Vec::new(),
+            keep_alive: -1,
+            last_keep_alive: SystemTime::now(),
         }
     }
 }
@@ -289,6 +293,31 @@ impl AsyncPacketHandler {
     ) {
         // TODO: Implement login_plugin_response
     }
+
+    async fn handle_keep_alive(&mut self, conn: &mut AsyncClientConnection, keep_alive_id: i64) {
+        if (keep_alive_id != self.keep_alive && self.keep_alive != -1)
+            // If the SystemTimes don't line up correctly assume that we're within the time limit
+            || SystemTime::now()
+                .duration_since(self.last_keep_alive)
+                .unwrap_or(Duration::from_secs(1))
+                .as_secs()
+                > 30
+        {
+            conn.connection_state = ConnectionState::Disconnected;
+        } else {
+            let id = Uuid::new_v4();
+            self.keep_alive = id.as_u128() as i64;
+            // We sleep to avoid spamming the client with KeepAlive packets
+            // The client would disconnect if they didn't get a packet before 20 seconds
+            // So we wait 10 allowing 10 seconds of delay between packets
+            std::thread::sleep(Duration::from_secs(10));
+            conn.send_packet(&ClientBoundPacket::KeepAlive {
+                keep_alive_id: self.keep_alive,
+            })
+            .await;
+            self.last_keep_alive = SystemTime::now();
+        }
+    }
 }
 
 impl QuartzServer {
@@ -359,6 +388,14 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::PluginMessage {
                 channel: UnlocalizedName::minecraft("brand"),
                 data: brand_buf[..].to_vec().into_boxed_slice(),
+            })
+            .await;
+
+        // Since at this point keep_alive on the AsyncPackeHandler is still -1 it won't check what this id is
+        // So it doesn't matter if we hard code the id
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::KeepAlive {
+                keep_alive_id: 124345,
             })
             .await;
     }
@@ -707,9 +744,6 @@ impl QuartzServer {
 
     #[allow(unused_variables)]
     async fn handle_lock_difficulty(&mut self, sender: usize, locked: bool) {}
-
-    #[allow(unused_variables)]
-    async fn handle_keep_alive(&mut self, sender: usize, keep_alive_id: i64) {}
 
     #[allow(unused_variables)]
     async fn handle_generate_structure(
