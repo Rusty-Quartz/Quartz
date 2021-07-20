@@ -19,7 +19,7 @@ use linefeed::{
 };
 use log::*;
 use openssl::rsa::Rsa;
-use smol::{net::TcpListener, Executor, channel};
+use smol::{channel, net::TcpListener, Executor};
 use std::{
     collections::HashMap,
     error::Error,
@@ -51,7 +51,7 @@ pub struct QuartzServer {
     /// The ChunckProvider
     pub chunk_provider: ChunkProvider,
     #[doc(hidden)]
-    shutdown_tcp_server: Option<channel::Sender<()>>
+    shutdown_tcp_server: Option<channel::Sender<()>>,
 }
 
 impl QuartzServer {
@@ -72,7 +72,7 @@ impl QuartzServer {
             console_command_handler: None,
             chunk_provider: ChunkProvider::new("world", "./world/region", 4)
                 .expect("Error making chunk provider"),
-            shutdown_tcp_server: None
+            shutdown_tcp_server: None,
         }
     }
 
@@ -184,10 +184,7 @@ impl QuartzServer {
                                 },
                             );
                             if let Err(e) = packet_pipe.send(packet) {
-                                error!(
-                                    "Failed to forward console command to server thread: {}",
-                                    e
-                                );
+                                error!("Failed to forward console command to server thread: {}", e);
                             }
                         }
                         _ => {}
@@ -219,11 +216,13 @@ impl QuartzServer {
         thread::Builder::new()
             .name("TCP Server Thread".to_owned())
             .spawn(move || future::block_on(executor_clone.run(shutdown.recv())))?;
-        executor.spawn(Self::tcp_server(
-            executor.clone(),
-            listener,
-            sync_packet_sender,
-        )).detach();
+        executor
+            .spawn(Self::tcp_server(
+                executor.clone(),
+                listener,
+                sync_packet_sender,
+            ))
+            .detach();
 
         Ok(())
     }
@@ -272,7 +271,7 @@ impl QuartzServer {
                         return;
                     }
 
-                    executor.spawn(driver).detach();
+                    smol::spawn(driver).detach();
 
                     // Spawn a thread to handle the connection asynchronously
                     let key_pair_clone = key_pair.clone();
@@ -316,7 +315,7 @@ impl Drop for QuartzServer {
             Some(handle) => {
                 info!("Shutting down command handler thread");
                 let _ = handle.join();
-            },
+            }
             None => {}
         }
 
