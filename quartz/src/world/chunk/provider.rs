@@ -1,5 +1,5 @@
 use crate::world::{
-    chunk::Chunk,
+    chunk::{chunk::RawChunk, Chunk},
     location::{Coordinate, CoordinatePair},
 };
 use byteorder::{BigEndian, ByteOrder};
@@ -8,7 +8,10 @@ use futures_lite::{
     io::{AsyncReadExt, AsyncSeekExt},
 };
 use log::{error, warn};
-use quartz_nbt::{NbtCompound, io::{Flavor, NbtIoError, read_nbt}};
+use quartz_nbt::{
+    io::{read_nbt, Flavor, NbtIoError},
+    serde::deserialize,
+};
 use quartz_util::hash::NumHasher;
 use smol::{
     channel::{self, Receiver, Sender},
@@ -19,7 +22,6 @@ use smol::{
 };
 use std::{
     collections::HashMap,
-    io::Cursor as StdCursor,
     path::{Path, PathBuf},
     sync::Arc,
     thread,
@@ -122,29 +124,20 @@ impl ChunkProvider {
                     return Ok(());
                 }
 
-                let chunk_nbt = region.load_chunk_nbt(coords).await?;
+                let chunk = region.load_chunk_nbt(coords).await?;
 
                 drop(region);
                 drop(region_guard);
 
-                match chunk_nbt {
-                    Some(nbt) => {
-                        let chunk = Chunk::from_nbt(&nbt);
-                        match chunk {
-                            Ok(chunk) => chunk_sender.send(chunk).await.map_err(|_| {
-                                io::Error::new(
-                                    io::ErrorKind::BrokenPipe,
-                                    "Failed to send chunk between threads",
-                                )
-                            })?,
-                            Err(e) =>
-                                return Err(IoError::new(
-                                    ErrorKind::InvalidData,
-                                    format!("Encountered invalid NBT for chunk at {}: {}", coords, e),
-                                )
-                                .into()),
-                        }
-                    },
+                match chunk {
+                    Some(chunk) => {
+                        chunk_sender.send(chunk).await.map_err(|_| {
+                            io::Error::new(
+                                io::ErrorKind::BrokenPipe,
+                                "Failed to send chunk between threads",
+                            )
+                        })?;
+                    }
                     None => {
                         log::warn!("Chunk generation not supported yet.");
                     }
@@ -415,7 +408,7 @@ impl Region {
     async fn load_chunk_nbt(
         &mut self,
         absolute_position: Coordinate,
-    ) -> Result<Option<NbtCompound>, NbtIoError> {
+    ) -> Result<Option<Chunk>, NbtIoError> {
         let chunk_info = match self
             .chunk_info
             .get_mut(self.index_absolute(absolute_position.as_chunk().into()))
@@ -425,7 +418,8 @@ impl Region {
                 return Err(IoError::new(
                     ErrorKind::InvalidInput,
                     "Attempted to load chunk outside of region",
-                ).into()),
+                )
+                .into()),
         };
 
         if chunk_info.is_uninitialized() {
@@ -445,25 +439,34 @@ impl Region {
         let mut buf: Vec<u8> = Vec::with_capacity(length);
         unsafe {
             buf.set_len(length);
-        } 
-        
+        }
+
         self.file.read_exact(&mut buf).await?;
 
-        let (nbt, _) = match buf[0] {
+        let nbt = read_nbt(
+            &mut std::io::Cursor::new(&buf[1 ..]),
+            Flavor::ZlibCompressed,
+        )?
+        .0;
+        std::fs::write("./nbt_data", nbt.to_snbt()).unwrap();
+
+        let (chunk, _) = match buf[0] {
             // GZip compression (not used in practice)
-            1 => read_nbt(&mut StdCursor::new(&buf[1 ..]), Flavor::GzCompressed)?,
-            2 => read_nbt(&mut StdCursor::new(&buf[1 ..]), Flavor::ZlibCompressed)?,
+            1 => deserialize::<RawChunk>(&buf[1 ..], Flavor::GzCompressed)?,
+            2 => deserialize::<RawChunk>(&buf[1 ..], Flavor::ZlibCompressed)?,
             _ =>
                 return Err(IoError::new(
                     ErrorKind::InvalidData,
                     format!(
                         "Encountered invalid compression scheme ({}) for chunk at {}",
-                        buf[0], absolute_position.as_chunk()
+                        buf[0],
+                        absolute_position.as_chunk()
                     ),
-                ).into()),
+                )
+                .into()),
         };
 
-        Ok(Some(nbt))
+        Ok(Some(chunk.into()))
     }
 
     fn mark_chunk_inactive(&mut self, absolute_position: Coordinate) {
