@@ -527,7 +527,7 @@ fn gen_struct_enum(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
                 }
             }
 
-            pub fn id(&self) -> u16 {
+            pub const fn id(&self) -> u16 {
                 match self {
                     #(#ids),*
                 }
