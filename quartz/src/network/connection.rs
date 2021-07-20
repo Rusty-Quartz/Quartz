@@ -360,16 +360,16 @@ impl AsyncClientConnection {
         }
     }
 
-    /// Creates a handle to write packets to this connection asynchronously and spawns a thread to drive the
-    /// returned handle.
-    pub fn create_write_handle(&self) -> AsyncWriteHandle {
+    /// Creates a handle to write packets to this connection asynchronously and returns a future
+    /// which drives this async write handle.
+    pub fn create_write_handle(&self) -> (AsyncWriteHandle, impl Future<Output = ()>) {
         // Setup variables to be captured
         let mut stream = self.stream.clone();
         let io_handle = self.io_handle.clone();
         let (packet_sender, packet_receiver) = channel::unbounded::<WrappedClientBoundPacket>();
 
-        // Spawn a thread to drive the returned handle
-        smol::spawn(async move {
+        // Create a future to drive the handle
+        let driver = async move {
             let mut packet_buffer = PacketBuffer::new(4096);
 
             while let Ok(wrapped_packet) = packet_receiver.recv().await {
@@ -403,10 +403,9 @@ impl AsyncClientConnection {
                     }
                 }
             }
-        })
-        .detach();
+        };
 
-        AsyncWriteHandle(packet_sender)
+        (AsyncWriteHandle(packet_sender), driver)
     }
 
     /// Sends the given packet to the client.
@@ -477,6 +476,7 @@ impl AsyncClientConnection {
             .read(&mut self.read_buffer[..])
             .await
             .map_err(|error| PacketSerdeError::Network(error))?;
+        log::debug!("{:02X?}", self.read_buffer);
 
         // A read of zero bytes means the stream has closed
         if read == 0 {

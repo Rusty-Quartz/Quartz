@@ -1,11 +1,11 @@
 use crate::{
-    config_unchecked,
+    config,
     item::init_items,
     network::{
         packet::{ClientBoundPacket, ServerBoundPacket, WrappedServerBoundPacket},
         *,
     },
-    raw_console_unchecked,
+    raw_console,
     world::chunk::ChunkProvider,
     Registry,
     RUNNING,
@@ -19,12 +19,11 @@ use linefeed::{
 };
 use log::*;
 use openssl::rsa::Rsa;
-use smol::{net::TcpListener, LocalExecutor};
+use smol::{net::TcpListener, Executor, channel};
 use std::{
     collections::HashMap,
     error::Error,
     net::TcpStream as StdTcpStream,
-    rc::Rc,
     sync::{
         atomic::Ordering,
         mpsc::{self, Receiver, Sender},
@@ -47,10 +46,12 @@ pub struct QuartzServer {
     sync_packet_sender: Sender<WrappedServerBoundPacket>,
     /// The receiver for packets that need to be handled on the server thread.
     sync_packet_receiver: Receiver<WrappedServerBoundPacket>,
-    /// A map of thread join handles to join when the server is dropped.
-    join_handles: HashMap<String, JoinHandle<()>>,
+    /// The join handle for the console command handler thread.
+    console_command_handler: Option<JoinHandle<()>>,
     /// The ChunckProvider
     pub chunk_provider: ChunkProvider,
+    #[doc(hidden)]
+    shutdown_tcp_server: Option<channel::Sender<()>>
 }
 
 impl QuartzServer {
@@ -68,9 +69,10 @@ impl QuartzServer {
             client_list: ClientList::new(),
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
-            join_handles: HashMap::new(),
+            console_command_handler: None,
             chunk_provider: ChunkProvider::new("world", "./world/region", 4)
                 .expect("Error making chunk provider"),
+            shutdown_tcp_server: None
         }
     }
 
@@ -157,54 +159,49 @@ impl QuartzServer {
             }
         }
 
-        // Register the tab completer
-        // Safety: this code can only be called within this crate,
-        unsafe {
-            raw_console_unchecked().set_completer(Arc::new(ConsoleCompleter {
-                packet_pipe: Mutex::new(self.sync_packet_sender.clone()),
-            }));
-        }
+        // Set the console completer
+        raw_console().set_completer(Arc::new(ConsoleCompleter {
+            packet_pipe: Mutex::new(self.sync_packet_sender.clone()),
+        }));
 
         // Drive the command reader
         let packet_pipe = self.sync_packet_sender.clone();
-        self.add_join_handle(
-            "Console Command Reader",
-            thread::spawn(move || {
-                let interface = unsafe { raw_console_unchecked() };
+        let handle = thread::spawn(move || {
+            let interface = raw_console();
 
-                while RUNNING.load(Ordering::Acquire) {
-                    // Check for a new command every 50ms
-                    match interface.read_line_step(Some(Duration::from_millis(50))) {
-                        Ok(result) => match result {
-                            Some(ReadResult::Input(command)) => {
-                                interface.add_history_unique(command.clone());
+            while RUNNING.load(Ordering::Acquire) {
+                // Check for a new command every 50ms
+                match interface.read_line_step(Some(Duration::from_millis(50))) {
+                    Ok(result) => match result {
+                        Some(ReadResult::Input(command)) => {
+                            interface.add_history_unique(command.clone());
 
-                                // Forward the command to the server thread
-                                let packet = WrappedServerBoundPacket::new(
-                                    0,
-                                    ServerBoundPacket::ConsoleCommand {
-                                        command: command.trim().to_owned(),
-                                    },
+                            // Forward the command to the server thread
+                            let packet = WrappedServerBoundPacket::new(
+                                0,
+                                ServerBoundPacket::ConsoleCommand {
+                                    command: command.trim().to_owned(),
+                                },
+                            );
+                            if let Err(e) = packet_pipe.send(packet) {
+                                error!(
+                                    "Failed to forward console command to server thread: {}",
+                                    e
                                 );
-                                if let Err(e) = packet_pipe.send(packet) {
-                                    error!(
-                                        "Failed to forward console command to server thread: {}",
-                                        e
-                                    );
-                                }
                             }
-                            _ => {}
-                        },
-                        Err(e) => error!("Failed to read console input: {}", e),
-                    }
+                        }
+                        _ => {}
+                    },
+                    Err(e) => error!("Failed to read console input: {}", e),
                 }
-            }),
-        );
+            }
+        });
+        self.console_command_handler.insert(handle);
     }
 
     fn start_tcp_server(&mut self) -> Result<(), Box<dyn Error>> {
-        let config = unsafe { config_unchecked() }
-            .try_lock()
+        let config = config()
+            .try_read()
             .expect("Config locked during initialization.");
         let listener = smol::block_on(TcpListener::bind(format!(
             "{}:{}",
@@ -215,23 +212,24 @@ impl QuartzServer {
         let sync_packet_sender = self.sync_packet_sender.clone();
 
         // TODO: consider adding more threads
-        self.add_join_handle(
-            "TCP Server Thread",
-            thread::spawn(move || {
-                let executor = Rc::new(LocalExecutor::new());
-                future::block_on(executor.run(Self::tcp_server(
-                    executor.clone(),
-                    listener,
-                    sync_packet_sender,
-                )));
-            }),
-        );
+        let (shutdown_signal, shutdown) = channel::unbounded::<()>();
+        self.shutdown_tcp_server.insert(shutdown_signal);
+        let executor = Arc::new(Executor::new());
+        let executor_clone = executor.clone();
+        thread::Builder::new()
+            .name("TCP Server Thread".to_owned())
+            .spawn(move || future::block_on(executor_clone.run(shutdown.recv())))?;
+        executor.spawn(Self::tcp_server(
+            executor.clone(),
+            listener,
+            sync_packet_sender,
+        )).detach();
 
         Ok(())
     }
 
     async fn tcp_server(
-        executor: Rc<LocalExecutor<'static>>,
+        executor: Arc<Executor<'static>>,
         listener: TcpListener,
         sync_packet_sender: Sender<WrappedServerBoundPacket>,
     ) {
@@ -261,17 +259,20 @@ impl QuartzServer {
                     );
 
                     // Register the client
+                    let (write_handle, driver) = conn.create_write_handle();
                     let result = sync_packet_sender.send(WrappedServerBoundPacket::new(
                         0,
                         ServerBoundPacket::ClientConnected {
                             id: next_connection_id,
-                            write_handle: conn.create_write_handle(),
+                            write_handle,
                         },
                     ));
                     if let Err(e) = result {
                         error!("Fatal error: failed to register new client: {}", e);
                         return;
                     }
+
+                    executor.spawn(driver).detach();
 
                     // Spawn a thread to handle the connection asynchronously
                     let key_pair_clone = key_pair.clone();
@@ -286,11 +287,6 @@ impl QuartzServer {
                 Err(e) => error!("Failed to accept TCP socket: {}", e),
             };
         }
-    }
-
-    /// Registers a join handle to be joined when the server is dropped.
-    fn add_join_handle(&mut self, thread_name: &str, handle: JoinHandle<()>) {
-        self.join_handles.insert(thread_name.to_owned(), handle);
     }
 
     pub(crate) async fn tick(&mut self) {
@@ -315,21 +311,24 @@ impl Drop for QuartzServer {
         // In case this is reached due to a panic
         RUNNING.store(false, Ordering::Release);
 
+        // Shutdown the command handler
+        match self.console_command_handler.take() {
+            Some(handle) => {
+                info!("Shutting down command handler thread");
+                let _ = handle.join();
+            },
+            None => {}
+        }
+
         // Send a connection to the server daemon to shut it down
-        match unsafe { config_unchecked() }.try_lock() {
+        match config().try_read() {
             Some(guard) => {
                 let _ = StdTcpStream::connect(format!("{}:{}", guard.server_ip, guard.port));
             }
             None => warn!("Failed to shutdown TCP thread."),
         }
 
-        for (thread_name, handle) in self.join_handles.drain() {
-            info!("Shutting down {}", thread_name);
-
-            if let Err(_) = handle.join() {
-                error!("Failed to join {}", thread_name);
-            }
-        }
+        // Dropping shutdown_tcp_server will shutdown the tcp server by closing the channel
     }
 }
 

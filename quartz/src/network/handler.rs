@@ -83,7 +83,7 @@ impl AsyncPacketHandler {
 
     async fn handle_login_start(&mut self, conn: &mut AsyncClientConnection, name: &String) {
         // If we are not running in online mode we just send LoginSuccess and skip encryption
-        if !config().lock().await.online_mode {
+        if !config().read().await.online_mode {
             conn.send_packet(&ClientBoundPacket::LoginSuccess {
                 uuid: Uuid::from_u128(0),
                 username: name.clone(),
@@ -423,7 +423,7 @@ impl QuartzServer {
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
         let player_count = self.client_list.online_count().to_string();
-        let config = config().lock().await;
+        let config = config().read().await;
         let motd = &config.motd;
         let max_players = config.max_players.to_string();
 
@@ -466,7 +466,7 @@ impl QuartzServer {
     }
 
     async fn handle_status_request(&mut self, sender: usize) {
-        let config = config().lock().await;
+        let config = config().read().await;
         let json_response = json!({
             "version": {
                 "name": server::VERSION,

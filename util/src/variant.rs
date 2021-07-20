@@ -6,7 +6,7 @@ use std::any::{Any, TypeId};
 /// # Examples
 ///
 /// ```
-/// # use util::variant::downcast_ref;
+/// # use quartz_util::variant::downcast_ref;
 /// use std::any::Any;
 ///
 /// fn test<T: Any + ToString>(shared: &T) {
@@ -33,7 +33,7 @@ pub fn downcast_ref<T: Any + ?Sized, U: 'static>(x: &T) -> Option<&U> {
 /// # Examples
 ///
 /// ```
-/// # use util::variant::downcast_mut;
+/// # use quartz_util::variant::downcast_mut;
 /// use std::any::Any;
 ///
 /// fn test<T: Any + ToString>(mutable: &mut T) {

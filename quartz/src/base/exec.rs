@@ -1,7 +1,7 @@
 use linefeed::{DefaultTerminal, Interface};
 use log::{error, info};
 use once_cell::sync::OnceCell;
-use smol::{lock::Mutex, Timer};
+use smol::{Timer, lock::{Mutex, RwLock}};
 use std::{
     fmt::Display,
     sync::{
@@ -16,7 +16,7 @@ use crate::{CommandExecutor, Config, Diagnostics, QuartzServer};
 /// The state variable that controls whether or not the server and its various sub-processes are running.
 /// If set to false then the server will gracefully stop.
 pub(crate) static RUNNING: AtomicBool = AtomicBool::new(false);
-static CONFIG: OnceCell<Mutex<Config>> = OnceCell::new();
+static CONFIG: OnceCell<RwLock<Config>> = OnceCell::new();
 static RAW_CONSOLE: OnceCell<Arc<Interface<DefaultTerminal>>> = OnceCell::new();
 pub static DIAGNOSTICS: Mutex<Diagnostics> = Mutex::new(Diagnostics::new());
 static COMMAND_EXECUTOR: OnceCell<CommandExecutor> = OnceCell::new();
@@ -27,12 +27,8 @@ pub fn is_running() -> bool {
     RUNNING.load(Ordering::Acquire)
 }
 
-pub fn config() -> &'static Mutex<Config> {
+pub fn config() -> &'static RwLock<Config> {
     CONFIG.get().expect("Config not initialized yet")
-}
-
-pub unsafe fn config_unchecked() -> &'static Mutex<Config> {
-    CONFIG.get_unchecked()
 }
 
 pub fn raw_console() -> &'static Interface<DefaultTerminal> {
@@ -61,7 +57,7 @@ pub fn command_executor() -> &'static CommandExecutor {
 
 pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
     CONFIG
-        .set(Mutex::new(config))
+        .set(RwLock::new(config))
         .ok()
         .expect("Config initialized before server was run.");
     RAW_CONSOLE

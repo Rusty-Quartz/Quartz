@@ -96,7 +96,7 @@ impl<T> SingleAccessorBox<T> {
     /// # Examples
     ///
     /// ```
-    /// # use util::single_access::SingleAccessorBox;
+    /// # use quartz_util::single_access::SingleAccessorBox;
     /// let pi = SingleAccessorBox::new(3.141592653_f32);
     /// ```
     #[inline]
@@ -114,7 +114,7 @@ impl<T: ?Sized> SingleAccessorBox<T> {
     /// # Examples
     ///
     /// ```
-    /// # use util::single_access::SingleAccessorBox;
+    /// # use quartz_util::single_access::SingleAccessorBox;
     /// let x = SingleAccessorBox::new(5_i32);
     /// let mut guard = x.take();
     ///

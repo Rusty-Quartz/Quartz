@@ -9,12 +9,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     logging::init_logger(Some("quartz"), console_interface.clone())?;
 
-    log::debug!(
-        "{}, {}",
-        std::mem::size_of::<String>(),
-        std::mem::size_of::<std::borrow::Cow<'_, str>>(),
-    );
-
     let config: Config;
     match load_config(Path::new("./config.json")) {
         Ok(cfg) => config = cfg,

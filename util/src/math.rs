@@ -10,14 +10,17 @@ const LOG2_TABLE_64: [u64; 64] = [
 /// # Examples
 ///
 /// ```
-/// # use util::math::fast_log2_64;
+/// # use quartz_util::math::fast_log2_64;
 /// for i in 0..64 {
 ///     assert_eq!(fast_log2_64(1 << i), i as u64);
 /// }
 ///
+/// assert_eq!(fast_log2_64(15), 3);
+/// assert_eq!(fast_log2_64(17), 4);
 /// assert_eq!(fast_log2_64(651854213), 29); // Exact: 29.2799741
 /// assert_eq!(fast_log2_64(0), 63);
 /// ```
+#[inline]
 pub const fn fast_log2_64(mut value: u64) -> u64 {
     value |= value >> 1;
     value |= value >> 2;
@@ -30,6 +33,27 @@ pub const fn fast_log2_64(mut value: u64) -> u64 {
         .overflowing_mul(0x07EDD5E59A4E28C2u64)
         .0
         >> 58) as usize];
+}
+
+/// Computes the base-2 logarithm of a 64-bit value using a DeBruijn-like algorithm, ceiling the result.
+/// Note that an input of zero will result in an output of `63` rather than an error.
+///
+/// # Examples
+///
+/// ```
+/// # use quartz_util::math::fast_ceil_log2_64;
+/// for i in 0..64 {
+///     assert_eq!(fast_ceil_log2_64(1 << i), i as u64);
+/// }
+///
+/// assert_eq!(fast_ceil_log2_64(15), 4);
+/// assert_eq!(fast_ceil_log2_64(17), 5);
+/// assert_eq!(fast_ceil_log2_64(651854213), 30); // Exact: 29.2799741
+/// assert_eq!(fast_ceil_log2_64(0), 63);
+/// ```
+#[inline]
+pub const fn fast_ceil_log2_64(value: u64) -> u64 {
+    fast_log2_64(value.overflowing_shl(1).0.overflowing_sub(1).0)
 }
 
 /// Computes the inverse square root of the given floating point number. The approximation produced by

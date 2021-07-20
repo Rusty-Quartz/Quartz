@@ -19,7 +19,7 @@ impl UnlocalizedName {
     /// # Examples
     ///
     /// ```
-    /// # use util::UnlocalizedName;
+    /// # use quartz_util::UnlocalizedName;
     /// let stone = UnlocalizedName::minecraft("stone");
     ///
     /// assert_eq!(stone.namespace, "minecraft");
@@ -47,7 +47,7 @@ impl FromStr for UnlocalizedName {
     /// # Examples
     ///
     /// ```
-    /// # use util::UnlocalizedName;
+    /// # use quartz_util::UnlocalizedName;
     /// # use std::str::FromStr;
     /// let stone = UnlocalizedName::from_str("minecraft:stone").unwrap();
     /// assert_eq!(stone.namespace, "minecraft");
