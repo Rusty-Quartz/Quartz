@@ -271,7 +271,7 @@ impl QuartzServer {
                         return;
                     }
 
-                    smol::spawn(driver).detach();
+                    executor.spawn(driver).detach();
 
                     // Spawn a thread to handle the connection asynchronously
                     let key_pair_clone = key_pair.clone();

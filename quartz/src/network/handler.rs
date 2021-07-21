@@ -24,6 +24,7 @@ use rand::{thread_rng, Rng};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
+use smol::Timer;
 use std::{
     str::FromStr,
     sync::{mpsc::Sender, Arc},
@@ -310,7 +311,7 @@ impl AsyncPacketHandler {
             // We sleep to avoid spamming the client with KeepAlive packets
             // The client would disconnect if they didn't get a packet before 20 seconds
             // So we wait 10 allowing 10 seconds of delay between packets
-            std::thread::sleep(Duration::from_secs(10));
+            Timer::after(Duration::from_secs(10)).await;
             conn.send_packet(&ClientBoundPacket::KeepAlive {
                 keep_alive_id: self.keep_alive,
             })
@@ -907,7 +908,7 @@ impl QuartzServer {
 
         // hard code 2 sec sleep to wait for chunks to be ready
         // TODO: change this when we have a better way to know when chunks are loaded
-        std::thread::sleep(Duration::from_millis(2000));
+        Timer::after(Duration::from_millis(1500)).await;
         self.chunk_provider.flush_queue().await;
         let mut regions = self.chunk_provider.regions.lock_chunks().await;
 
