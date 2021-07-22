@@ -232,12 +232,11 @@ impl Chunk {
                 }
             }
         }
-        // shift off the lowest bit because mojang has us send a mask entry for one below the world
         // TODO: add bitmask support to negative y-values
-        // reverse because masks and sections are in oposite orders
-        mask = mask << 1;
+        let mut empty_mask = !mask;
+        empty_mask |= 1;
         blocklights.reverse();
-        (vec![mask], vec![!mask], blocklights)
+        (vec![mask], vec![empty_mask], blocklights)
     }
 
     /// Gets the skylights and skylight bitmask for the chunk
@@ -254,12 +253,11 @@ impl Chunk {
                 }
             }
         }
-        // shift off the lowest bit because mojang has us send a mask entry for one below the world
         // TODO: add bitmask support to negative y-values
-        // reverse because masks and sections are in oposite orders
-        mask = mask << 1;
+        let mut empty_mask = !mask;
+        empty_mask |= 1;
         skylights.reverse();
-        (vec![mask], vec![!mask], skylights)
+        (vec![mask], vec![empty_mask], skylights)
     }
 }
 
@@ -601,7 +599,7 @@ impl Section {
     }
 
     fn has_block_light(&self) -> bool {
-        self.block_light.iter().all(|&s| s == 0)
+        self.block_light.iter().any(|&s| s != 0)
     }
 
     fn get_block_light(&self) -> BlockLights {
@@ -611,7 +609,7 @@ impl Section {
     }
 
     fn has_sky_light(&self) -> bool {
-        self.sky_light.iter().all(|&s| s == 0)
+        self.sky_light.iter().any(|&s| s != 0)
     }
 
     fn get_sky_light(&self) -> BlockLights {
