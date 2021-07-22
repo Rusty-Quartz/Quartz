@@ -1,5 +1,5 @@
 use crate::{
-    base::{BlockEntity, BlockState, StateID},
+    base::{BlockState, StateID},
     block::{states::BlockStateData, BlockStateImpl, StateBuilder},
     network::packet::BlockLights,
     world::{
@@ -10,9 +10,7 @@ use crate::{
 };
 use quartz_nbt::{NbtCompound, NbtList};
 use quartz_util::{
-    hash::NumHasher,
     math::fast_ceil_log2_64,
-    single_access::{AccessGuard, SingleAccessor},
     UnlocalizedName,
 };
 use serde::{
@@ -89,7 +87,6 @@ struct RawPaletteEntry {
 pub struct Chunk {
     block_offset: CoordinatePair,
     section_store: SectionStore,
-    block_entities: HashMap<u64, SingleAccessor<BlockEntity>, NumHasher>,
     // We store the heightmaps just as nbt, this could be improved in the future to reduce memory usage
     heightmaps: NbtCompound,
     biomes: Box<[i32]>,
@@ -103,7 +100,6 @@ impl Into<Chunk> for RawChunk {
         Chunk {
             block_offset,
             section_store: level.sections,
-            block_entities: HashMap::with_hasher(NumHasher),
             heightmaps: level.heightmaps,
             biomes: level.biomes,
         }
@@ -165,13 +161,6 @@ impl Chunk {
             }
             None => None,
         }
-    }
-
-    pub fn block_entity_at(
-        &self,
-        absolute_position: BlockPosition,
-    ) -> Option<AccessGuard<'_, BlockEntity>> {
-        self.block_entities.get(&absolute_position.as_u64())?.take()
     }
 
     pub fn get_client_sections(&self) -> Vec<ClientSection> {

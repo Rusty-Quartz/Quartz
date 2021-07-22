@@ -292,13 +292,17 @@ fn update_block_property_names(
         }
     }
 
-    block_data.into_iter().filter(|(_name, data)| data.properties.len() == 0).for_each(|(name, data)| {output.insert(name.to_owned(), BlockInfo {
-        properties: data.properties.clone(),
-                        fields: BTreeMap::new(),
-                        default: data.default,
-                        intrem_id: data.interm_id,
-                        default_state: data.default_state.clone(),
-                        states: data.states.clone(),
+    block_data
+        .into_iter()
+        .filter(|(_name, data)| data.properties.len() == 0)
+        .for_each(|(name, data)| {
+            output.insert(name.to_owned(), BlockInfo {
+                properties: data.properties.clone(),
+                fields: BTreeMap::new(),
+                default: data.default,
+                intrem_id: data.interm_id,
+                default_state: data.default_state.clone(),
+                states: data.states.clone(),
             });
         });
     output
@@ -375,7 +379,7 @@ fn gen_structs(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
                 let (field_names, field_names_str, type_names, type_aliases) = vecs;
 
                 let values = block_info.properties.get(property_name).unwrap().clone();
-                
+
                 field_names.push(format_ident!("{}", field_name.replace("type", "r#type")));
                 field_names_str.push(field_name.clone());
                 type_names.push(format_ident!("{}", snake_to_camel(&if values.get(0).unwrap().parse::<u8>().is_ok() {

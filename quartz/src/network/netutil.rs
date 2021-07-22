@@ -1,7 +1,10 @@
 use byteorder::{BigEndian, ByteOrder};
 use openssl::error::ErrorStack;
 use quartz_chat::Component;
-use quartz_nbt::{NbtCompound, io::{Flavor, NbtIoError, read_nbt, write_nbt}};
+use quartz_nbt::{
+    io::{read_nbt, write_nbt, Flavor, NbtIoError},
+    NbtCompound,
+};
 use quartz_util::UnlocalizedName;
 use std::{
     error::Error,
@@ -15,10 +18,7 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::world::{
-    chunk::{ClientSection},
-    location::BlockPosition,
-};
+use crate::world::{chunk::ClientSection, location::BlockPosition};
 
 /// A wrapper around a vec used for reading/writing packet data efficiently.
 pub struct PacketBuffer {
@@ -467,7 +467,7 @@ impl ReadFromPacket for i32 {
         let mut result = 0i32;
         let mut by;
 
-        for i in 0..5 {
+        for i in 0 .. 5 {
             by = buffer.read_one()?;
             result |= ((by & 0x7F) as i32) << (7 * i);
 
@@ -495,7 +495,7 @@ impl ReadFromPacket for i64 {
         let mut result = 0i64;
         let mut by;
 
-        for i in 0..10 {
+        for i in 0 .. 10 {
             by = buffer.read_one()?;
             result |= ((by & 0x7F) as i64) << (7 * i);
 

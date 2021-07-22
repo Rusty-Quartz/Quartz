@@ -1,7 +1,10 @@
 use linefeed::{DefaultTerminal, Interface};
 use log::{error, info};
 use once_cell::sync::OnceCell;
-use smol::{Timer, lock::{Mutex, RwLock}};
+use smol::{
+    lock::{Mutex, RwLock},
+    Timer,
+};
 use std::{
     fmt::Display,
     sync::{

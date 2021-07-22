@@ -168,37 +168,41 @@ fn gen_packet_enum(
             } else {
                 state_info.client_bound.as_ref().unwrap()
             };
-            let match_arms = packets
-                .iter()
-                .map(|packet| {
-                    let id = Literal::i32_unsuffixed(
-                        i32::from_str_radix(&packet.id[2..], 16)
-                            .expect("Invalid packet ID encountered in JSON.")
-                    );
-                    let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
-                    let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
-                    let read_fields = packet
-                        .codegen_fields(mappings, true)
-                        .map(|(codegen_field, field)| {
-                            match &field.deserialize_with {
-                                Some(deserializer) => {
-                                    let name = &codegen_field.name;
-                                    let deserializer: TokenStream = syn::parse_str(deserializer).unwrap();
-                                    quote! {
-                                        let #name = #deserializer;
-                                    }
-                                },
-                                None => gen_deserialize_field(&quote! {crate}, &codegen_field, &format_ident!("buffer"))
+            let match_arms = packets.iter().map(|packet| {
+                let id = Literal::i32_unsuffixed(
+                    i32::from_str_radix(&packet.id[2 ..], 16)
+                        .expect("Invalid packet ID encountered in JSON."),
+                );
+                let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
+                let field_names = packet
+                    .fields
+                    .iter()
+                    .map(|field| format_ident!("{}", &field.name))
+                    .collect::<Vec<_>>();
+                let read_fields = packet.codegen_fields(mappings, true).map(
+                    |(codegen_field, field)| match &field.deserialize_with {
+                        Some(deserializer) => {
+                            let name = &codegen_field.name;
+                            let deserializer: TokenStream = syn::parse_str(deserializer).unwrap();
+                            quote! {
+                                let #name = #deserializer;
                             }
-                        });
-                    quote! {
-                        #id => {
-                            #( #read_fields )*
-                            Ok(#enum_name::#variant_name { #( #field_names ),* })
                         }
+                        None => gen_deserialize_field(
+                            &quote! {crate},
+                            &codegen_field,
+                            &format_ident!("buffer"),
+                        ),
+                    },
+                );
+                quote! {
+                    #id => {
+                        #( #read_fields )*
+                        Ok(#enum_name::#variant_name { #( #field_names ),* })
                     }
-                });
-                
+                }
+            });
+
             quote! {
                 crate::network::ConnectionState::#state_name => {
                     match id {
@@ -513,13 +517,20 @@ impl Packet {
                         is_option,
                         varying,
                         field.var_type.starts_with("u8"),
-                        field.ser_as_nbt
+                        field.ser_as_nbt,
                     ),
                     field,
                 )
             } else {
                 (
-                    CodegenField::regular(name, ty, condition, is_option, varying, field.ser_as_nbt),
+                    CodegenField::regular(
+                        name,
+                        ty,
+                        condition,
+                        is_option,
+                        varying,
+                        field.ser_as_nbt,
+                    ),
                     field,
                 )
             }

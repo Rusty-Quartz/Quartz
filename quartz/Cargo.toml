@@ -20,6 +20,7 @@ quartz_macros = { path = "../macros" }
 
 # External dependencies
 byteorder = "1.4.3"
+dashmap = "4.0.2"
 enum_dispatch = "0.3.7"
 flate2 = "1.0.20"
 futures-lite = "1.12.0"

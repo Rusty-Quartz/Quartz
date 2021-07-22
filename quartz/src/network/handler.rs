@@ -909,12 +909,13 @@ impl QuartzServer {
         // hard code 2 sec sleep to wait for chunks to be ready
         // TODO: change this when we have a better way to know when chunks are loaded
         Timer::after(Duration::from_millis(1500)).await;
-        self.chunk_provider.flush_queue().await;
-        let mut regions = self.chunk_provider.regions.lock_chunks().await;
+        self.chunk_provider.flush_queue();
 
         for x in -(view_distance / 2) .. view_distance / 2 {
             for z in -(view_distance / 2) .. view_distance / 2 {
-                let chunk = match regions
+                let chunk = match self
+                    .chunk_provider
+                    .regions
                     .loaded_chunk_at(Coordinate::Chunk(CoordinatePair::new(x as i32, z as i32)))
                 {
                     Some(c) => c,

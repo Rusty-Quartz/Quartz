@@ -139,8 +139,10 @@ impl IOHandle {
                 // Compress the packet data and write to the operation buffer
                 // Safety: we don't interact with the cursor of `operation_buffer` after this,
                 // and the cursor is set to zero anyway, which is always valid
-                let mut encoder =
-                    ZlibEncoder::new(unsafe { self.operation_buffer.inner_mut() }, Compression::default());
+                let mut encoder = ZlibEncoder::new(
+                    unsafe { self.operation_buffer.inner_mut() },
+                    Compression::default(),
+                );
                 encoder.write_all(&packet_data[..])?;
                 encoder.finish()?;
 
@@ -476,7 +478,6 @@ impl AsyncClientConnection {
             .read(&mut self.read_buffer[..])
             .await
             .map_err(|error| PacketSerdeError::Network(error))?;
-        log::debug!("{:02X?}", self.read_buffer);
 
         // A read of zero bytes means the stream has closed
         if read == 0 {

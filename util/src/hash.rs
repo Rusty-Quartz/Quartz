@@ -5,6 +5,7 @@ use std::{
 
 /// The purpose of this hasher is to be extremely fast for hashing primitive integer types containing
 /// less than or equal to 64 bits. This hasher should not be used in any other context.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NumHasher;
 
 impl BuildHasher for NumHasher {

@@ -1,5 +1,5 @@
 use super::Side;
-use crate::{extract_type_from_container, is_option, is_boxed_slice};
+use crate::{extract_type_from_container, is_boxed_slice, is_option};
 use quote::format_ident;
 use syn::{
     parenthesized,
@@ -81,14 +81,18 @@ where
         side: Side,
     ) -> Result<()> {
         let is_array_u8 = match extract_type_from_container(&slice_ty)? {
-            Type::Path(path) => path.qself.is_none()
-                && !path.path.segments.is_empty()
-                && path.path.segments.last().unwrap().ident == "u8",
+            Type::Path(path) =>
+                path.qself.is_none()
+                    && !path.path.segments.is_empty()
+                    && path.path.segments.last().unwrap().ident == "u8",
             _ => return Err(Error::new_spanned(slice_ty, "Expected path type")),
         };
 
         if is_array_u8 && params.nbt {
-            return Err(Error::new_spanned(boxed_slice_ty, "Type is not an NBT object"));
+            return Err(Error::new_spanned(
+                boxed_slice_ty,
+                "Type is not an NBT object",
+            ));
         }
 
         let len = if params.greedy {
@@ -103,7 +107,10 @@ where
             ArrayLength::Greedy
         } else {
             if side == Side::Read && params.len.is_none() {
-                return Err(Error::new_spanned(boxed_slice_ty, "Arrays must have a length expression or be marked as `len_prefixed`"));
+                return Err(Error::new_spanned(
+                    boxed_slice_ty,
+                    "Arrays must have a length expression or be marked as `len_prefixed`",
+                ));
             }
 
             params.len.unwrap()
@@ -117,7 +124,7 @@ where
             is_option,
             params.varying,
             is_array_u8,
-            params.nbt
+            params.nbt,
         ));
         Ok(())
     }
@@ -186,7 +193,7 @@ where
                     params.condition,
                     true,
                     params.varying,
-                    params.nbt
+                    params.nbt,
                 ));
             }
 
@@ -213,7 +220,7 @@ where
             params.condition,
             false,
             params.varying,
-            params.nbt
+            params.nbt,
         ));
     }
 
@@ -243,7 +250,10 @@ impl Parse for PacketSerdeParams {
                     }
 
                     if params.nbt {
-                        return Err(Error::new_spanned(ident, "Parameter incompatible with `nbt`"));
+                        return Err(Error::new_spanned(
+                            ident,
+                            "Parameter incompatible with `nbt`",
+                        ));
                     }
 
                     params.varying = true;
@@ -261,7 +271,10 @@ impl Parse for PacketSerdeParams {
                     }
 
                     if params.greedy {
-                        return Err(Error::new_spanned(ident, "Parameter incompatible with `varying`"));
+                        return Err(Error::new_spanned(
+                            ident,
+                            "Parameter incompatible with `varying`",
+                        ));
                     }
 
                     params.nbt = true;
@@ -272,7 +285,9 @@ impl Parse for PacketSerdeParams {
                     }
 
                     content.parse::<Token![=]>()?;
-                    params.len = Some(ArrayLength::Expr(syn::parse_str(&content.parse::<LitStr>()?.value())?));
+                    params.len = Some(ArrayLength::Expr(syn::parse_str(
+                        &content.parse::<LitStr>()?.value(),
+                    )?));
                 }
                 "len_prefixed" => {
                     if params.len.is_some() {
@@ -287,7 +302,9 @@ impl Parse for PacketSerdeParams {
                     }
 
                     content.parse::<Token![=]>()?;
-                    params.condition = Some(OptionCondition::Expr(syn::parse_str(&content.parse::<LitStr>()?.value())?));
+                    params.condition = Some(OptionCondition::Expr(syn::parse_str(
+                        &content.parse::<LitStr>()?.value(),
+                    )?));
                 }
                 "bool_prefixed" => {
                     if params.condition.is_some() {
@@ -328,12 +345,12 @@ impl Default for PacketSerdeParams {
 pub enum ArrayLength {
     Expr(Expr),
     Prefixed,
-    Greedy
+    Greedy,
 }
 
 pub enum OptionCondition {
     Expr(Expr),
-    Prefixed
+    Prefixed,
 }
 
 pub struct EnumStructVariant {
@@ -350,7 +367,7 @@ pub struct Field {
     pub is_option: bool,
     pub varying: bool,
     pub is_array_u8: bool,
-    pub is_nbt: bool
+    pub is_nbt: bool,
 }
 
 impl Field {
@@ -360,7 +377,7 @@ impl Field {
         condition: Option<OptionCondition>,
         is_option: bool,
         varying: bool,
-        is_nbt: bool
+        is_nbt: bool,
     ) -> Self {
         Field {
             name,
@@ -370,7 +387,7 @@ impl Field {
             is_option,
             varying,
             is_array_u8: false,
-            is_nbt
+            is_nbt,
         }
     }
 
@@ -382,9 +399,12 @@ impl Field {
         is_option: bool,
         varying: bool,
         is_array_u8: bool,
-        is_nbt: bool
+        is_nbt: bool,
     ) -> Self {
-        assert!(!(is_array_u8 && is_nbt), "An array field cannot both be a byte buffer and an NBT object");
+        assert!(
+            !(is_array_u8 && is_nbt),
+            "An array field cannot both be a byte buffer and an NBT object"
+        );
 
         Field {
             name,
@@ -394,7 +414,7 @@ impl Field {
             is_option,
             varying,
             is_array_u8,
-            is_nbt
+            is_nbt,
         }
     }
 }
