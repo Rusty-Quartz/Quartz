@@ -1,6 +1,6 @@
 use crate::{command::CommandContext, ServerClock, DIAGNOSTICS, RUNNING};
-use quartz_chat::{color::PredefinedColor, ComponentBuilder};
-use quartz_commands::{self, module, CommandModule};
+use quartz_chat::{color::PredefinedColor, Component, ComponentBuilder};
+use quartz_commands::{self, module, CommandModule, Help};
 use std::sync::atomic::Ordering;
 
 pub struct StaticCommandExecutor;
@@ -25,80 +25,67 @@ impl<'ctx> CommandModule<CommandContext<'ctx>> for StaticCommandExecutor {
     }
 }
 
+// NOTE: in order for the help command to work every command needs to have a Help<'cmd> argument that when executed outputs its help message
 module! {
     mod native_command_set;
     type Context<'ctx> = CommandContext<'ctx>;
 
-    // TODO: fix `help` command
-    // command help
-    // where
-    //     cmd: String
-    // {
-    //     root executes |ctx| {
-    //         ctx.sender.send_message(Component::colored(
-    //             "-- Command List --".to_owned(),
-    //             PredefinedColor::Gold,
-    //         ));
+    command help
+    where
+        cmd: String
+        help: Help<'cmd>
+    {
+        root executes |ctx| {
+            ctx.sender.send_message(&Component::colored(
+                "-- Command List --".to_owned(),
+                PredefinedColor::Gold,
+            ));
 
-    //         let command_names = ctx.executor.command_names();
+            let command_names = ctx.executor.get_suggestions("", &ctx);
 
-    //         for command in command_names {
-    //             ctx.sender.send_message(Component::colored(
-    //                 command.to_owned(),
-    //                 PredefinedColor::Gray,
-    //             ));
-    //         }
-    //         ctx.sender.send_message(Component::colored(
-    //             "-- Use 'help [command]' to get more information --".to_owned(),
-    //             PredefinedColor::Gold,
-    //         ));
+            for command in command_names {
+                ctx.sender.send_message(&Component::colored(
+                    command.to_owned(),
+                    PredefinedColor::Gray,
+                ));
+            }
+            ctx.sender.send_message(&Component::colored(
+                "-- Use 'help [command]' to get more information --".to_owned(),
+                PredefinedColor::Gold,
+            ));
 
-    //         Ok(())
-    //     };
+            Ok(())
+        };
 
-    //     cmd executes |ctx| {
-    //         let command = ctx.get_string("command").unwrap_or("");
-    //         let help_msg = match ctx.executor.command_description(&command) {
-    //             Some(message) => message,
-    //             None => {
-    //                 ctx.sender.send_message(Component::colored(
-    //                     format!("Command not found: \"{}\"", command),
-    //                     PredefinedColor::Red,
-    //                 ));
-    //                 return;
-    //             }
-    //         };
+        cmd executes |ctx| {
+            ctx.executor.dispatch(&format!("{} -h", cmd), ctx)
+        };
 
-    //         ctx.sender.send_message(
-    //             TextComponentBuilder::new(format!("{}: ", command))
-    //                 .predef_color(PredefinedColor::Gold)
-    //                 .add()
-    //                 .text(help_msg.to_owned())
-    //                 .predef_color(PredefinedColor::White)
-    //                 .build(),
-    //         );
+        help executes |ctx| {
+            ctx.sender.send_message(&Component::text("Gives information on commands"));
+            Ok(())
+        };
 
-    //         Ok(())
-    //     };
+        cmd suggests |ctx, arg| {
+            ctx.executor.get_suggestions("", &ctx)
+        };
+    }
 
-    //     cmd suggests |ctx, arg| {
-    //         ctx.executor
-    //             .command_names()
-    //             .iter()
-    //             .filter(|cmd| cmd.starts_with(arg))
-    //             .map(|&cmd| cmd.to_owned())
-    //             .collect()
-    //     };
-    // }
-
-    command stop {
+    command stop where
+        help: Help<'cmd> {
         root executes |_ctx| {
             let _ = RUNNING.compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed);
             Ok(())
         };
+
+        help executes |ctx| {
+            ctx.sender.send_message(&Component::text("Stops the server"));
+            Ok(())
+        }
     }
 
-    command tps {
+    command tps where
+        help: Help<'cmd> {
         root executes |ctx| {
             let mspt = smol::block_on(DIAGNOSTICS.lock()).mspt();
             let tps = ServerClock::as_tps(mspt);
@@ -142,5 +129,10 @@ module! {
 
             Ok(())
         };
+
+        help executes |ctx| {
+            ctx.sender.send_message(&Component::text("Shows the server's TPS and MSPT"));
+            Ok(())
+        }
     }
 }
