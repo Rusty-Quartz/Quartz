@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms)]
 // TODO: enable when ready
 // #![warn(missing_docs)]
+#![feature(new_uninit)]
 
 //! This crate contains virtually all of the code, APIs, and other malarkey that makes quartz run. The server
 //! code is launched through the separate `quartz_launcher` crate. Plugins should use this crate as a library

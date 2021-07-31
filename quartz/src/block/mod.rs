@@ -16,7 +16,7 @@ pub use state::*;
 
 use crate::base::StateID;
 use behavior::BlockBehaviorSMT;
-use quartz_util::UnlocalizedName;
+use quartz_util::uln::UnlocalizedName;
 use std::fmt::{self, Debug, Display, Formatter};
 use tinyvec::ArrayVec;
 

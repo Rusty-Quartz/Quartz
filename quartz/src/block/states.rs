@@ -1,4 +1,15 @@
+use crate::StateID;
+
 include!(concat!(env!("OUT_DIR"), "/blockstate_output.rs"));
+
+pub const AIR: StateID = BlockStateData::Air.id();
+pub const VOID_AIR: StateID = BlockStateData::VoidAir.id();
+pub const CAVE_AIR: StateID = BlockStateData::CaveAir.id();
+
+#[inline]
+pub const fn is_air(state: StateID) -> bool {
+    state == AIR || state == VOID_AIR || state == CAVE_AIR
+}
 
 pub(crate) struct BlockStateMetadata {
     pub default_state_data: BlockStateData,

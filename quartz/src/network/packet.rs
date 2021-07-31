@@ -1,11 +1,11 @@
 use crate::{
     network::{PacketBuffer, PacketSerdeError, ReadFromPacket, WriteToPacket},
-    world::{chunk::ClientSection, location::BlockPosition},
+    world::location::BlockPosition,
 };
 use quartz_chat::Component;
 use quartz_macros::{ReadFromPacket, WriteToPacket};
 use quartz_nbt::NbtCompound;
-use quartz_util::UnlocalizedName;
+use quartz_util::uln::UnlocalizedName;
 use uuid::Uuid;
 
 include!(concat!(env!("OUT_DIR"), "/packet_def_output.rs"));
@@ -533,12 +533,6 @@ pub struct Statistic {
 }
 
 #[derive(Debug, WriteToPacket, ReadFromPacket)]
-pub struct BlockLights {
-    #[packet_serde(len_prefixed)]
-    pub values: Box<[u8]>,
-}
-
-#[derive(Debug, WriteToPacket, ReadFromPacket)]
 pub struct MapIcon {
     #[packet_serde(varying)]
     icon_type: i32,
@@ -1035,6 +1029,55 @@ pub struct JigsawUpdateData {
     pool: UnlocalizedName,
     final_state: String,
     joint_type: String,
+}
+
+#[derive(Debug)]
+pub struct ClientSection {
+    pub block_count: i16,
+    pub bits_per_block: u8,
+    pub palette: Option<Box<[i32]>>,
+    pub data: Box<[u64]>,
+}
+
+impl WriteToPacket for ClientSection {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        buffer.write(&self.block_count);
+        buffer.write(&self.bits_per_block);
+        if let Some(palette) = &self.palette {
+            buffer.write_varying(&(palette.len() as i32));
+            buffer.write_array_varying(palette);
+        }
+        buffer.write_varying(&(self.data.len() as i64));
+        buffer.write_array(&self.data)
+    }
+}
+
+impl ReadFromPacket for ClientSection {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let block_count = buffer.read()?;
+        let bits_per_block = match buffer.read()? {
+            0 ..= 4 => 4,
+            b @ _ => b,
+        };
+        let palette = if bits_per_block < 9 {
+            let palette_len: i32 = buffer.read_varying()?;
+            Some(buffer.read_array_varying(palette_len as usize)?)
+        } else {
+            None
+        };
+        let data_len: i32 = buffer.read_varying()?;
+        let mut data = Vec::new();
+        for _ in 0 .. data_len {
+            data.push(buffer.read()?);
+        }
+
+        Ok(ClientSection {
+            block_count,
+            palette,
+            bits_per_block,
+            data: data.into_boxed_slice(),
+        })
+    }
 }
 
 #[derive(Debug)]

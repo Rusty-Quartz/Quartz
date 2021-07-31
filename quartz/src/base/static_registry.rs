@@ -10,7 +10,7 @@ use crate::{
 };
 use log::info;
 use once_cell::sync::OnceCell;
-use quartz_util::UnlocalizedName;
+use quartz_util::uln::UlnStr;
 
 static GLOBAL_STATIC_REGISTRY: OnceCell<StaticRegistry> = OnceCell::new();
 
@@ -62,13 +62,13 @@ impl StaticRegistry {
         }
     }
 
-    pub fn default_state(block_name: &UnlocalizedName) -> Option<BlockState> {
-        if block_name.namespace != "minecraft" {
+    pub fn default_state(block_name: &UlnStr) -> Option<BlockState> {
+        if block_name.namespace() != "minecraft" {
             return None;
         }
 
         BLOCK_LOOKUP_BY_NAME
-            .get(block_name.identifier.as_str())
+            .get(block_name.identifier())
             .map(|meta| StaticBlockState {
                 // Safety: internal block IDs are guaranteed to be consistent and in-bounds
                 handle: unsafe { &Self::get().blocks.get_unchecked(meta.internal_block_id) },

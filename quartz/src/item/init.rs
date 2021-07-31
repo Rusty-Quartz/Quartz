@@ -4,10 +4,10 @@ use crate::{
 };
 use log::info;
 use once_cell::sync::OnceCell;
-use quartz_util::UnlocalizedName;
+use quartz_util::uln::{UlnStr, UnlocalizedName};
 use serde::Deserialize;
 use serde_json::from_str;
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 
 static ITEM_LIST: OnceCell<HashMap<UnlocalizedName, Item>> = OnceCell::new();
 
@@ -19,7 +19,7 @@ pub fn get_item_list() -> &'static HashMap<UnlocalizedName, Item> {
 
 /// Gets an item instance from a unlocalized name
 #[inline]
-pub fn get_item(item_name: &UnlocalizedName) -> Option<&'static Item> {
+pub fn get_item(item_name: &UlnStr) -> Option<&'static Item> {
     get_item_list().get(item_name)
 }
 

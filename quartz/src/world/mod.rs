@@ -1,11 +1,18 @@
 pub mod chunk {
     mod chunk;
-    mod encoder;
     mod error;
-    mod provider;
+    mod light;
+    mod palette;
+    pub mod provider;
+    mod section;
+    mod states;
 
-    pub use chunk::{Chunk, ClientSection, BITS_PER_BLOCK};
+    pub use chunk::Chunk;
     pub use error::*;
+    pub use light::*;
+    pub use palette::*;
     pub use provider::ChunkProvider;
+    pub use section::*;
+    pub use states::*;
 }
 pub mod location;

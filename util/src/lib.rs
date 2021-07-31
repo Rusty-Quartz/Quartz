@@ -13,11 +13,10 @@ pub mod map;
 pub mod math;
 /// Contains an implementation of a single-access box allowing for interior mutability.
 pub mod single_access;
-mod uln;
+/// An implementation of Minecraft's unlocalized name.
+pub mod uln;
 /// Allows for downcasting of trait types.
 pub mod variant;
-
-pub use uln::UnlocalizedName;
 
 #[cfg(test)]
 mod tests {

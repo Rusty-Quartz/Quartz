@@ -4,7 +4,7 @@ use crate::{
     world::location::BlockPosition,
 };
 use quartz_nbt::NbtCompound;
-use quartz_util::UnlocalizedName;
+use crate::util::uln::UlnStr;
 
 // While this is somewhat accurate to how the Furnace BE will be implemented the tick method is no where near finished and some key fields are missing
 // Currently this is mostly for testing BEs
@@ -70,14 +70,14 @@ impl BlockEntity for FurnaceBlockEntity {
             if self.cook_time > self.cook_time_total {
                 self.items.insert(
                     2,
-                    ItemStack::new(get_item(&UnlocalizedName::minecraft("stone")).unwrap()),
+                    ItemStack::new(get_item(UlnStr::minecraft("stone")).unwrap()),
                 );
             }
         } else {
             if self.items.get(2).is_empty() {
                 self.items.insert(
                     2,
-                    ItemStack::new(get_item(&UnlocalizedName::minecraft("stone")).unwrap()),
+                    ItemStack::new(get_item(UlnStr::minecraft("stone")).unwrap()),
                 );
             } else {
                 self.items.increment(2);

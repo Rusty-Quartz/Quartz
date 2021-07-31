@@ -1873,7 +1873,7 @@
           },
           {
             "name": "world_name",
-            "type": "box_unlocalized_name"
+            "type": "unlocalized_name"
           },
           {
             "name": "hashed_seed",

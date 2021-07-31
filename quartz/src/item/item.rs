@@ -1,7 +1,6 @@
 use crate::item::{get_item, ItemInfo};
 use quartz_nbt::NbtCompound;
-use quartz_util::UnlocalizedName;
-use std::str::FromStr;
+use quartz_util::uln::{UlnStr, UnlocalizedName};
 
 /// Represents a minecraft item
 #[derive(Debug)]
@@ -33,7 +32,7 @@ impl ItemStack {
     /// Represents a empty item stack
     pub fn empty() -> Self {
         ItemStack {
-            item: get_item(&UnlocalizedName::minecraft("air")).expect("Item list not initialized"),
+            item: get_item(UlnStr::minecraft("air")).expect("Item list not initialized"),
             count: 0,
             damage: 0,
             nbt: NbtCompound::new(),
@@ -99,10 +98,8 @@ impl ItemStack {
         } as u32;
 
         ItemStack {
-            item: get_item(
-                &UnlocalizedName::from_str(tag.get("id").unwrap_or("minecraft:air")).unwrap(),
-            )
-            .unwrap(),
+            item: get_item(UlnStr::from_str(tag.get("id").unwrap_or("minecraft:air")).unwrap())
+                .unwrap(),
             count: tag.get::<_, i32>("Count").unwrap_or(0) as u8,
             damage,
             nbt: tag,
@@ -112,7 +109,7 @@ impl ItemStack {
     /// Returns if the current stack is empty or not
     /// Any empty stack is any stack that has a count of 0 or is air
     pub fn is_empty(&self) -> bool {
-        self.count <= 0 || self.item.id == UnlocalizedName::minecraft("air")
+        self.count <= 0 || self.item.id == UlnStr::minecraft("air")
     }
 }
 

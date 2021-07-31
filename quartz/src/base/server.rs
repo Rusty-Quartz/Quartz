@@ -290,7 +290,7 @@ impl QuartzServer {
 
     pub(crate) async fn tick(&mut self) {
         self.handle_packets().await;
-        self.chunk_provider.flush_queue();
+        self.chunk_provider.flush_queue().await;
     }
 
     async fn handle_packets(&mut self) {

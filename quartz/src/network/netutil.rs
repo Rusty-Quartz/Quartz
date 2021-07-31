@@ -5,7 +5,7 @@ use quartz_nbt::{
     io::{read_nbt, write_nbt, Flavor, NbtIoError},
     NbtCompound,
 };
-use quartz_util::UnlocalizedName;
+use quartz_util::uln::UnlocalizedName;
 use std::{
     error::Error,
     fmt::{self, Debug, Display, Formatter},
@@ -18,7 +18,7 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::world::{chunk::ClientSection, location::BlockPosition};
+use crate::world::location::BlockPosition;
 
 /// A wrapper around a vec used for reading/writing packet data efficiently.
 pub struct PacketBuffer {
@@ -508,6 +508,12 @@ impl ReadFromPacket for i64 {
     }
 }
 
+impl ReadFromPacket for u64 {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        Ok(buffer.read::<i64>()? as u64)
+    }
+}
+
 impl ReadFromPacket for u128 {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let mut buf = [0; 16];
@@ -691,6 +697,12 @@ impl WriteToPacket for i64 {
     }
 }
 
+impl WriteToPacket for u64 {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        buffer.write(&(*self as i64));
+    }
+}
+
 impl WriteToPacket for u128 {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         let mut buf = [0; 16];
@@ -745,7 +757,13 @@ impl WriteToPacket for Uuid {
 
 impl WriteToPacket for UnlocalizedName {
     fn write_to(&self, buffer: &mut PacketBuffer) {
-        buffer.write(&self.to_string());
+        let namespace = self.namespace();
+        let identifier = self.identifier();
+        let len = namespace.len() + identifier.len() + 1;
+        buffer.write_varying(&(len as i32));
+        buffer.write_bytes(namespace.as_bytes());
+        buffer.write_one(':' as u8);
+        buffer.write_bytes(identifier.as_bytes());
     }
 }
 
@@ -763,47 +781,6 @@ impl WriteToPacket for NbtCompound {
 impl WriteToPacket for Component {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         buffer.write(&serde_json::to_string(self).unwrap_or(String::new()));
-    }
-}
-
-impl WriteToPacket for ClientSection {
-    fn write_to(&self, buffer: &mut PacketBuffer) {
-        buffer.write(&self.block_count);
-        buffer.write(&self.bits_per_block);
-        if let Some(palette) = &self.palette {
-            buffer.write_varying(&(palette.len() as i32));
-            buffer.write_array_varying(palette);
-        }
-        buffer.write_varying(&(self.data.len() as i64));
-        buffer.write_array(&self.data)
-    }
-}
-
-impl ReadFromPacket for ClientSection {
-    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        let block_count = buffer.read()?;
-        let bits_per_block = match buffer.read()? {
-            0 ..= 4 => 4,
-            b @ _ => b,
-        };
-        let palette = if bits_per_block < 9 {
-            let palette_len: i32 = buffer.read_varying()?;
-            Some(buffer.read_array_varying(palette_len as usize)?)
-        } else {
-            None
-        };
-        let data_len: i32 = buffer.read_varying()?;
-        let mut data = Vec::new();
-        for _ in 0 .. data_len {
-            data.push(buffer.read()?);
-        }
-
-        Ok(ClientSection {
-            block_count,
-            palette,
-            bits_per_block,
-            data: data.into_boxed_slice(),
-        })
     }
 }
 

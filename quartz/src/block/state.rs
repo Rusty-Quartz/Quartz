@@ -1,8 +1,9 @@
+use quartz_util::uln::UlnStr;
+
 use crate::{
     base::*,
     block::{states::BlockStateData, Block},
 };
-use quartz_util::UnlocalizedName;
 use std::fmt::Debug;
 
 pub trait BlockStateImpl: Sized {
@@ -12,7 +13,7 @@ pub trait BlockStateImpl: Sized {
 
     fn id(&self) -> StateID;
 
-    fn builder(block_name: &UnlocalizedName) -> Option<Self::Builder>;
+    fn builder(block_name: &UlnStr) -> Option<Self::Builder>;
 }
 
 // TODO: Implement static block state
@@ -34,7 +35,7 @@ impl BlockStateImpl for StaticBlockState {
         self.data.id()
     }
 
-    fn builder(block_name: &UnlocalizedName) -> Option<Self::Builder> {
+    fn builder(block_name: &UlnStr) -> Option<Self::Builder> {
         StaticRegistry::default_state(block_name).map(StaticStateBuilder::new)
     }
 }

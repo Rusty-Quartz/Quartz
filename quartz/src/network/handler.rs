@@ -8,6 +8,7 @@ use crate::{
     server::{self, QuartzServer},
     world::location::{BlockPosition, Coordinate, CoordinatePair},
 };
+use futures_util::future::join_all;
 use hex::ToHex;
 use lazy_static::lazy_static;
 use log::{debug, error};
@@ -19,7 +20,7 @@ use openssl::{
 use quartz_chat::{color::PredefinedColor, Component};
 use quartz_commands::CommandModule;
 use quartz_nbt::NbtCompound;
-use quartz_util::UnlocalizedName;
+use quartz_util::uln::UnlocalizedName;
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use serde::Deserialize;
@@ -28,7 +29,7 @@ use smol::Timer;
 use std::{
     str::FromStr,
     sync::{mpsc::Sender, Arc},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 use uuid::Uuid;
 
@@ -311,7 +312,7 @@ impl AsyncPacketHandler {
             // We sleep to avoid spamming the client with KeepAlive packets
             // The client would disconnect if they didn't get a packet before 20 seconds
             // So we wait 10 allowing 10 seconds of delay between packets
-            Timer::after(Duration::from_secs(10)).await;
+            Timer::after(Duration::from_secs(1)).await;
             conn.send_packet(&ClientBoundPacket::KeepAlive {
                 keep_alive_id: self.keep_alive,
             })
@@ -322,7 +323,7 @@ impl AsyncPacketHandler {
 }
 
 impl QuartzServer {
-    async fn handle_login_success_server(&mut self, sender: usize, _uuid: Uuid, username: &str) {
+    async fn handle_login_success_server(&mut self, sender: usize, _uuid: Uuid, _username: &str) {
         // let config = config().lock().await;
 
         /*
@@ -371,7 +372,7 @@ impl QuartzServer {
                 world_names: vec![UnlocalizedName::minecraft("overworld")].into_boxed_slice(),
                 dimension_codec,
                 dimension,
-                world_name: Box::new(UnlocalizedName::minecraft("overworld")),
+                world_name: UnlocalizedName::minecraft("overworld"),
                 hashed_seed: 0,
                 max_players: 10,
                 view_distance: 12,
@@ -899,23 +900,25 @@ impl QuartzServer {
             })
             .await;
 
-        for x in -(view_distance / 2) .. view_distance / 2 {
-            for z in -(view_distance / 2) .. view_distance / 2 {
-                self.chunk_provider
-                    .request_load_full(Coordinate::Chunk(CoordinatePair::new(x as i32, z as i32)));
+        let start = Instant::now();
+        let mut chunk_futures = Vec::new();
+        for x in -view_distance .. view_distance {
+            for z in -view_distance .. view_distance {
+                chunk_futures.push(
+                    self.chunk_provider
+                        .load_full(Coordinate::chunk(x as i32, z as i32)),
+                );
             }
         }
+        join_all(chunk_futures).await;
+        let elapsed = start.elapsed();
+        log::info!("Chunk load time: {:?}", elapsed);
 
-        // hard code 2 sec sleep to wait for chunks to be ready
-        // TODO: change this when we have a better way to know when chunks are loaded
-        Timer::after(Duration::from_millis(1500)).await;
-        self.chunk_provider.flush_queue();
-
-        for x in -(view_distance / 2) .. view_distance / 2 {
-            for z in -(view_distance / 2) .. view_distance / 2 {
-                let chunk = match self
-                    .chunk_provider
-                    .regions
+        let start = Instant::now();
+        let mut chunks = self.chunk_provider.regions.chunks_mut().await;
+        for x in -view_distance .. view_distance {
+            for z in -view_distance .. view_distance {
+                let chunk = match chunks
                     .loaded_chunk_at(Coordinate::Chunk(CoordinatePair::new(x as i32, z as i32)))
                 {
                     Some(c) => c,
@@ -925,7 +928,7 @@ impl QuartzServer {
                     }
                 };
 
-                let sections = chunk.get_client_sections().into_boxed_slice();
+                let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
                 // code to output sections for debugging
                 // don't delete until we are sure we're sending sections correctly
                 // std::fs::write(
@@ -936,39 +939,45 @@ impl QuartzServer {
 
                 let chunk_coords: CoordinatePair = chunk.coordinates().as_chunk().into();
 
+                fn mask_to_boxed_slice(mask: u128) -> Box<[i64]> {
+                    Box::<[_]>::from([mask as i64].as_ref())
+                }
+
                 self.client_list
                     .send_packet(sender, ClientBoundPacket::ChunkData {
                         chunk_x: chunk_coords.x,
                         chunk_z: chunk_coords.z,
-                        primary_bit_mask: chunk.get_bitmask().into_boxed_slice(),
+                        primary_bit_mask: mask_to_boxed_slice(primary_bit_mask),
                         heightmaps: chunk.get_heightmaps(),
                         biomes: chunk.get_biomes().into_boxed_slice(),
                         // TODO: send block entities for chunk when we support them
                         block_entities: vec![].into_boxed_slice(),
-                        data: SectionData { sections },
+                        data: section_data,
                     })
                     .await;
 
                 let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) =
-                    chunk.get_skylights();
+                    chunk.gen_sky_lights();
                 let (block_light_mask, empty_block_light_mask, block_light_arrays) =
-                    chunk.get_blocklights();
+                    chunk.gen_block_lights();
 
                 self.client_list
                     .send_packet(sender, ClientBoundPacket::UpdateLight {
                         chunk_x: chunk_coords.x,
                         chunk_z: chunk_coords.z,
                         trust_edges: true,
-                        sky_light_mask: sky_light_mask.into_boxed_slice(),
-                        block_light_mask: block_light_mask.into_boxed_slice(),
-                        empty_sky_light_mask: empty_sky_light_mask.into_boxed_slice(),
-                        empty_block_light_mask: empty_block_light_mask.into_boxed_slice(),
-                        sky_light_arrays: sky_light_arrays.into_boxed_slice(),
-                        block_light_arrays: block_light_arrays.into_boxed_slice(),
+                        sky_light_mask: mask_to_boxed_slice(sky_light_mask),
+                        block_light_mask: mask_to_boxed_slice(block_light_mask),
+                        empty_sky_light_mask: mask_to_boxed_slice(empty_sky_light_mask),
+                        empty_block_light_mask: mask_to_boxed_slice(empty_block_light_mask),
+                        sky_light_arrays,
+                        block_light_arrays,
                     })
                     .await;
             }
         }
+        let elapsed = start.elapsed();
+        log::info!("Chunk and light send time: {:?}", elapsed);
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::SpawnPosition {
@@ -981,7 +990,7 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::PlayerPositionAndLook {
                 dismount_vehicle: true,
                 x: 0.0,
-                y: 17.0,
+                y: 100.0,
                 z: 0.0,
                 yaw: 0.0,
                 pitch: 0.0,

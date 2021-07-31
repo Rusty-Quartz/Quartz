@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use proc_macro2::{Ident, Literal, TokenStream};
 use quote::{format_ident, quote};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, env, fs, path::Path, slice::Iter};
+use std::{collections::BTreeMap, convert::TryFrom, env, fs, path::Path, slice::Iter};
 use syn::Expr;
 
 pub fn gen_blockstates() {
@@ -15,6 +15,15 @@ pub fn gen_blockstates() {
         "./assets/blocks.json"
     ))
     .expect("Error parsing blocks.json");
+
+    let state_count = Literal::u16_unsuffixed(
+        u16::try_from(
+            data.values()
+                .map(|block_info| block_info.states.len())
+                .sum::<usize>(),
+        )
+        .expect("Block state count cannot fit in a u16"),
+    );
 
     // Find the shared properties
     let property_data = find_shared_properties(&mut data);
@@ -30,6 +39,7 @@ pub fn gen_blockstates() {
         &dest_path,
         quote! {
             use phf::{phf_map};
+            pub const STATE_COUNT: u16 = #state_count;
             #enums
             #structs
             #struct_enum

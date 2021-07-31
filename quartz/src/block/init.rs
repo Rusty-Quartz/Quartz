@@ -7,13 +7,10 @@ use crate::{
     },
 };
 use itertools::Itertools;
-use quartz_util::UnlocalizedName;
+use quartz_util::uln::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::{
-    collections::{BTreeMap, HashMap},
-    str::FromStr,
-};
+use std::collections::{BTreeMap, HashMap};
 use tinyvec::ArrayVec;
 
 pub(crate) fn load_raw_block_data<'de>() -> HashMap<String, RawBlockInfo> {
@@ -80,7 +77,7 @@ pub(crate) fn make_static_global_palette(
             let default_state = StaticBlockState {
                 handle,
                 data: BLOCK_LOOKUP_BY_NAME
-                    .get(handle.name.identifier.as_str())
+                    .get(handle.name.identifier())
                     .unwrap()
                     .default_state_data,
             };
