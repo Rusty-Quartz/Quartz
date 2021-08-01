@@ -1,18 +1,17 @@
 use linefeed::{DefaultTerminal, Interface};
 use log::{error, info};
-use once_cell::sync::OnceCell;
-use smol::{
-    lock::{Mutex, RwLock},
-    Timer,
-};
+use once_cell::sync::{OnceCell, Lazy};
 use std::{
     fmt::Display,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
+        RwLock,
+        Mutex
     },
     time::{Duration, Instant},
 };
+use tokio::{runtime::Builder, task::LocalSet};
 
 use crate::{CommandExecutor, Config, Diagnostics, QuartzServer};
 
@@ -21,7 +20,7 @@ use crate::{CommandExecutor, Config, Diagnostics, QuartzServer};
 pub(crate) static RUNNING: AtomicBool = AtomicBool::new(false);
 static CONFIG: OnceCell<RwLock<Config>> = OnceCell::new();
 static RAW_CONSOLE: OnceCell<Arc<Interface<DefaultTerminal>>> = OnceCell::new();
-pub static DIAGNOSTICS: Mutex<Diagnostics> = Mutex::new(Diagnostics::new());
+pub static DIAGNOSTICS: Lazy<Mutex<Diagnostics>> = Lazy::new(|| Mutex::new(Diagnostics::new()));
 static COMMAND_EXECUTOR: OnceCell<CommandExecutor> = OnceCell::new();
 
 /// Returns whether or not the server is running.
@@ -77,11 +76,17 @@ pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
 
     info!("Started server thread");
 
-    smol::block_on(async {
+    let rt = Builder::new_current_thread()
+        .enable_all()
+        .thread_name("main-tick-thread")
+        .build()
+        .expect("Failed to build main-tick runtime");
+    let local_set = LocalSet::new();
+    local_set.block_on(&rt, async {
         let mut clock = ServerClock::new(50);
 
         while RUNNING.load(Ordering::Acquire) {
-            if let Some(mut guard) = DIAGNOSTICS.try_lock() {
+            if let Ok(mut guard) = DIAGNOSTICS.try_lock() {
                 guard.microseconds_per_tick = clock.micros_ema;
             }
 
@@ -120,7 +125,7 @@ impl ServerClock {
         self.micros_ema = (99.0 * self.micros_ema + elapsed.as_micros() as f64) / 100.0;
 
         if elapsed.as_millis() < 50 {
-            Timer::after(self.full_tick - elapsed).await;
+            tokio::time::sleep(self.full_tick - elapsed).await;
         }
     }
 

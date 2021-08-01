@@ -22,11 +22,8 @@ quartz_macros = { path = "../macros" }
 byteorder = "1.4.3"
 enum_dispatch = "0.3.7"
 flate2 = "1.0.20"
-futures-lite = "1.12.0"
 futures-util = "0.3.16"
 hex = "0.4.3"
-itertools = "0.10.1"
-lazy_static = "1.4.0"
 linefeed = "0.6.0"
 log = "0.4.14"
 once_cell = "1.8.0"
@@ -39,10 +36,21 @@ regex = "1.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_with = "1.9.3"
-smol = "1.2.5"
 tinyvec = "1.2.0"
 ureq = { version = "2.1.1", features = ["json"] }
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
+
+[dependencies.tokio]
+version = "1.9.0"
+features = [
+    "io-util",
+    "fs",
+    "net",
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "time"
+]
 
 [build-dependencies]
 quartz_macros_impl = { path = '../macros_impl' }

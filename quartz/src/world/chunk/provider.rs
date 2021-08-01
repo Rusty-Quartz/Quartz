@@ -4,58 +4,44 @@ use crate::world::{
 };
 use byteorder::{BigEndian, ByteOrder};
 use flate2::write::{GzDecoder, ZlibDecoder};
-use futures_lite::{
-    future,
-    io::{AsyncReadExt, AsyncSeekExt}
-};
 use log::{error, warn};
 use quartz_nbt::{
     io::NbtIoError,
     serde::deserialize_from_buffer,
 };
 use quartz_util::hash::NumHasher;
-use smol::{Executor, channel::{self, Receiver, Sender}, fs::{File, OpenOptions}, io::{self, Error as IoError, ErrorKind, SeekFrom}, lock::{RwLock, RwLockWriteGuard}};
-use std::{collections::HashMap, future::Future, io::Write, path::{Path, PathBuf}, sync::Arc, thread};
+use tokio::{runtime::{Builder, Runtime}, fs::{OpenOptions, File}, io::{AsyncReadExt, AsyncSeekExt, SeekFrom}, sync::{
+    RwLock,
+    RwLockWriteGuard,
+}};
+use std::{collections::HashMap, future::Future, io::Write, path::{Path, PathBuf}, sync::{Arc, atomic::{AtomicUsize, Ordering}}, io::{self, Error as IoError, ErrorKind}};
 use std::collections::hash_map::Entry;
 
 pub struct ChunkProvider {
     pub regions: RegionHandler,
-    chunk_sender: Sender<Chunk>,
-    chunk_receiver: Receiver<Chunk>,
-    executor: Arc<Executor<'static>>,
-    _shutdown_signal: Sender<()>,
+    rt: Runtime
 }
 
 impl ChunkProvider {
     /// Creates a chunk provider for the given root directory with the given number of threads.
     pub fn new<P: AsRef<Path>>(
-        world_name: &str,
+        world_name: String,
         root_directory: P,
-        thread_count: usize,
     ) -> io::Result<Self> {
         // Ensure the root directory exists
         std::fs::create_dir_all(root_directory.as_ref())?;
 
         let regions = RegionHandler::new(root_directory.as_ref().to_owned());
-        let (chunk_sender, chunk_receiver) = channel::unbounded::<Chunk>();
-        let (shutdown_signal, shutdown) = channel::unbounded::<()>();
-
-        let executor = Arc::new(Executor::new());
-        for i in 1 ..= usize::max(thread_count, 1) {
-            let shutdown_clone = shutdown.clone();
-            let executor_clone = executor.clone();
-
-            thread::Builder::new()
-                .name(format!("{}/ChunkProvider-{}", world_name, i))
-                .spawn(move || future::block_on(executor_clone.run(shutdown_clone.recv())))?;
-        }
 
         Ok(ChunkProvider {
             regions,
-            chunk_sender,
-            chunk_receiver,
-            executor,
-            _shutdown_signal: shutdown_signal,
+            rt: Builder::new_multi_thread()
+                .enable_io()
+                .thread_name_fn(move || {
+                    static THREAD_ID: AtomicUsize = AtomicUsize::new(0);
+                    format!("{}/chunk-provider#{}", world_name, THREAD_ID.fetch_add(1, Ordering::AcqRel))
+                })
+                .build()?
         })
     }
 
@@ -63,90 +49,31 @@ impl ChunkProvider {
         &self,
         coordinates: Coordinate,
     ) -> impl Future<Output = Result<(), NbtIoError>> + '_ {
-        async move {
-            let regions = self.regions.clone();
-
-            let result = self
-                .executor
-                .spawn(async move {
-                    let request = ProviderRequest::LoadFull(coordinates);
-                    let (chunk_tx, chunk_rx) = channel::bounded::<Chunk>(1);
-
-                    let result =
-                        Self::handle_request_internal(request.clone(), regions, chunk_tx.clone())
-                            .await;
-
-                    let result = match result {
-                        Ok(true) => Ok(Some(chunk_rx.recv().await.unwrap())),
-                        Ok(false) => Ok(None),
-                        Err(e) => Err(e),
-                    };
-
-                    drop(chunk_tx);
-                    result
-                })
-                .await;
-
-            match result {
-                Ok(Some(chunk)) => {
-                    let mut regions = self.regions.regions_mut().await;
-
-                    match regions.loaded_region_at(chunk.coordinates()) {
-                        Some(region) => {
-                            self.regions.chunks_mut().await.cache_chunk(&mut *region, chunk);
-                            Ok(())
-                        },
-                        None => Err(NbtIoError::Custom(
-                            String::from("Attempted to cache chunk in an unloaded region")
-                                .into_boxed_str(),
-                        )),
-                    }
-                },
-                // Nothing to do
-                Ok(None) => Ok(()),
-                Err(e) => Err(e),
-            }
-        }
+        Self::handle_request_internal(ProviderRequest::LoadFull(coordinates), self.regions.clone())
     }
 
     pub fn request_load_full(&self, coordinates: Coordinate) {
         self.handle_request(ProviderRequest::LoadFull(coordinates));
     }
 
-    pub async fn flush_queue(&self) {
-        let mut regions = self.regions.regions_mut().await;
-        let mut chunks = self.regions.chunks_mut().await;
-
-        while let Ok(chunk) = self.chunk_receiver.try_recv() {
-            match regions.loaded_region_at(chunk.coordinates()) {
-                Some(region) => chunks.cache_chunk(&mut *region, chunk),
-                // This should never happen
-                None => drop(chunk),
-            }
-        }
-    }
-
     fn handle_request(&self, request: ProviderRequest) {
         let regions = self.regions.clone();
-        let chunk_sender = self.chunk_sender.clone();
 
-        self.executor
+        self.rt
             .spawn(async move {
                 let result =
-                    Self::handle_request_internal(request.clone(), regions, chunk_sender).await;
+                    Self::handle_request_internal(request.clone(), regions).await;
 
                 if let Err(e) = result {
                     error!("Failed to process request {:?}: {}", request, e);
                 }
-            })
-            .detach();
+            });
     }
 
     async fn handle_request_internal(
         request: ProviderRequest,
         handler: RegionHandler,
-        chunk_sender: Sender<Chunk>,
-    ) -> Result<bool, NbtIoError> {
+    ) -> Result<(), NbtIoError> {
         match request {
             ProviderRequest::LoadFull(coords) => {
                 let mut regions = handler.regions_mut().await;
@@ -155,7 +82,7 @@ impl ChunkProvider {
                 // The chunk data is still available, so we can just mark it as used and return early
                 if region.recover_cached_chunk(coords) {
                     // Drops the guard
-                    return Ok(false);
+                    return Ok(());
                 }
 
                 let chunk_nbt = region.load_chunk_nbt(coords).await?;
@@ -165,46 +92,14 @@ impl ChunkProvider {
 
                 match chunk_nbt {
                     Some(chunk_nbt) => {
-                        let mut decompressed = Vec::new();
-
-                        match chunk_nbt[0] {
-                            2 => {
-                                let mut decoder = ZlibDecoder::new(decompressed);
-                                decoder.write_all(&chunk_nbt[1..])?;
-                                decompressed = decoder.finish()?;
-                            },
-                            // GZip compression (not used in practice)
-                            1 => {
-                                let mut decoder = GzDecoder::new(decompressed);
-                                decoder.write_all(&chunk_nbt[1..])?;
-                                decompressed = decoder.finish()?;
-                            },
-                            _ =>
-                                return Err(IoError::new(
-                                    ErrorKind::InvalidData,
-                                    format!(
-                                        "Encountered invalid compression scheme ({}) for chunk at {}",
-                                        chunk_nbt[0],
-                                        coords.as_chunk()
-                                    ),
-                                )
-                                .into()),
-                        }
-
-                        let (raw_chunk, _) = deserialize_from_buffer::<RawChunk>(&decompressed)?;
-                        chunk_sender.send(raw_chunk.into()).await.map_err(|_| {
-                            io::Error::new(
-                                io::ErrorKind::BrokenPipe,
-                                "Failed to send chunk between threads",
-                            )
-                        })?;
-                        Ok(true)
+                        Self::decode_and_cache_chunk(handler, coords, chunk_nbt).await?;
                     }
                     None => {
                         log::warn!("Chunk generation not supported yet.");
-                        Ok(false)
                     }
                 }
+
+                Ok(())
             }
 
             ProviderRequest::Unload(coords) => {
@@ -212,14 +107,14 @@ impl ChunkProvider {
 
                 let region = match regions.loaded_region_at(coords) {
                     Some(region) => region,
-                    None => return Ok(false),
+                    None => return Ok(()),
                 };
 
                 // Mark the cached chunk data as inactive so that the region can potentially be unloaded
                 region.mark_chunk_inactive(coords);
 
                 if region.has_loaded_chunks() {
-                    return Ok(false);
+                    return Ok(());
                 }
 
                 // We can unload the region since it has no more loaded chunks
@@ -227,14 +122,57 @@ impl ChunkProvider {
                 drop(region);
                 let _region = match regions.remove_region(coords) {
                     Some(region) => region,
-                    None => return Ok(false),
+                    None => return Ok(()),
                 };
                 
                 drop(regions);
 
                 // TODO: write region to disk
-                Ok(false)
+                Ok(())
             }
+        }
+    }
+
+    async fn decode_and_cache_chunk(handler: RegionHandler, coords: Coordinate, chunk_nbt: Vec<u8>) -> Result<(), NbtIoError> {
+        let mut decompressed = Vec::new();
+
+        match chunk_nbt[0] {
+            2 => {
+                let mut decoder = ZlibDecoder::new(decompressed);
+                decoder.write_all(&chunk_nbt[1..])?;
+                decompressed = decoder.finish()?;
+            },
+            // GZip compression (not used in practice)
+            1 => {
+                let mut decoder = GzDecoder::new(decompressed);
+                decoder.write_all(&chunk_nbt[1..])?;
+                decompressed = decoder.finish()?;
+            },
+            _ =>
+                return Err(IoError::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "Encountered invalid compression scheme ({}) for chunk at {}",
+                        chunk_nbt[0],
+                        coords.as_chunk()
+                    ),
+                )
+                .into()),
+        }
+
+        let (raw_chunk, _) = deserialize_from_buffer::<RawChunk>(&decompressed)?;
+        let chunk: Chunk = raw_chunk.into();
+
+        let mut regions = handler.regions_mut().await;
+        match regions.loaded_region_at(chunk.coordinates()) {
+            Some(region) => {
+                handler.chunks_mut().await.cache_chunk(&mut *region, chunk);
+                Ok(())
+            },
+            None => Err(NbtIoError::Custom(
+                String::from("Attempted to cache chunk in an unloaded region")
+                    .into_boxed_str(),
+            )),
         }
     }
 }

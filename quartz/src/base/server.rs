@@ -10,7 +10,6 @@ use crate::{
     Registry,
     RUNNING,
 };
-use futures_lite::future;
 use linefeed::{
     complete::{Completer, Completion, Suffix},
     prompter::Prompter,
@@ -19,20 +18,11 @@ use linefeed::{
 };
 use log::*;
 use openssl::rsa::Rsa;
-use smol::{channel, net::TcpListener, Executor};
-use std::{
-    collections::HashMap,
-    error::Error,
-    net::TcpStream as StdTcpStream,
-    sync::{
-        atomic::Ordering,
-        mpsc::{self, Receiver, Sender},
-        Arc,
-        Mutex,
-    },
-    thread::{self, JoinHandle},
-    time::Duration,
-};
+// use smol::{channel, net::TcpListener, Executor};
+use tokio::net::TcpListener;
+use tokio::runtime::{Runtime, Builder};
+use tokio::task;
+use std::{collections::HashMap, error::Error, net::TcpStream as StdTcpStream, sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}, mpsc::{self, Receiver, Sender}}, thread::{self, JoinHandle}, time::Duration};
 
 /// The string form of the minecraft version quartz currently supports.
 pub const VERSION: &str = "1.17";
@@ -50,8 +40,7 @@ pub struct QuartzServer {
     console_command_handler: Option<JoinHandle<()>>,
     /// The ChunckProvider
     pub chunk_provider: ChunkProvider,
-    #[doc(hidden)]
-    shutdown_tcp_server: Option<channel::Sender<()>>,
+    tcp_server_runtime: Runtime
 }
 
 impl QuartzServer {
@@ -70,9 +59,18 @@ impl QuartzServer {
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
             console_command_handler: None,
-            chunk_provider: ChunkProvider::new("world", "./world/region", 4)
+            chunk_provider: ChunkProvider::new("world".to_owned(), "./world/region")
                 .expect("Error making chunk provider"),
-            shutdown_tcp_server: None,
+            tcp_server_runtime: Builder::new_multi_thread()
+                .enable_io()
+                // TODO: remove after keep alive is implemented on the tick
+                .enable_time()
+                .thread_name_fn(|| {
+                    static THREAD_ID: AtomicUsize = AtomicUsize::new(0);
+                    format!("tcp-thread#{}", THREAD_ID.fetch_add(1, Ordering::AcqRel))
+                })
+                .build()
+                .expect("Failed to construct TCP server runtime")
         }
     }
 
@@ -200,35 +198,18 @@ impl QuartzServer {
         let config = config()
             .try_read()
             .expect("Config locked during initialization.");
-        let listener = smol::block_on(TcpListener::bind(format!(
-            "{}:{}",
-            config.server_ip, config.port
-        )))?;
+        let addr = format!("{}:{}", config.server_ip, config.port);
         drop(config);
 
         let sync_packet_sender = self.sync_packet_sender.clone();
 
-        // TODO: consider adding more threads
-        let (shutdown_signal, shutdown) = channel::unbounded::<()>();
-        self.shutdown_tcp_server.insert(shutdown_signal);
-        let executor = Arc::new(Executor::new());
-        let executor_clone = executor.clone();
-        thread::Builder::new()
-            .name("TCP Server Thread".to_owned())
-            .spawn(move || future::block_on(executor_clone.run(shutdown.recv())))?;
-        executor
-            .spawn(Self::tcp_server(
-                executor.clone(),
-                listener,
-                sync_packet_sender,
-            ))
-            .detach();
+        let listener = self.tcp_server_runtime.block_on(TcpListener::bind(addr))?;
+        self.tcp_server_runtime.spawn(Self::tcp_server(listener, sync_packet_sender));
 
         Ok(())
     }
 
     async fn tcp_server(
-        executor: Arc<Executor<'static>>,
         listener: TcpListener,
         sync_packet_sender: Sender<WrappedServerBoundPacket>,
     ) {
@@ -251,19 +232,18 @@ impl QuartzServer {
                     debug!("Client connected");
 
                     // Construct a connection wrapper around the socket
-                    let conn = AsyncClientConnection::new(
+                    let (conn, driver) = AsyncClientConnection::new(
                         next_connection_id,
                         socket,
                         sync_packet_sender.clone(),
                     );
 
                     // Register the client
-                    let (write_handle, driver) = conn.create_write_handle();
                     let result = sync_packet_sender.send(WrappedServerBoundPacket::new(
                         0,
                         ServerBoundPacket::ClientConnected {
                             id: next_connection_id,
-                            write_handle,
+                            write_handle: conn.write_handle.clone(),
                         },
                     ));
                     if let Err(e) = result {
@@ -271,13 +251,11 @@ impl QuartzServer {
                         return;
                     }
 
-                    executor.spawn(driver).detach();
+                    task::spawn(driver);
 
                     // Spawn a thread to handle the connection asynchronously
                     let key_pair_clone = key_pair.clone();
-                    executor
-                        .spawn(async move { handle_async_connection(conn, key_pair_clone).await })
-                        .detach();
+                    task::spawn(async move { handle_async_connection(conn, key_pair_clone).await });
 
                     next_connection_id += 1;
                 }
@@ -290,7 +268,6 @@ impl QuartzServer {
 
     pub(crate) async fn tick(&mut self) {
         self.handle_packets().await;
-        self.chunk_provider.flush_queue().await;
     }
 
     async fn handle_packets(&mut self) {
@@ -321,13 +298,14 @@ impl Drop for QuartzServer {
 
         // Send a connection to the server daemon to shut it down
         match config().try_read() {
-            Some(guard) => {
+            Ok(guard) => {
                 let _ = StdTcpStream::connect(format!("{}:{}", guard.server_ip, guard.port));
             }
-            None => warn!("Failed to shutdown TCP thread."),
+            Err(_) => warn!("Failed to shutdown TCP thread."),
         }
 
-        // Dropping shutdown_tcp_server will shutdown the tcp server by closing the channel
+        // Dropping tcp_server_runtime performs the cleanup for us
+        // TODO: consider manually shutting down the runtime with a timeout
     }
 }
 

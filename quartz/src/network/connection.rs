@@ -8,20 +8,17 @@ use crate::network::{
     *,
 };
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
-use futures_lite::*;
 use log::*;
 use openssl::{
     error::ErrorStack,
     symm::{Cipher, Crypter, Mode},
 };
-use smol::{
-    channel::{self, Sender},
-    lock::Mutex,
-    net::TcpStream,
-};
+use tokio::{net::tcp::{OwnedReadHalf, OwnedWriteHalf}, sync::{Mutex, mpsc::{self, UnboundedSender}}};
+use tokio::net::TcpStream;
+use tokio::io::{AsyncWriteExt, AsyncReadExt};
+use std::future::Future;
 use std::{
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result, Write},
-    net::Shutdown,
     result::Result as StdResult,
     sync::{mpsc::Sender as StdSender, Arc},
 };
@@ -45,17 +42,17 @@ pub enum ConnectionState {
 /// Assists in pre-processing connection data, such as handling compression and encryption. If the
 /// compression threshold is greater than zero, then Zlib compression is applied to packets whose
 /// body exceeds the threshold size. If encryption is enabled, then AES-CFB8 encryption is used.
-pub struct IOHandle {
+pub struct IoHandle {
     operation_buffer: PacketBuffer,
     compression_threshold: i32,
     encrypter: Option<Crypter>,
     decrypter: Option<Crypter>,
 }
 
-impl IOHandle {
+impl IoHandle {
     /// Creates a new I/O handle with an internal buffer of 4096 bytes.
     pub fn new() -> Self {
-        IOHandle {
+        IoHandle {
             operation_buffer: PacketBuffer::new(4096),
             compression_threshold: -1,
             encrypter: None,
@@ -69,7 +66,7 @@ impl IOHandle {
         encrypter: Option<&mut Crypter>,
         source: &[u8],
         temp: &mut PacketBuffer,
-        stream: &mut TcpStream,
+        stream: &mut OwnedWriteHalf,
     ) -> Result<()> {
         if let Some(encrypter) = encrypter {
             temp.resize(source.len());
@@ -124,7 +121,7 @@ impl IOHandle {
     async fn write_packet_data(
         &mut self,
         packet_data: &mut PacketBuffer,
-        stream: &mut TcpStream,
+        stream: &mut OwnedWriteHalf,
     ) -> Result<()> {
         // Prepare the operation buffer
         self.operation_buffer.clear();
@@ -158,7 +155,7 @@ impl IOHandle {
                 packet_data.write_varying(&(data_len as i32));
                 packet_data.write_bytes(&self.operation_buffer[..]);
 
-                result = IOHandle::write_encrypted(
+                result = IoHandle::write_encrypted(
                     self.encrypter.as_mut(),
                     &packet_data[..],
                     &mut self.operation_buffer,
@@ -175,7 +172,7 @@ impl IOHandle {
                 self.operation_buffer.write_one(0);
                 self.operation_buffer.write_bytes(&packet_data[..]);
 
-                result = IOHandle::write_encrypted(
+                result = IoHandle::write_encrypted(
                     self.encrypter.as_mut(),
                     &self.operation_buffer[..],
                     packet_data,
@@ -190,7 +187,7 @@ impl IOHandle {
                 .write_varying(&(packet_data.len() as i32));
             self.operation_buffer.write_bytes(&packet_data[..]);
 
-            result = IOHandle::write_encrypted(
+            result = IoHandle::write_encrypted(
                 self.encrypter.as_mut(),
                 &self.operation_buffer[..],
                 packet_data,
@@ -205,10 +202,10 @@ impl IOHandle {
     /// Reads the packet header, collects the remaining bytes and decrypts and decompresses the packet,
     /// returning the final length of the fully processed packet. The curser of the given packet buffer
     /// will start at the packet ID.
-    pub async fn collect_packet(
+    async fn collect_packet(
         &mut self,
         packet_buffer: &mut PacketBuffer,
-        stream: &mut TcpStream,
+        stream: &mut OwnedReadHalf,
         decrypt: bool,
     ) -> StdResult<usize, PacketSerdeError> {
         if decrypt {
@@ -295,13 +292,16 @@ impl IOHandle {
 /// A handle for asynchronously writing packets to a client connection. While the time at which the packets
 /// will be processed cannot be guaranteed, packets will always be sent in the order that they are passed
 /// to this handle.
-#[derive(Debug)]
-pub struct AsyncWriteHandle(Sender<WrappedClientBoundPacket>);
+// TODO: consider bounding the channel
+#[derive(Clone, Debug)]
+pub struct AsyncWriteHandle(UnboundedSender<WrappedClientBoundPacket>);
 
 impl AsyncWriteHandle {
+    // These functions are async so that if we bound the channel it's not a breaking change
+
     /// Attempts to send the given wrapped packet, logging an error if the operation fails.
     async fn try_send(&self, packet: WrappedClientBoundPacket) {
-        if let Err(e) = self.0.send(packet).await {
+        if let Err(e) = self.0.send(packet) {
             error!("Failed to forward client-bound packet to serializer: {}", e);
         }
     }
@@ -330,16 +330,14 @@ impl AsyncWriteHandle {
 pub struct AsyncClientConnection {
     /// The client ID.
     pub id: usize,
-    /// The raw TCP stream the client is connected with.
-    pub stream: TcpStream,
+    read_handle: OwnedReadHalf,
+    pub write_handle: AsyncWriteHandle,
     /// The packet buffer used when reading packet bytes.
     pub read_buffer: PacketBuffer,
-    /// The packet buffer used when writing packet data before sending it.
-    write_buffer: PacketBuffer,
     /// The state of the connection.
     pub connection_state: ConnectionState,
     /// A handle to the packet pre-processor.
-    io_handle: Arc<Mutex<IOHandle>>,
+    io_handle: Arc<Mutex<IoHandle>>,
     /// A channel to forward packets to the server thread.
     sync_packet_sender: StdSender<WrappedServerBoundPacket>,
 }
@@ -350,31 +348,35 @@ impl AsyncClientConnection {
         id: usize,
         stream: TcpStream,
         sync_packet_sender: StdSender<WrappedServerBoundPacket>,
-    ) -> Self {
-        AsyncClientConnection {
+    ) -> (Self, impl Future<Output = ()>) {
+        let (read_handle, write_handle) = stream.into_split();
+        let io_handle = Arc::new(Mutex::new(IoHandle::new()));
+        let (write_handle, driver) = Self::create_write_handle(write_handle, io_handle.clone());
+
+        let conn = AsyncClientConnection {
             id,
-            stream,
+            read_handle,
+            write_handle,
             read_buffer: PacketBuffer::new(4096),
-            write_buffer: PacketBuffer::new(4096),
-            io_handle: Arc::new(Mutex::new(IOHandle::new())),
+            io_handle,
             connection_state: ConnectionState::Handshake,
             sync_packet_sender,
-        }
+        };
+
+        (conn, driver)
     }
 
-    /// Creates a handle to write packets to this connection asynchronously and returns a future
-    /// which drives this async write handle.
-    pub fn create_write_handle(&self) -> (AsyncWriteHandle, impl Future<Output = ()>) {
-        // Setup variables to be captured
-        let mut stream = self.stream.clone();
-        let io_handle = self.io_handle.clone();
-        let (packet_sender, packet_receiver) = channel::unbounded::<WrappedClientBoundPacket>();
+    fn create_write_handle(mut write_handle: OwnedWriteHalf, io_handle: Arc<Mutex<IoHandle>>) -> (AsyncWriteHandle, impl Future<Output = ()>) {
+        let (
+            packet_sender,
+            mut packet_receiver
+        ) = mpsc::unbounded_channel::<WrappedClientBoundPacket>();
 
         // Create a future to drive the handle
         let driver = async move {
             let mut packet_buffer = PacketBuffer::new(4096);
 
-            while let Ok(wrapped_packet) = packet_receiver.recv().await {
+            while let Some(wrapped_packet) = packet_receiver.recv().await {
                 match wrapped_packet {
                     WrappedClientBoundPacket::Packet(packet) => {
                         packet_buffer.clear();
@@ -383,7 +385,7 @@ impl AsyncClientConnection {
                         if let Err(e) = io_handle
                             .lock()
                             .await
-                            .write_packet_data(&mut packet_buffer, &mut stream)
+                            .write_packet_data(&mut packet_buffer, &mut write_handle)
                             .await
                         {
                             error!("Failed to send packet: {}", e);
@@ -391,16 +393,15 @@ impl AsyncClientConnection {
                     }
 
                     WrappedClientBoundPacket::Buffer(buffer) => {
-                        if let Err(e) = stream.write_all(&buffer[..]).await {
+                        if let Err(e) = write_handle.write_all(&buffer[..]).await {
                             error!("Failed to send buffer: {}", e);
                         }
                     }
 
                     WrappedClientBoundPacket::Disconnect => {
-                        if let Err(e) = stream.shutdown(Shutdown::Both) {
-                            error!("Failed to disconnect client: {}", e);
+                        if let Err(e) = write_handle.shutdown().await {
+                            warn!("Failed to disconnect client: {}", e);
                         }
-
                         return;
                     }
                 }
@@ -408,22 +409,6 @@ impl AsyncClientConnection {
         };
 
         (AsyncWriteHandle(packet_sender), driver)
-    }
-
-    /// Sends the given packet to the client.
-    pub async fn send_packet(&mut self, packet: &ClientBoundPacket) {
-        self.write_buffer.clear();
-        self.write_buffer.write(packet);
-
-        if let Err(e) = self
-            .io_handle
-            .lock()
-            .await
-            .write_packet_data(&mut self.write_buffer, &mut self.stream)
-            .await
-        {
-            error!("Failed to send packet: {}", e);
-        }
     }
 
     /// Forwards the given packet to the server thread for handling.
@@ -461,7 +446,7 @@ impl AsyncClientConnection {
                 .io_handle
                 .lock()
                 .await
-                .collect_packet(&mut self.read_buffer, &mut self.stream, false)
+                .collect_packet(&mut self.read_buffer, &mut self.read_handle, false)
                 .await;
         }
         // Prepare for the next packet
@@ -474,7 +459,7 @@ impl AsyncClientConnection {
 
         // Read the first chunk, this is what blocks the thread
         let read = self
-            .stream
+            .read_handle
             .read(&mut self.read_buffer[..])
             .await
             .map_err(|error| PacketSerdeError::Network(error))?;
@@ -497,19 +482,12 @@ impl AsyncClientConnection {
                     .io_handle
                     .lock()
                     .await
-                    .collect_packet(&mut self.read_buffer, &mut self.stream, true)
+                    .collect_packet(&mut self.read_buffer, &mut self.read_handle, true)
                     .await;
             }
         }
 
         // This is only reached if read == 0 or it's a legacy packet
         Ok(read)
-    }
-
-    /// Closes the underlying stream without sending a packet to the client beforehand.
-    pub fn shutdown(&self) {
-        if let Err(e) = self.stream.shutdown(Shutdown::Both) {
-            error!("Failed to shutdown async client connection: {}", e);
-        }
     }
 }

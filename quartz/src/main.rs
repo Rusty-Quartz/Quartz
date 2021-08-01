@@ -12,8 +12,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let config: Config;
     match load_config(Path::new("./config.json")) {
         Ok(cfg) => config = cfg,
-        Err(e) => {
-            error!("Failed to load config: {}", e);
+        Err(error) => {
+            error!("Failed to load config: {}", error);
             return Ok(());
         }
     }

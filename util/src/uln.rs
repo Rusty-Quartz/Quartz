@@ -9,6 +9,7 @@ use std::{
     error::Error,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
+    marker::PhantomData,
     num::NonZeroUsize,
     ops::Deref,
     ptr::{self, NonNull},
@@ -310,12 +311,13 @@ impl Ord for UnlocalizedName {
 }
 
 /// A dynamically-sized version of [`UnlocalizedName`]. This type is to `UnlocalizedName` as `str`
-/// is to `String`.
+/// is to `Box<str>`.
 ///
 /// [`UnlocalizedName`]: crate::uln::UnlocalizedName
 #[repr(transparent)]
 pub struct UlnStr {
-    _dst: [()],
+    _type: PhantomData<[u8]>,
+    _mem: [()],
 }
 
 impl UlnStr {

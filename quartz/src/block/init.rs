@@ -6,7 +6,6 @@ use crate::{
         *,
     },
 };
-use itertools::Itertools;
 use quartz_util::uln::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -35,7 +34,10 @@ pub(crate) fn attach_behavior(raw: &mut HashMap<String, RawBlockInfo>) {
 pub(crate) fn make_block_list(raw: &HashMap<String, RawBlockInfo>) -> Vec<Block> {
     let mut block_list = Vec::new();
 
-    for (name, block_info) in raw.into_iter().sorted_by_key(|(_, info)| info.interm_id) {
+    let mut raw = raw.into_iter().collect::<Vec<_>>();
+    raw.sort_by_key(|(_, info)| info.interm_id);
+
+    for (name, block_info) in raw {
         let uln = UnlocalizedName::from_str(&name)
             .expect("Invalid block name encountered during registration.");
 

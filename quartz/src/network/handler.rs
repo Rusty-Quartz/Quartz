@@ -10,7 +10,7 @@ use crate::{
 };
 use futures_util::future::join_all;
 use hex::ToHex;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use log::{debug, error};
 use openssl::{
     pkey::Private,
@@ -25,7 +25,6 @@ use rand::{thread_rng, Rng};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
-use smol::Timer;
 use std::{
     str::FromStr,
     sync::{mpsc::Sender, Arc},
@@ -80,13 +79,13 @@ impl AsyncPacketHandler {
     }
 
     async fn handle_ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
-        conn.send_packet(&ClientBoundPacket::Pong { payload }).await;
+        conn.write_handle.send_packet(ClientBoundPacket::Pong { payload }).await;
     }
 
     async fn handle_login_start(&mut self, conn: &mut AsyncClientConnection, name: &String) {
         // If we are not running in online mode we just send LoginSuccess and skip encryption
-        if !config().read().await.online_mode {
-            conn.send_packet(&ClientBoundPacket::LoginSuccess {
+        if !config().read().unwrap().online_mode {
+            conn.write_handle.send_packet(ClientBoundPacket::LoginSuccess {
                 uuid: Uuid::from_u128(0),
                 username: name.clone(),
             })
@@ -116,12 +115,12 @@ impl AsyncPacketHandler {
             Ok(der) => pub_key_der = der,
             Err(e) => {
                 error!("Failed to convert public key to der: {}", e);
-                conn.shutdown();
+                conn.write_handle.shutdown_connection().await;
                 return;
             }
         }
 
-        conn.send_packet(&ClientBoundPacket::EncryptionRequest {
+        conn.write_handle.send_packet(ClientBoundPacket::EncryptionRequest {
             server_id: "".to_owned(),
             public_key: pub_key_der.into_boxed_slice(),
             verify_token: verify_token.to_vec().into_boxed_slice(),
@@ -142,7 +141,7 @@ impl AsyncPacketHandler {
                 .private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1)
         {
             error!("Failed to decrypt verify token: {}", e);
-            conn.shutdown();
+            conn.write_handle.shutdown_connection().await;
             return;
         }
         decrypted_verify = decrypted_verify[.. self.verify_token.len()].to_vec();
@@ -153,7 +152,8 @@ impl AsyncPacketHandler {
                 conn.id, self.verify_token, decrypted_verify
             );
             return conn
-                .send_packet(&ClientBoundPacket::Disconnect {
+                .write_handle
+                .send_packet(ClientBoundPacket::Disconnect {
                     reason: Box::new(Component::colored(
                         "Error verifying encryption".to_owned(),
                         PredefinedColor::Red,
@@ -169,7 +169,7 @@ impl AsyncPacketHandler {
                 .private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1)
         {
             error!("Failed to decrypt secret key: {}", e);
-            conn.shutdown();
+            conn.write_handle.shutdown_connection().await;
             return;
         }
         decrypted_secret = decrypted_secret[.. 16].to_vec();
@@ -180,7 +180,7 @@ impl AsyncPacketHandler {
                 "Failed to initialize encryption for client connetion: {}",
                 e
             );
-            conn.shutdown();
+            conn.write_handle.shutdown_connection().await;
             return;
         }
 
@@ -192,7 +192,7 @@ impl AsyncPacketHandler {
             Ok(der) => hasher.update(&*der),
             Err(e) => {
                 error!("Failed to convert public key to der: {}", e);
-                conn.shutdown();
+                conn.write_handle.shutdown_connection().await;
                 return;
             }
         }
@@ -201,9 +201,7 @@ impl AsyncPacketHandler {
         let hash_hex;
 
         // Big thanks to https://gist.github.com/RoccoDev/8fa130f1946f89702f799f89b8469bc9 for writing this minecraft hashing code
-        lazy_static! {
-            static ref LEADING_ZERO_REGEX: Regex = Regex::new(r#"^0+"#).unwrap();
-        }
+        static LEADING_ZERO_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^0+"#).unwrap());
 
         let negative = (hash[0] & 0x80) == 0x80;
 
@@ -270,7 +268,7 @@ impl AsyncPacketHandler {
 
         match Uuid::from_str(&string_uuid) {
             Ok(uuid) => {
-                conn.send_packet(&ClientBoundPacket::LoginSuccess {
+                conn.write_handle.send_packet(ClientBoundPacket::LoginSuccess {
                     uuid,
                     username: self.username.clone(),
                 })
@@ -312,8 +310,8 @@ impl AsyncPacketHandler {
             // We sleep to avoid spamming the client with KeepAlive packets
             // The client would disconnect if they didn't get a packet before 20 seconds
             // So we wait 10 allowing 10 seconds of delay between packets
-            Timer::after(Duration::from_secs(1)).await;
-            conn.send_packet(&ClientBoundPacket::KeepAlive {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            conn.write_handle.send_packet(ClientBoundPacket::KeepAlive {
                 keep_alive_id: self.keep_alive,
             })
             .await;
@@ -425,7 +423,7 @@ impl QuartzServer {
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
         let player_count = self.client_list.online_count().to_string();
-        let config = config().read().await;
+        let config = config().read().unwrap();
         let motd = &config.motd;
         let max_players = config.max_players.to_string();
 
@@ -468,7 +466,7 @@ impl QuartzServer {
     }
 
     async fn handle_status_request(&mut self, sender: usize) {
-        let config = config().read().await;
+        let config = config().read().unwrap();
         let json_response = json!({
             "version": {
                 "name": server::VERSION,
@@ -1044,14 +1042,14 @@ pub async fn handle_async_connection(
                 else {
                     if let Err(e) = handle_packet(&mut conn, &mut async_handler, packet_len).await {
                         error!("Failed to handle packet: {}", e);
-                        conn.shutdown();
+                        conn.write_handle.shutdown_connection().await;
                         break;
                     }
                 }
             }
             Err(e) => {
                 error!("Error in connection handler: {}", e);
-                conn.shutdown();
+                conn.write_handle.shutdown_connection().await;
                 break;
             }
         }
