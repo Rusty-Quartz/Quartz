@@ -260,7 +260,7 @@ impl Hash for UnlocalizedName {
 impl PartialEq for UnlocalizedName {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.meta == other.meta && self.repr() == other.repr()
+        &**self == &**other
     }
 }
 
@@ -269,14 +269,14 @@ impl Eq for UnlocalizedName {}
 impl PartialEq<UlnStr> for UnlocalizedName {
     #[inline]
     fn eq(&self, other: &UlnStr) -> bool {
-        self.meta == other.meta() && self.repr() == other.repr()
+        &**self == other
     }
 }
 
 impl PartialEq<&UlnStr> for UnlocalizedName {
     #[inline]
     fn eq(&self, other: &&UlnStr) -> bool {
-        self.meta == other.meta() && self.repr() == other.repr()
+        &**self == *other
     }
 }
 
@@ -284,8 +284,8 @@ impl PartialEq<Cow<'_, UlnStr>> for UnlocalizedName {
     #[inline]
     fn eq(&self, other: &Cow<'_, UlnStr>) -> bool {
         match other {
-            Cow::Borrowed(uln_str) => self == uln_str,
-            Cow::Owned(uln) => self == uln,
+            &Cow::Borrowed(uln_str) => &**self == uln_str,
+            Cow::Owned(uln) => &**self == &**uln,
         }
     }
 }
@@ -293,20 +293,14 @@ impl PartialEq<Cow<'_, UlnStr>> for UnlocalizedName {
 impl PartialOrd for UnlocalizedName {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        let namespace_ordering = self.namespace().cmp(other.namespace());
-
-        if namespace_ordering == Ordering::Equal {
-            Some(self.identifier().cmp(other.identifier()))
-        } else {
-            Some(namespace_ordering)
-        }
+        (&**self).partial_cmp(&**other)
     }
 }
 
 impl Ord for UnlocalizedName {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        (&**self).cmp(&**other)
     }
 }
 
@@ -316,7 +310,7 @@ impl Ord for UnlocalizedName {
 /// [`UnlocalizedName`]: crate::uln::UnlocalizedName
 #[repr(transparent)]
 pub struct UlnStr {
-    _type: PhantomData<[u8]>,
+    _type: PhantomData<str>,
     _mem: [()],
 }
 
@@ -602,7 +596,7 @@ impl Eq for UlnStr {}
 impl PartialEq<UnlocalizedName> for UlnStr {
     #[inline]
     fn eq(&self, other: &UnlocalizedName) -> bool {
-        other == self
+        self == &**other
     }
 }
 
@@ -611,7 +605,7 @@ impl PartialEq<Cow<'_, UlnStr>> for UlnStr {
     fn eq(&self, other: &Cow<'_, UlnStr>) -> bool {
         match other {
             &Cow::Borrowed(uln_str) => self == uln_str,
-            Cow::Owned(uln) => self == uln,
+            Cow::Owned(uln) => self == &**uln,
         }
     }
 }

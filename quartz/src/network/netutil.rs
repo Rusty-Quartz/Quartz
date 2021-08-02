@@ -312,12 +312,12 @@ impl PacketBuffer {
     }
 
     #[inline]
-    pub fn write<T: WriteToPacket>(&mut self, value: &T) {
+    pub fn write<T: WriteToPacket + ?Sized>(&mut self, value: &T) {
         value.write_to(self);
     }
 
     #[inline]
-    pub fn write_varying<T: WriteToPacket>(&mut self, value: &T) {
+    pub fn write_varying<T: WriteToPacket + ?Sized>(&mut self, value: &T) {
         value.varying_write_to(self);
     }
 

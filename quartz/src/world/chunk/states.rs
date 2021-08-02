@@ -1,15 +1,17 @@
-use std::fmt::{self, Display, Formatter};
-use std::error::Error;
-use std::num::{NonZeroU8, NonZeroUsize};
 use super::{Palette, MAX_BITS_PER_BLOCK, MIN_BITS_PER_BLOCK};
 use crate::StateID;
+use std::{
+    error::Error,
+    fmt::{self, Display, Formatter},
+    num::{NonZeroU8, NonZeroUsize},
+};
 
 #[derive(Clone)]
 pub struct CompactStateBuffer {
     data: Vec<u64>,
     long_index: usize,
     bit_index: u8,
-    meta: BufferMetadata
+    meta: BufferMetadata,
 }
 
 impl CompactStateBuffer {
@@ -18,18 +20,21 @@ impl CompactStateBuffer {
             data: Vec::new(),
             long_index: 0,
             bit_index: 0,
-            meta: BufferMetadata::new(unsafe { NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK) })
+            meta: BufferMetadata::new(unsafe { NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK) }),
         }
     }
 
     pub fn new(data: Vec<u64>, bits_per_entry: NonZeroU8) -> Self {
-        assert!(bits_per_entry.get() <= 64, "`bits_per_entry` cannot be greater than 64");
+        assert!(
+            bits_per_entry.get() <= 64,
+            "`bits_per_entry` cannot be greater than 64"
+        );
 
         CompactStateBuffer {
             data,
             long_index: 0,
             bit_index: 0,
-            meta: BufferMetadata::new(bits_per_entry)
+            meta: BufferMetadata::new(bits_per_entry),
         }
     }
 
@@ -55,7 +60,8 @@ impl CompactStateBuffer {
 
     #[inline]
     pub fn shrink_to_fit(&mut self) {
-        self.data.truncate(Self::required_capacity(self.meta.bits_per_entry.get()));
+        self.data
+            .truncate(Self::required_capacity(self.meta.bits_per_entry.get()));
     }
 
     #[inline]
@@ -71,7 +77,12 @@ impl CompactStateBuffer {
 
     #[inline]
     pub fn advance_one(&mut self) {
-        advance_one_internal(&mut self.long_index, &mut self.bit_index, self.meta.bits_per_entry, self.meta.data_bits_per_long);
+        advance_one_internal(
+            &mut self.long_index,
+            &mut self.bit_index,
+            self.meta.bits_per_entry,
+            self.meta.data_bits_per_long,
+        );
     }
 
     #[inline]
@@ -107,7 +118,13 @@ impl CompactStateBuffer {
     }
 
     pub fn write_entry(&mut self, entry: usize) {
-        write_entry_to_vec(&mut self.data, self.long_index, self.bit_index, entry, self.meta.bits_per_entry);
+        write_entry_to_vec(
+            &mut self.data,
+            self.long_index,
+            self.bit_index,
+            entry,
+            self.meta.bits_per_entry,
+        );
         self.advance_one();
     }
 
@@ -119,7 +136,7 @@ impl CompactStateBuffer {
             long_index,
             bit_index,
             entry,
-            self.meta.bits_per_entry
+            self.meta.bits_per_entry,
         )
     }
 
@@ -127,26 +144,31 @@ impl CompactStateBuffer {
         let mut direct = CompactStateBuffer::new(
             vec![0; Self::required_capacity(MAX_BITS_PER_BLOCK)],
             // Safety: MAX_BITS_PER_BLOCK is not zero
-            unsafe {
-                NonZeroU8::new_unchecked(MAX_BITS_PER_BLOCK)
-            }
+            unsafe { NonZeroU8::new_unchecked(MAX_BITS_PER_BLOCK) },
         );
-    
+
         let mut long_index = 0;
         let mut bit_index = 0;
-    
+
         loop {
             let entry = match self.entry_at(long_index, bit_index) {
                 Some(entry) => entry,
-                None => break
+                None => break,
             };
 
-            advance_one_internal(&mut long_index, &mut bit_index, self.meta.bits_per_entry, self.meta.data_bits_per_long);
-    
-            let state = palette.state_for(entry).ok_or(PaletteConversionError::IndexOutOfRange)?;
+            advance_one_internal(
+                &mut long_index,
+                &mut bit_index,
+                self.meta.bits_per_entry,
+                self.meta.data_bits_per_long,
+            );
+
+            let state = palette
+                .state_for(entry)
+                .ok_or(PaletteConversionError::IndexOutOfRange)?;
             direct.write_entry(state as usize);
         }
-    
+
         direct.reset_cursor();
         *self = direct;
         Ok(())
@@ -188,18 +210,18 @@ impl CompactStateBuffer {
         loop {
             let mut long = match self.data.get(read_long_index) {
                 Some(&long) => long,
-                None => break
+                None => break,
             };
 
             read_long_index += 1;
 
-            for _ in 0..old_entries_per_long {
+            for _ in 0 .. old_entries_per_long {
                 let state = (long & old_mask) as u16;
                 long >>= old_bits_per_entry;
 
                 match map_state(state) {
                     Some(index) => self.write_entry(index),
-                    None => return Err(PaletteConversionError::MissingState)
+                    None => return Err(PaletteConversionError::MissingState),
                 }
             }
         }
@@ -210,18 +232,27 @@ impl CompactStateBuffer {
     }
 
     pub fn alter<F>(&mut self, mut f: F)
-    where
-        F: FnMut(usize) -> Option<usize>
-    {
+    where F: FnMut(usize) -> Option<usize> {
         let mut long_index = 0;
         let mut bit_index = 0;
 
         while let Some(entry) = self.peek_entry() {
             if let Some(altered) = f(entry) {
-                write_entry_to(self.data.as_mut(), long_index, bit_index, altered, self.meta.bits_per_entry);
+                write_entry_to(
+                    self.data.as_mut(),
+                    long_index,
+                    bit_index,
+                    altered,
+                    self.meta.bits_per_entry,
+                );
             }
 
-            advance_one_internal(&mut long_index, &mut bit_index, self.meta.bits_per_entry, self.meta.data_bits_per_long);
+            advance_one_internal(
+                &mut long_index,
+                &mut bit_index,
+                self.meta.bits_per_entry,
+                self.meta.data_bits_per_long,
+            );
         }
     }
 
@@ -240,17 +271,17 @@ impl CompactStateBuffer {
         // The change in bits per entry doesn't matter when allocating
         let mut modified = CompactStateBuffer::new(
             vec![0; Self::required_capacity(new_bits_per_entry.get())],
-            new_bits_per_entry
+            new_bits_per_entry,
         );
-    
+
         for mut long in self.data.iter().copied() {
-            for _ in 0..self.meta.entries_per_long.get() {
+            for _ in 0 .. self.meta.entries_per_long.get() {
                 let entry = (long & self.meta.mask) as usize;
                 long >>= self.meta.bits_per_entry.get();
                 modified.write_entry(entry);
             }
         }
-    
+
         modified.reset_cursor();
         *self = modified;
     }
@@ -259,7 +290,8 @@ impl CompactStateBuffer {
         // This only works if new BPE is less than old BPE
         assert!(
             new_bits_per_entry < self.meta.bits_per_entry,
-            "cannot modify bits per entry in-place unless the new bits per entry value is less than the current value"
+            "cannot modify bits per entry in-place unless the new bits per entry value is less \
+             than the current value"
         );
 
         let old_bits_per_entry = self.meta.bits_per_entry.get();
@@ -274,12 +306,12 @@ impl CompactStateBuffer {
         loop {
             let mut long = match self.data.get(read_long_index) {
                 Some(&long) => long,
-                None => break
+                None => break,
             };
 
             read_long_index += 1;
 
-            for _ in 0..old_entries_per_long {
+            for _ in 0 .. old_entries_per_long {
                 let entry = (long & old_mask) as usize;
                 long >>= old_bits_per_entry;
                 self.write_entry(entry);
@@ -293,7 +325,8 @@ impl CompactStateBuffer {
     #[inline]
     fn index_nth_entry(&self, n: usize) -> (usize, u8) {
         let long_index = n / NonZeroUsize::from(self.meta.entries_per_long);
-        let bit_index = (n - long_index * self.meta.entries_per_long.get() as usize) as u8 * self.meta.bits_per_entry.get();
+        let bit_index = (n - long_index * self.meta.entries_per_long.get() as usize) as u8
+            * self.meta.bits_per_entry.get();
 
         (long_index, bit_index)
     }
@@ -308,7 +341,7 @@ impl CompactStateBuffer {
 struct CompactStateBufferIter<'a> {
     buffer: &'a CompactStateBuffer,
     long_index: usize,
-    bit_index: u8
+    bit_index: u8,
 }
 
 impl<'a> CompactStateBufferIter<'a> {
@@ -316,7 +349,7 @@ impl<'a> CompactStateBufferIter<'a> {
         Self {
             buffer,
             long_index: 0,
-            bit_index: 0
+            bit_index: 0,
         }
     }
 }
@@ -333,7 +366,7 @@ impl Iterator for CompactStateBufferIter<'_> {
                 &mut self.long_index,
                 &mut self.bit_index,
                 self.buffer.meta.bits_per_entry,
-                self.buffer.meta.data_bits_per_long
+                self.buffer.meta.data_bits_per_long,
             );
         }
         entry
@@ -341,7 +374,12 @@ impl Iterator for CompactStateBufferIter<'_> {
 }
 
 #[inline]
-fn advance_one_internal(long_index: &mut usize, bit_index: &mut u8, bits_per_entry: NonZeroU8, data_bits_per_long: NonZeroU8) {
+fn advance_one_internal(
+    long_index: &mut usize,
+    bit_index: &mut u8,
+    bits_per_entry: NonZeroU8,
+    data_bits_per_long: NonZeroU8,
+) {
     if *bit_index + bits_per_entry.get() < data_bits_per_long.get() {
         *bit_index += bits_per_entry.get();
     } else {
@@ -350,7 +388,13 @@ fn advance_one_internal(long_index: &mut usize, bit_index: &mut u8, bits_per_ent
     }
 }
 
-fn write_entry_to(dest: &mut [u64], long_index: usize, bit_index: u8, entry: usize, bits_per_entry: NonZeroU8) -> bool {
+fn write_entry_to(
+    dest: &mut [u64],
+    long_index: usize,
+    bit_index: u8,
+    entry: usize,
+    bits_per_entry: NonZeroU8,
+) -> bool {
     debug_assert!(
         entry < (1 << bits_per_entry.get()),
         "Index must be able to fit in allocated bits"
@@ -368,12 +412,24 @@ fn write_entry_to(dest: &mut [u64], long_index: usize, bit_index: u8, entry: usi
     true
 }
 
-fn write_entry_to_vec(dest: &mut Vec<u64>, long_index: usize, bit_index: u8, entry: usize, bits_per_entry: NonZeroU8) {
+fn write_entry_to_vec(
+    dest: &mut Vec<u64>,
+    long_index: usize,
+    bit_index: u8,
+    entry: usize,
+    bits_per_entry: NonZeroU8,
+) {
     if long_index >= dest.len() {
         dest.push(0);
     }
 
-    let result = write_entry_to(dest.as_mut_slice(), long_index, bit_index, entry, bits_per_entry);
+    let result = write_entry_to(
+        dest.as_mut_slice(),
+        long_index,
+        bit_index,
+        entry,
+        bits_per_entry,
+    );
     debug_assert!(
         result,
         "Failed to expand vec to required capacity in compact state buffer."
@@ -384,7 +440,7 @@ fn write_entry_to_vec(dest: &mut Vec<u64>, long_index: usize, bit_index: u8, ent
 pub enum PaletteConversionError {
     IndexOutOfRange,
     MissingState,
-    PaletteTooLarge
+    PaletteTooLarge,
 }
 
 impl Display for PaletteConversionError {
@@ -392,7 +448,10 @@ impl Display for PaletteConversionError {
         match self {
             Self::IndexOutOfRange => write!(f, "encountered index which was out of palette range"),
             Self::MissingState => write!(f, "encountered missing state in palette"),
-            Self::PaletteTooLarge => write!(f, "palette bits per block is greater than buffer bits per entry")
+            Self::PaletteTooLarge => write!(
+                f,
+                "palette bits per block is greater than buffer bits per entry"
+            ),
         }
     }
 }
@@ -404,19 +463,22 @@ struct BufferMetadata {
     mask: u64,
     bits_per_entry: NonZeroU8,
     data_bits_per_long: NonZeroU8,
-    entries_per_long: NonZeroU8
+    entries_per_long: NonZeroU8,
 }
 
 impl BufferMetadata {
     #[inline]
     fn new(bits_per_entry: NonZeroU8) -> Self {
-        assert!(bits_per_entry.get() <= 64, "`bits_per_entry` cannot be greater than 64");
+        assert!(
+            bits_per_entry.get() <= 64,
+            "`bits_per_entry` cannot be greater than 64"
+        );
 
         BufferMetadata {
             mask: (1u64 << bits_per_entry.get()) - 1,
             bits_per_entry,
             data_bits_per_long: unsafe { NonZeroU8::new_unchecked(64 - (64 % bits_per_entry)) },
-            entries_per_long: unsafe { NonZeroU8::new_unchecked(64 / bits_per_entry) }
+            entries_per_long: unsafe { NonZeroU8::new_unchecked(64 / bits_per_entry) },
         }
     }
 }

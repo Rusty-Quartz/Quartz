@@ -13,14 +13,20 @@ use openssl::{
     error::ErrorStack,
     symm::{Cipher, Crypter, Mode},
 };
-use tokio::{net::tcp::{OwnedReadHalf, OwnedWriteHalf}, sync::{Mutex, mpsc::{self, UnboundedSender}}};
-use tokio::net::TcpStream;
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
-use std::future::Future;
+use parking_lot::Mutex;
 use std::{
+    future::Future,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result, Write},
     result::Result as StdResult,
     sync::{mpsc::Sender as StdSender, Arc},
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpStream,
+    },
+    sync::mpsc::{self, UnboundedSender},
 };
 
 /// All possible states of a client's connection to the server.
@@ -43,7 +49,6 @@ pub enum ConnectionState {
 /// compression threshold is greater than zero, then Zlib compression is applied to packets whose
 /// body exceeds the threshold size. If encryption is enabled, then AES-CFB8 encryption is used.
 pub struct IoHandle {
-    operation_buffer: PacketBuffer,
     compression_threshold: i32,
     encrypter: Option<Crypter>,
     decrypter: Option<Crypter>,
@@ -53,7 +58,6 @@ impl IoHandle {
     /// Creates a new I/O handle with an internal buffer of 4096 bytes.
     pub fn new() -> Self {
         IoHandle {
-            operation_buffer: PacketBuffer::new(4096),
             compression_threshold: -1,
             encrypter: None,
             decrypter: None,
@@ -62,31 +66,38 @@ impl IoHandle {
 
     /// Encrypts the given source bytes if encryption is enabled and writes them to the stream
     /// using the temporary buffer for the encryption.
-    async fn write_encrypted(
+    fn write_encrypted<'a>(
         encrypter: Option<&mut Crypter>,
-        source: &[u8],
-        temp: &mut PacketBuffer,
-        stream: &mut OwnedWriteHalf,
-    ) -> Result<()> {
-        if let Some(encrypter) = encrypter {
+        source: &'a [u8],
+        temp: &'a mut PacketBuffer,
+        stream: &'a mut OwnedWriteHalf,
+    ) -> Result<impl Future<Output = Result<()>> + 'a> {
+        let bytes = if let Some(encrypter) = encrypter {
             temp.resize(source.len());
             encrypter.update(&source[..], &mut temp[..])?;
-            stream.write_all(&temp[..]).await
+            &temp[..]
         } else {
-            stream.write_all(&source[..]).await
-        }
+            &source[..]
+        };
+
+        Ok(async move { stream.write_all(bytes).await })
     }
 
     /// Decrypts the given buffer after the given offset if encryption is enabled, writing the
     /// decrypted bytes back to the buffer.
-    fn decrypt_buffer(&mut self, buffer: &mut PacketBuffer, offset: usize) {
+    fn decrypt_buffer(
+        &mut self,
+        buffer: &mut PacketBuffer,
+        aux_buffer: &mut PacketBuffer,
+        offset: usize,
+    ) {
         if let Some(decrypter) = self.decrypter.as_mut() {
             let len = buffer.len() - offset;
-            self.operation_buffer.reset_cursor();
-            self.operation_buffer.resize(len);
-            self.operation_buffer.write_bytes(&buffer[offset ..]);
+            aux_buffer.reset_cursor();
+            aux_buffer.resize(len);
+            aux_buffer.write_bytes(&buffer[offset ..]);
 
-            if let Err(e) = decrypter.update(&self.operation_buffer[..], &mut buffer[offset ..]) {
+            if let Err(e) = decrypter.update(&aux_buffer[..], &mut buffer[offset ..]) {
                 error!("Failed to decrypt packet data: {}", e);
             }
         }
@@ -118,14 +129,14 @@ impl IoHandle {
     }
 
     /// Writes the raw packet data bytes to the given stream, applying compression and encryption if needed.
-    async fn write_packet_data(
+    fn write_packet_data<'a>(
         &mut self,
-        packet_data: &mut PacketBuffer,
-        stream: &mut OwnedWriteHalf,
-    ) -> Result<()> {
+        packet_data: &'a mut PacketBuffer,
+        aux_buffer: &'a mut PacketBuffer,
+        stream: &'a mut OwnedWriteHalf,
+    ) -> Result<impl Future<Output = Result<()>> + 'a> {
         // Prepare the operation buffer
-        self.operation_buffer.clear();
-        let result: Result<()>;
+        aux_buffer.clear();
 
         // We need to check to see if the packet should be compressed
         if self.compression_threshold >= 0 {
@@ -136,10 +147,8 @@ impl IoHandle {
                 // Compress the packet data and write to the operation buffer
                 // Safety: we don't interact with the cursor of `operation_buffer` after this,
                 // and the cursor is set to zero anyway, which is always valid
-                let mut encoder = ZlibEncoder::new(
-                    unsafe { self.operation_buffer.inner_mut() },
-                    Compression::default(),
-                );
+                let mut encoder =
+                    ZlibEncoder::new(unsafe { aux_buffer.inner_mut() }, Compression::default());
                 encoder.write_all(&packet_data[..])?;
                 encoder.finish()?;
 
@@ -148,68 +157,64 @@ impl IoHandle {
 
                 // Raw length
                 packet_data.write_varying(
-                    &((PacketBuffer::varint_size(data_len as i32) + self.operation_buffer.len())
-                        as i32),
+                    &((PacketBuffer::varint_size(data_len as i32) + aux_buffer.len()) as i32),
                 );
                 // Data length
                 packet_data.write_varying(&(data_len as i32));
-                packet_data.write_bytes(&self.operation_buffer[..]);
+                packet_data.write_bytes(&aux_buffer[..]);
 
-                result = IoHandle::write_encrypted(
+                IoHandle::write_encrypted(
                     self.encrypter.as_mut(),
                     &packet_data[..],
-                    &mut self.operation_buffer,
+                    aux_buffer,
                     stream,
                 )
-                .await;
             }
             // The packet length is not past the threshold so no need to compress, however the header is still modified
             else {
                 // Raw length
-                self.operation_buffer
-                    .write_varying(&(packet_data.len() as i32 + 1));
+                aux_buffer.write_varying(&(packet_data.len() as i32 + 1));
                 // Data length of 0 signals that this packet is uncompressed
-                self.operation_buffer.write_one(0);
-                self.operation_buffer.write_bytes(&packet_data[..]);
+                aux_buffer.write_one(0);
+                aux_buffer.write_bytes(&packet_data[..]);
 
-                result = IoHandle::write_encrypted(
+                IoHandle::write_encrypted(
                     self.encrypter.as_mut(),
-                    &self.operation_buffer[..],
+                    &aux_buffer[..],
                     packet_data,
                     stream,
                 )
-                .await;
             }
         }
         // The packet does not need to be compressed, so just record the length and write the raw bytes
         else {
-            self.operation_buffer
-                .write_varying(&(packet_data.len() as i32));
-            self.operation_buffer.write_bytes(&packet_data[..]);
+            aux_buffer.write_varying(&(packet_data.len() as i32));
+            aux_buffer.write_bytes(&packet_data[..]);
 
-            result = IoHandle::write_encrypted(
+            IoHandle::write_encrypted(
                 self.encrypter.as_mut(),
-                &self.operation_buffer[..],
+                &aux_buffer[..],
                 packet_data,
                 stream,
             )
-            .await;
         }
-
-        result
     }
 
     /// Reads the packet header, collects the remaining bytes and decrypts and decompresses the packet,
     /// returning the final length of the fully processed packet. The curser of the given packet buffer
     /// will start at the packet ID.
-    async fn collect_packet(
+    fn collect_packet<'a>(
         &mut self,
-        packet_buffer: &mut PacketBuffer,
-        stream: &mut OwnedReadHalf,
+        packet_buffer: &'a mut PacketBuffer,
+        aux_buffer: &'a mut PacketBuffer,
+        stream: &'a mut OwnedReadHalf,
         decrypt: bool,
-    ) -> StdResult<usize, PacketSerdeError> {
+    ) -> StdResult<
+        impl Future<Output = StdResult<CollectedPacket<'a>, PacketSerdeError>>,
+        PacketSerdeError,
+    > {
         if decrypt {
-            self.decrypt_buffer(&mut *packet_buffer, 0);
+            self.decrypt_buffer(&mut *packet_buffer, aux_buffer, 0);
         }
 
         // Read the packet header
@@ -241,26 +246,63 @@ impl IoHandle {
             compressed = false;
         }
 
-        // Large packet, gather the rest of the data
-        if raw_len > packet_buffer.len() {
-            let end = packet_buffer.len();
-            packet_buffer.resize(PacketBuffer::varint_size(raw_len as i32) + raw_len);
-            match stream.read_exact(&mut packet_buffer[end ..]).await {
-                Ok(_) => self.decrypt_buffer(&mut *packet_buffer, end),
-                Err(e) => return Err(PacketSerdeError::Network(e)),
+        Ok(async move {
+            if raw_len <= packet_buffer.len() {
+                Ok(CollectedPacket {
+                    packet_buffer,
+                    aux_buffer,
+                    raw_len,
+                    data_len,
+                    encrypted_offset: None,
+                    compressed,
+                })
             }
+            // Large packet, gather the rest of the data
+            else {
+                let end = packet_buffer.len();
+                packet_buffer.resize(PacketBuffer::varint_size(raw_len as i32) + raw_len);
+                match stream.read_exact(&mut packet_buffer[end ..]).await {
+                    Ok(_) => Ok(CollectedPacket {
+                        packet_buffer,
+                        aux_buffer,
+                        raw_len,
+                        data_len,
+                        encrypted_offset: Some(end),
+                        compressed,
+                    }),
+                    Err(e) => Err(PacketSerdeError::Network(e)),
+                }
+            }
+        })
+    }
+
+    fn finalize_packet(
+        this: &Mutex<Self>,
+        packet: CollectedPacket<'_>,
+    ) -> StdResult<usize, PacketSerdeError> {
+        let CollectedPacket {
+            packet_buffer,
+            aux_buffer,
+            raw_len,
+            data_len,
+            encrypted_offset,
+            compressed,
+        } = packet;
+
+        if let Some(offset) = encrypted_offset {
+            this.lock()
+                .decrypt_buffer(&mut *packet_buffer, aux_buffer, offset);
         }
 
         // Decompress the packet if needed
         if compressed {
-            self.operation_buffer.clear();
+            aux_buffer.clear();
             // Write all bytes including any potential bytes that are part of another packet
-            self.operation_buffer
-                .write_bytes(&packet_buffer[packet_buffer.cursor() ..]);
+            aux_buffer.write_bytes(&packet_buffer[packet_buffer.cursor() ..]);
 
             // Only decompress to the end of this packet
             let compressed_end = raw_len - packet_buffer.cursor();
-            let mut decoder = ZlibDecoder::new(&self.operation_buffer[.. compressed_end]);
+            let mut decoder = ZlibDecoder::new(&aux_buffer[.. compressed_end]);
 
             // Prepare the packet buffer for decompression
             packet_buffer.resize(data_len);
@@ -278,15 +320,24 @@ impl IoHandle {
             };
 
             // Copy any bytes at the end of the buffer that were not part of this packet
-            if self.operation_buffer.len() > compressed_end {
+            if aux_buffer.len() > compressed_end {
                 packet_buffer.set_cursor(packet_buffer.len());
-                packet_buffer.write_bytes(&self.operation_buffer[compressed_end ..]);
+                packet_buffer.write_bytes(&aux_buffer[compressed_end ..]);
                 packet_buffer.reset_cursor();
             }
         }
 
         Ok(data_len)
     }
+}
+
+struct CollectedPacket<'a> {
+    packet_buffer: &'a mut PacketBuffer,
+    aux_buffer: &'a mut PacketBuffer,
+    raw_len: usize,
+    data_len: usize,
+    encrypted_offset: Option<usize>,
+    compressed: bool,
 }
 
 /// A handle for asynchronously writing packets to a client connection. While the time at which the packets
@@ -308,7 +359,21 @@ impl AsyncWriteHandle {
 
     /// Sends a packet to the client.
     pub async fn send_packet(&self, packet: ClientBoundPacket) {
-        self.try_send(WrappedClientBoundPacket::Packet(packet))
+        self.try_send(WrappedClientBoundPacket::Singleton(packet))
+            .await;
+    }
+
+    pub async fn send_all<I>(&mut self, packets: I)
+    where
+        I: IntoIterator,
+        I::Item: Into<WrappedClientBoundPacket>,
+    {
+        let packets = packets
+            .into_iter()
+            .map(|packet| packet.into())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        self.try_send(WrappedClientBoundPacket::Multiple(packets))
             .await;
     }
 
@@ -334,6 +399,7 @@ pub struct AsyncClientConnection {
     pub write_handle: AsyncWriteHandle,
     /// The packet buffer used when reading packet bytes.
     pub read_buffer: PacketBuffer,
+    aux_buffer: PacketBuffer,
     /// The state of the connection.
     pub connection_state: ConnectionState,
     /// A handle to the packet pre-processor.
@@ -358,6 +424,7 @@ impl AsyncClientConnection {
             read_handle,
             write_handle,
             read_buffer: PacketBuffer::new(4096),
+            aux_buffer: PacketBuffer::new(4096),
             io_handle,
             connection_state: ConnectionState::Handshake,
             sync_packet_sender,
@@ -366,49 +433,131 @@ impl AsyncClientConnection {
         (conn, driver)
     }
 
-    fn create_write_handle(mut write_handle: OwnedWriteHalf, io_handle: Arc<Mutex<IoHandle>>) -> (AsyncWriteHandle, impl Future<Output = ()>) {
-        let (
-            packet_sender,
-            mut packet_receiver
-        ) = mpsc::unbounded_channel::<WrappedClientBoundPacket>();
+    fn create_write_handle(
+        mut write_handle: OwnedWriteHalf,
+        io_handle: Arc<Mutex<IoHandle>>,
+    ) -> (AsyncWriteHandle, impl Future<Output = ()>) {
+        let (packet_sender, mut packet_receiver) =
+            mpsc::unbounded_channel::<WrappedClientBoundPacket>();
 
         // Create a future to drive the handle
         let driver = async move {
             let mut packet_buffer = PacketBuffer::new(4096);
+            let mut aux_buffer = PacketBuffer::new(4096);
 
             while let Some(wrapped_packet) = packet_receiver.recv().await {
-                match wrapped_packet {
-                    WrappedClientBoundPacket::Packet(packet) => {
-                        packet_buffer.clear();
-                        packet_buffer.write(&packet);
-
-                        if let Err(e) = io_handle
-                            .lock()
-                            .await
-                            .write_packet_data(&mut packet_buffer, &mut write_handle)
-                            .await
-                        {
-                            error!("Failed to send packet: {}", e);
-                        }
+                if Self::write_wrapped_packet(
+                    wrapped_packet,
+                    &mut packet_buffer,
+                    &mut aux_buffer,
+                    &mut write_handle,
+                    &*io_handle,
+                )
+                .await
+                {
+                    if let Err(e) = write_handle.shutdown().await {
+                        warn!("Failed to disconnect client: {}", e);
                     }
-
-                    WrappedClientBoundPacket::Buffer(buffer) => {
-                        if let Err(e) = write_handle.write_all(&buffer[..]).await {
-                            error!("Failed to send buffer: {}", e);
-                        }
-                    }
-
-                    WrappedClientBoundPacket::Disconnect => {
-                        if let Err(e) = write_handle.shutdown().await {
-                            warn!("Failed to disconnect client: {}", e);
-                        }
-                        return;
-                    }
+                    return;
                 }
             }
         };
 
         (AsyncWriteHandle(packet_sender), driver)
+    }
+
+    async fn write_wrapped_packet(
+        wrapped_packet: WrappedClientBoundPacket,
+        buffer: &mut PacketBuffer,
+        aux_buffer: &mut PacketBuffer,
+        write_handle: &mut OwnedWriteHalf,
+        io_handle: &Mutex<IoHandle>,
+    ) -> bool {
+        async fn write_buffer(
+            buffer: &mut PacketBuffer,
+            aux_buffer: &mut PacketBuffer,
+            write_handle: &mut OwnedWriteHalf,
+            io_handle: &Mutex<IoHandle>,
+        ) {
+            let write_fut = io_handle
+                .lock()
+                .write_packet_data(buffer, aux_buffer, write_handle);
+            let result = match write_fut {
+                Ok(fut) => fut.await,
+                Err(e) => Err(e),
+            };
+
+            if let Err(e) = result {
+                error!("Failed to send packet data: {}", e);
+            }
+        }
+
+        async fn write_raw_buffer(buffer: &PacketBuffer, write_handle: &mut OwnedWriteHalf) {
+            if let Err(e) = write_handle.write_all(&buffer[..]).await {
+                error!("Failed to send buffer: {}", e);
+            }
+        }
+
+        match wrapped_packet {
+            WrappedClientBoundPacket::Singleton(packet) => {
+                buffer.clear();
+                buffer.write(&packet);
+                write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
+            }
+
+            WrappedClientBoundPacket::Multiple(packets) => {
+                let mut disconnect_when_done = false;
+
+                for packet in packets.iter() {
+                    buffer.clear();
+
+                    match packet {
+                        WrappedClientBoundPacket::Singleton(packet) => buffer.write(packet),
+                        WrappedClientBoundPacket::Custom(packet) => buffer.write(&**packet),
+                        WrappedClientBoundPacket::Buffer(buffer) => {
+                            write_raw_buffer(buffer, write_handle).await;
+                            continue;
+                        }
+                        WrappedClientBoundPacket::Disconnect => disconnect_when_done = true,
+                        WrappedClientBoundPacket::Multiple(..) => {
+                            warn!(
+                                "Attempted to write nested \
+                                 WrappedClientBoundPacket::Multiple(..), these packets will be \
+                                 dropped"
+                            )
+                        }
+                    }
+
+                    let write_fut =
+                        io_handle
+                            .lock()
+                            .write_packet_data(buffer, aux_buffer, write_handle);
+                    let result = match write_fut {
+                        Ok(fut) => fut.await,
+                        Err(e) => Err(e),
+                    };
+
+                    if let Err(e) = result {
+                        error!("Failed to send packet data: {}", e);
+                    }
+                }
+
+                return disconnect_when_done;
+            }
+
+            WrappedClientBoundPacket::Buffer(buffer) =>
+                write_raw_buffer(&buffer, write_handle).await,
+
+            WrappedClientBoundPacket::Custom(packet) => {
+                buffer.clear();
+                buffer.write(&*packet);
+                write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
+            }
+
+            WrappedClientBoundPacket::Disconnect => return true,
+        }
+
+        false
     }
 
     /// Forwards the given packet to the server thread for handling.
@@ -428,7 +577,6 @@ impl AsyncClientConnection {
     ) -> StdResult<(), PacketSerdeError> {
         self.io_handle
             .lock()
-            .await
             .enable_encryption(shared_secret)
             .map_err(Into::into)
     }
@@ -442,12 +590,14 @@ impl AsyncClientConnection {
             self.read_buffer.shift_remaining();
 
             // Don't decrypt the remaining bytes since that was already handled
-            return self
-                .io_handle
-                .lock()
-                .await
-                .collect_packet(&mut self.read_buffer, &mut self.read_handle, false)
-                .await;
+            let collect_fut = self.io_handle.lock().collect_packet(
+                &mut self.read_buffer,
+                &mut self.aux_buffer,
+                &mut self.read_handle,
+                false,
+            )?;
+            let collected = collect_fut.await?;
+            return IoHandle::finalize_packet(&*self.io_handle, collected);
         }
         // Prepare for the next packet
         else {
@@ -478,12 +628,14 @@ impl AsyncClientConnection {
             if !(self.connection_state == ConnectionState::Handshake
                 && self.read_buffer.peek_one().unwrap_or(0) as i32 == LEGACY_PING_PACKET_ID)
             {
-                return self
-                    .io_handle
-                    .lock()
-                    .await
-                    .collect_packet(&mut self.read_buffer, &mut self.read_handle, true)
-                    .await;
+                let collect_fut = self.io_handle.lock().collect_packet(
+                    &mut self.read_buffer,
+                    &mut self.aux_buffer,
+                    &mut self.read_handle,
+                    true,
+                )?;
+                let collected = collect_fut.await?;
+                return IoHandle::finalize_packet(&*self.io_handle, collected);
             }
         }
 

@@ -87,7 +87,7 @@ module! {
     command tps where
         help: Help<'cmd> {
         root executes |ctx| {
-            let mspt = DIAGNOSTICS.lock().unwrap().mspt();
+            let mspt = DIAGNOSTICS.lock().mspt();
             let tps = ServerClock::as_tps(mspt);
             let red: f64;
             let green: f64;

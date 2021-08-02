@@ -19,10 +19,24 @@ use linefeed::{
 use log::*;
 use openssl::rsa::Rsa;
 // use smol::{channel, net::TcpListener, Executor};
-use tokio::net::TcpListener;
-use tokio::runtime::{Runtime, Builder};
-use tokio::task;
-use std::{collections::HashMap, error::Error, net::TcpStream as StdTcpStream, sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}, mpsc::{self, Receiver, Sender}}, thread::{self, JoinHandle}, time::Duration};
+use parking_lot::Mutex;
+use std::{
+    collections::HashMap,
+    error::Error,
+    net::TcpStream as StdTcpStream,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc::{self, Receiver, Sender},
+        Arc,
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
+};
+use tokio::{
+    net::TcpListener,
+    runtime::{Builder, Runtime},
+    task,
+};
 
 /// The string form of the minecraft version quartz currently supports.
 pub const VERSION: &str = "1.17";
@@ -40,7 +54,7 @@ pub struct QuartzServer {
     console_command_handler: Option<JoinHandle<()>>,
     /// The ChunckProvider
     pub chunk_provider: ChunkProvider,
-    tcp_server_runtime: Runtime
+    tcp_server_runtime: Runtime,
 }
 
 impl QuartzServer {
@@ -59,8 +73,11 @@ impl QuartzServer {
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
             console_command_handler: None,
-            chunk_provider: ChunkProvider::new("world".to_owned(), "./world/region")
-                .expect("Error making chunk provider"),
+            chunk_provider: ChunkProvider::new(
+                "world".to_owned(),
+                "/home/cassy/Documents/mc-vanilla-server/world/region",
+            )
+            .expect("Error making chunk provider"),
             tcp_server_runtime: Builder::new_multi_thread()
                 .enable_io()
                 // TODO: remove after keep alive is implemented on the tick
@@ -70,7 +87,7 @@ impl QuartzServer {
                     format!("tcp-thread#{}", THREAD_ID.fetch_add(1, Ordering::AcqRel))
                 })
                 .build()
-                .expect("Failed to construct TCP server runtime")
+                .expect("Failed to construct TCP server runtime"),
         }
     }
 
@@ -120,10 +137,7 @@ impl QuartzServer {
                 _end: usize,
             ) -> Option<Vec<Completion>> {
                 // Retrieve the packet pipe
-                let pipe = match self.packet_pipe.lock() {
-                    Ok(pipe) => pipe,
-                    Err(_) => return None,
-                };
+                let pipe = self.packet_pipe.lock();
 
                 // Build pipes to transfer the completions
                 let (sender, receiver) = mpsc::channel::<Vec<String>>();
@@ -191,7 +205,7 @@ impl QuartzServer {
                 }
             }
         });
-        self.console_command_handler.insert(handle);
+        self.console_command_handler = Some(handle);
     }
 
     fn start_tcp_server(&mut self) -> Result<(), Box<dyn Error>> {
@@ -204,7 +218,8 @@ impl QuartzServer {
         let sync_packet_sender = self.sync_packet_sender.clone();
 
         let listener = self.tcp_server_runtime.block_on(TcpListener::bind(addr))?;
-        self.tcp_server_runtime.spawn(Self::tcp_server(listener, sync_packet_sender));
+        self.tcp_server_runtime
+            .spawn(Self::tcp_server(listener, sync_packet_sender));
 
         Ok(())
     }
@@ -298,10 +313,10 @@ impl Drop for QuartzServer {
 
         // Send a connection to the server daemon to shut it down
         match config().try_read() {
-            Ok(guard) => {
+            Some(guard) => {
                 let _ = StdTcpStream::connect(format!("{}:{}", guard.server_ip, guard.port));
             }
-            Err(_) => warn!("Failed to shutdown TCP thread."),
+            None => warn!("Failed to shutdown TCP thread."),
         }
 
         // Dropping tcp_server_runtime performs the cleanup for us
@@ -342,6 +357,14 @@ impl ClientList {
     pub async fn send_packet(&mut self, client_id: usize, packet: ClientBoundPacket) {
         match self.0.get_mut(&client_id) {
             Some(client) => client.connection.send_packet(packet).await,
+            None => warn!("Attempted to send packet to disconnected client."),
+        }
+    }
+
+    pub async fn send_all<I>(&mut self, client_id: usize, packets: I)
+    where I: IntoIterator<Item = ClientBoundPacket> {
+        match self.0.get_mut(&client_id) {
+            Some(client) => client.connection.send_all(packets).await,
             None => warn!("Attempted to send packet to disconnected client."),
         }
     }

@@ -1,6 +1,6 @@
 use crate::{
     network::{PacketBuffer, PacketSerdeError, ReadFromPacket, WriteToPacket},
-    world::location::BlockPosition,
+    world::{chunk::LightBuffer, location::BlockPosition},
 };
 use quartz_chat::Component;
 use quartz_macros::{ReadFromPacket, WriteToPacket};
@@ -28,12 +28,34 @@ impl WrappedServerBoundPacket {
 
 /// A wraper for client-bound packets used internally for sending packets to the connection thread.
 pub enum WrappedClientBoundPacket {
-    /// A wrapped packet.
-    Packet(ClientBoundPacket),
+    /// A single packet.
+    Singleton(ClientBoundPacket),
+    /// Multiple packets to be sent all at once.
+    Multiple(Box<[Self]>),
     /// A raw byte-buffer.
     Buffer(PacketBuffer),
+    /// A generic item which can we written to a packet buffer.
+    Custom(Box<dyn WriteToPacket + Send + Sync + 'static>),
     /// Specifies that the connection should be forcefully terminated.
     Disconnect,
+}
+
+impl From<ClientBoundPacket> for WrappedClientBoundPacket {
+    fn from(packet: ClientBoundPacket) -> Self {
+        WrappedClientBoundPacket::Singleton(packet)
+    }
+}
+
+impl From<PacketBuffer> for WrappedClientBoundPacket {
+    fn from(buffer: PacketBuffer) -> Self {
+        WrappedClientBoundPacket::Buffer(buffer)
+    }
+}
+
+impl From<Box<dyn WriteToPacket + Send + Sync + 'static>> for WrappedClientBoundPacket {
+    fn from(packet: Box<dyn WriteToPacket + Send + Sync + 'static>) -> Self {
+        WrappedClientBoundPacket::Custom(packet)
+    }
 }
 
 #[derive(Debug, WriteToPacket)]
@@ -789,18 +811,22 @@ impl ReadFromPacket for Recipe {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, WriteToPacket)]
 pub enum RecipeData {
     ShapelessCrafting {
         group: String,
+        #[packet_serde(len_prefixed)]
         ingredients: Box<[Ingredient]>,
         result: Slot,
     },
 
     ShapedCrafting {
+        #[packet_serde(varying)]
         width: i32,
+        #[packet_serde(varying)]
         height: i32,
         group: String,
+        #[packet_serde(no_len)]
         ingredients: Box<[Ingredient]>,
         result: Slot,
     },
@@ -810,6 +836,7 @@ pub enum RecipeData {
         ingredient: Ingredient,
         result: Slot,
         experience: f32,
+        #[packet_serde(varying)]
         cooking_time: i32,
     },
 
@@ -818,6 +845,7 @@ pub enum RecipeData {
         ingredient: Ingredient,
         result: Slot,
         experience: f32,
+        #[packet_serde(varying)]
         cooking_time: i32,
     },
 
@@ -826,6 +854,7 @@ pub enum RecipeData {
         ingredient: Ingredient,
         result: Slot,
         experience: f32,
+        #[packet_serde(varying)]
         cooking_time: i32,
     },
 
@@ -834,6 +863,7 @@ pub enum RecipeData {
         ingredient: Ingredient,
         result: Slot,
         experience: f32,
+        #[packet_serde(varying)]
         cooking_time: i32,
     },
 
@@ -848,6 +878,7 @@ pub enum RecipeData {
         addition: Ingredient,
         result: Slot,
     },
+
     ArmorDye,
     BookCloning,
     MapCloning,
@@ -862,107 +893,6 @@ pub enum RecipeData {
     DecorateShield,
     ColorShulkerBox,
     SuspiciousStew,
-}
-
-impl WriteToPacket for RecipeData {
-    fn write_to(&self, buffer: &mut PacketBuffer) {
-        match self {
-            RecipeData::ShapelessCrafting {
-                group,
-                ingredients,
-                result,
-            } => {
-                buffer.write(group);
-                buffer.write_varying(&(ingredients.len() as i32));
-                buffer.write_array(ingredients);
-                buffer.write(result);
-            }
-            RecipeData::ShapedCrafting {
-                width,
-                height,
-                group,
-                ingredients,
-                result,
-            } => {
-                buffer.write_varying(width);
-                buffer.write_varying(height);
-                buffer.write(group);
-                buffer.write_array(ingredients);
-                buffer.write(result);
-            }
-            RecipeData::Smelting {
-                group,
-                ingredient,
-                result,
-                experience,
-                cooking_time,
-            } => {
-                buffer.write(group);
-                buffer.write(ingredient);
-                buffer.write(result);
-                buffer.write(experience);
-                buffer.write_varying(cooking_time);
-            }
-            RecipeData::Blasting {
-                group,
-                ingredient,
-                result,
-                experience,
-                cooking_time,
-            } => {
-                buffer.write(group);
-                buffer.write(ingredient);
-                buffer.write(result);
-                buffer.write(experience);
-                buffer.write_varying(cooking_time);
-            }
-            RecipeData::Smoking {
-                group,
-                ingredient,
-                result,
-                experience,
-                cooking_time,
-            } => {
-                buffer.write(group);
-                buffer.write(ingredient);
-                buffer.write(result);
-                buffer.write(experience);
-                buffer.write_varying(cooking_time);
-            }
-            RecipeData::CampfireCooking {
-                group,
-                ingredient,
-                result,
-                experience,
-                cooking_time,
-            } => {
-                buffer.write(group);
-                buffer.write(ingredient);
-                buffer.write(result);
-                buffer.write(experience);
-                buffer.write_varying(cooking_time);
-            }
-            RecipeData::Stonecutting {
-                group,
-                ingredient,
-                result,
-            } => {
-                buffer.write(group);
-                buffer.write(ingredient);
-                buffer.write(result);
-            }
-            RecipeData::Smithing {
-                base,
-                addition,
-                result,
-            } => {
-                buffer.write(base);
-                buffer.write(addition);
-                buffer.write(result);
-            }
-            _ => {}
-        }
-    }
 }
 
 #[derive(Debug, ReadFromPacket, WriteToPacket)]
@@ -1113,4 +1043,10 @@ impl ReadFromPacket for SectionData {
             sections: sections.into_boxed_slice(),
         })
     }
+}
+
+pub struct SectionAndLightData {
+    pub section: ClientSection,
+    pub block_light: Option<LightBuffer>,
+    pub sky_light: Option<LightBuffer>,
 }

@@ -1,12 +1,30 @@
-use super::{ChunkIoError, CompactStateBuffer, DIRECT_PALETTE_THRESHOLD, Lighting, Palette};
+use super::{ChunkIoError, CompactStateBuffer, Lighting, Palette, DIRECT_PALETTE_THRESHOLD};
+use crate::{
+    block::{
+        states::{is_air, AIR},
+        BlockStateImpl,
+        StateBuilder,
+    },
+    network::{
+        packet::{ClientSection, SectionAndLightData},
+        PacketBuffer,
+        WriteToPacket,
+    },
+    BlockState,
+    StateID,
+};
 use quartz_util::uln::UlnStr;
-use serde::{Serialize, Deserialize, de::{self, Visitor, SeqAccess}};
-use std::{collections::HashMap, fmt::{self, Debug, Display, Formatter}};
-use crate::{BlockState, block::states::{AIR, is_air}, block::{BlockStateImpl, StateBuilder}, network::{WriteToPacket, packet::ClientSection}};
-use std::borrow::ToOwned;
-use std::error::Error;
-use crate::StateID;
-use crate::network::PacketBuffer;
+use serde::{
+    de::{self, SeqAccess, Visitor},
+    Deserialize,
+    Serialize,
+};
+use std::{
+    borrow::ToOwned,
+    collections::HashMap,
+    error::Error,
+    fmt::{self, Debug, Display, Formatter},
+};
 
 pub const MAX_SECTION_COUNT: usize = 32;
 
@@ -15,7 +33,7 @@ pub struct Section {
     is_pal_direct: bool,
     palette: Palette,
     states: CompactStateBuffer,
-    lighting: Lighting
+    lighting: Lighting,
 }
 
 impl Section {
@@ -23,7 +41,7 @@ impl Section {
         let palette = Palette::singleton(AIR);
         let states = CompactStateBuffer::new(
             vec![0; CompactStateBuffer::required_capacity(palette.bits_per_block().get())],
-            palette.bits_per_block()
+            palette.bits_per_block(),
         );
 
         Section {
@@ -31,7 +49,7 @@ impl Section {
             is_pal_direct: false,
             palette,
             states,
-            lighting: Lighting::new()
+            lighting: Lighting::new(),
         }
     }
 
@@ -42,11 +60,13 @@ impl Section {
             let mut palette = Palette::new();
 
             for palette_entry in raw.palette.unwrap() {
-                let mut state = BlockState::builder(palette_entry.name)
-                    .ok_or_else(|| ChunkIoError::UnknownBlockState(palette_entry.name.to_owned()))?;
+                let mut state = BlockState::builder(palette_entry.name).ok_or_else(|| {
+                    ChunkIoError::UnknownBlockState(palette_entry.name.to_owned())
+                })?;
 
                 for (name, value) in palette_entry.properties {
-                    state.add_property(name, value)
+                    state
+                        .add_property(name, value)
                         .map_err(|msg| ChunkIoError::UnknownStateProperty(msg))?;
                 }
 
@@ -54,8 +74,12 @@ impl Section {
             }
 
             let states = CompactStateBuffer::new(
-                raw.block_states.unwrap().into_iter().map(|x| x as u64).collect(),
-                palette.bits_per_block()
+                raw.block_states
+                    .unwrap()
+                    .into_iter()
+                    .map(|x| x as u64)
+                    .collect(),
+                palette.bits_per_block(),
             );
 
             (palette, states)
@@ -74,7 +98,7 @@ impl Section {
             is_pal_direct: palette.bits_per_block().get() >= DIRECT_PALETTE_THRESHOLD,
             palette,
             states,
-            lighting
+            lighting,
         })
     }
 
@@ -109,11 +133,13 @@ impl Section {
         let palette = if self.is_pal_direct {
             None
         } else {
-            Some(self.palette
-                .states()
-                .map(|state| state as i32)
-                .collect::<Vec<i32>>()
-                .into_boxed_slice())
+            Some(
+                self.palette
+                    .states()
+                    .map(|state| state as i32)
+                    .collect::<Vec<i32>>()
+                    .into_boxed_slice(),
+            )
         };
         let data = Box::<[u64]>::from(self.states.inner());
 
@@ -121,7 +147,36 @@ impl Section {
             block_count,
             bits_per_block,
             palette,
-            data
+            data,
+        }
+    }
+
+    pub fn into_packet_data(self) -> SectionAndLightData {
+        let block_count = self.block_count() as i16;
+        let bits_per_block = self.palette.bits_per_block().get();
+        let palette = if self.is_pal_direct {
+            None
+        } else {
+            Some(
+                self.palette
+                    .index_to_state
+                    .into_iter()
+                    .map(|state| state as i32)
+                    .collect::<Vec<i32>>()
+                    .into_boxed_slice(),
+            )
+        };
+        let data = self.states.into_inner().into_boxed_slice();
+
+        SectionAndLightData {
+            section: ClientSection {
+                block_count,
+                bits_per_block,
+                palette,
+                data,
+            },
+            block_light: self.lighting.block,
+            sky_light: self.lighting.sky,
         }
     }
 
@@ -153,7 +208,7 @@ impl WriteToPacket for Section {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SectionY {
-    pub raw: i8
+    pub raw: i8,
 }
 
 impl SectionY {
@@ -177,7 +232,7 @@ impl Debug for SectionY {
 
 impl From<i8> for SectionY {
     fn from(raw: i8) -> Self {
-        SectionY {raw}
+        SectionY { raw }
     }
 }
 
@@ -189,18 +244,16 @@ impl From<SectionY> for i8 {
 
 impl Serialize for SectionY {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-            S: serde::Serializer {
+    where S: serde::Serializer {
         serializer.serialize_i8(self.raw)
     }
 }
 
 impl<'de> Deserialize<'de> for SectionY {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-            D: serde::Deserializer<'de> {
+    where D: serde::Deserializer<'de> {
         Ok(SectionY {
-            raw: Deserialize::deserialize(deserializer)?
+            raw: Deserialize::deserialize(deserializer)?,
         })
     }
 }
@@ -209,26 +262,27 @@ const OPT_SECTION_INDEX_NONE_NICHE: u8 = u8::MAX;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct OptionalSectionIndex {
-    repr: u8
+    repr: u8,
 }
 
 impl OptionalSectionIndex {
     #[inline]
     const fn none() -> Self {
         OptionalSectionIndex {
-            repr: OPT_SECTION_INDEX_NONE_NICHE
+            repr: OPT_SECTION_INDEX_NONE_NICHE,
         }
     }
 
     #[inline]
     fn some(index: usize) -> Self {
         if cfg!(debug_assertions) && index >= OPT_SECTION_INDEX_NONE_NICHE as usize {
-            panic!("Attempted to construct an optional section index with an illegal index: {}", index);
+            panic!(
+                "Attempted to construct an optional section index with an illegal index: {}",
+                index
+            );
         }
 
-        OptionalSectionIndex {
-            repr: index as u8
-        }
+        OptionalSectionIndex { repr: index as u8 }
     }
 
     #[inline]
@@ -250,18 +304,18 @@ impl SectionStore {
     pub fn insert(&mut self, section: Section) -> Result<&mut Section, SectionInsertionError> {
         let index = match self.section_mapping.get_mut(section.y.as_index()) {
             Some(index) => index,
-            None => return Err(SectionInsertionError::IndexOutOfRange(section.y))
+            None => return Err(SectionInsertionError::IndexOutOfRange(section.y)),
         };
 
         if index.as_option().is_some() {
-            return Err(SectionInsertionError::AlreadyPresent(section.y))
+            return Err(SectionInsertionError::AlreadyPresent(section.y));
         }
 
         *index = OptionalSectionIndex::some(self.sections.len());
         self.sections.push(section);
         Ok(self.sections.last_mut().unwrap())
     }
-    
+
     pub fn get(&self, y: i8) -> Option<&Section> {
         self.section_mapping
             .get(SectionY::from(y).as_index())
@@ -271,9 +325,7 @@ impl SectionStore {
     }
 
     pub fn gen_bit_mask<F>(&self, include_boundary_sections: bool, mut f: F) -> u128
-    where
-        F: FnMut(&Section) -> bool
-    {
+    where F: FnMut(&Section) -> bool {
         let sections = if include_boundary_sections {
             self.section_mapping.as_ref()
         } else {
@@ -326,7 +378,7 @@ impl<'de> Visitor<'de> for SectionStoreVisitor {
         loop {
             let raw: RawSection<'de> = match seq.next_element()? {
                 Some(section) => section,
-                None => break
+                None => break,
             };
 
             let section = Section::from_raw(raw).map_err(de::Error::custom)?;
@@ -340,14 +392,22 @@ impl<'de> Visitor<'de> for SectionStoreVisitor {
 #[derive(Debug)]
 pub enum SectionInsertionError {
     AlreadyPresent(SectionY),
-    IndexOutOfRange(SectionY)
+    IndexOutOfRange(SectionY),
 }
 
 impl Display for SectionInsertionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::AlreadyPresent(y) => write!(f, "attempted to insert a section at y={} where one was already present", y),
-            Self::IndexOutOfRange(y) => write!(f, "attempted to insert a section at y={} which is out of range (max {})", y, MAX_SECTION_COUNT)
+            Self::AlreadyPresent(y) => write!(
+                f,
+                "attempted to insert a section at y={} where one was already present",
+                y
+            ),
+            Self::IndexOutOfRange(y) => write!(
+                f,
+                "attempted to insert a section at y={} which is out of range (max {})",
+                y, MAX_SECTION_COUNT
+            ),
         }
     }
 }
@@ -365,7 +425,7 @@ struct RawSection<'a> {
     #[serde(rename = "Palette")]
     palette: Option<Vec<RawPaletteEntry<'a>>>,
     #[serde(rename = "BlockStates")]
-    block_states: Option<Vec<i64>>
+    block_states: Option<Vec<i64>>,
 }
 
 #[derive(Serialize, Deserialize)]

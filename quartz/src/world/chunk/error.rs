@@ -1,3 +1,4 @@
+use crate::world::chunk::LightingInitError;
 use quartz_nbt::{NbtReprError, NbtStructureError};
 use quartz_util::uln::UnlocalizedName;
 use std::{
@@ -5,7 +6,6 @@ use std::{
     fmt::{self, Display, Formatter},
     io::Error as IoError,
 };
-use crate::world::chunk::LightingInitError;
 
 #[derive(Debug)]
 pub enum ChunkIoError {

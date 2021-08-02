@@ -320,6 +320,8 @@ impl ArrayLength {
             ArrayLength::Prefixed =>
                 quote! { let __len = #buffer_ident.read_varying::<i32>()? as usize; },
             ArrayLength::Greedy => quote! { let __len = #buffer_ident.remaining(); },
+            ArrayLength::None =>
+                unreachable!("Array length parameter incorrectly checked when parsing"),
         }
     }
 
@@ -335,6 +337,7 @@ impl ArrayLength {
                 Some(quote! { #buffer_ident.write_varying(&(#field_ref.len() as i32)); }),
             // Length inferred
             ArrayLength::Greedy => None,
+            ArrayLength::None => None,
         }
     }
 }
@@ -344,6 +347,8 @@ impl OptionCondition {
         match self {
             OptionCondition::Expr(expr) => quote! { #expr },
             OptionCondition::Prefixed => quote! { #buffer_ident.read::<bool>()? },
+            OptionCondition::None =>
+                unreachable!("Condition parameter incorrectly checked when parsing"),
         }
     }
 
@@ -356,6 +361,7 @@ impl OptionCondition {
             OptionCondition::Expr(_) => None,
             OptionCondition::Prefixed =>
                 Some(quote! { #buffer_ident.write(&#field_ref.is_some()); }),
+            OptionCondition::None => None,
         }
     }
 }

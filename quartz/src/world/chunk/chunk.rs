@@ -1,12 +1,12 @@
-use crate::{base::{BlockState, StateID}, network::packet::SectionData, world::{
-        location::{BlockPosition, Coordinate, CoordinatePair},
-    }};
-use quartz_nbt::{NbtCompound, NbtList};
-use serde::{
-    Deserialize,
-};
-use std::{fmt::{self, Debug, Formatter}};
 use super::{LightBuffer, SectionStore};
+use crate::{
+    base::{BlockState, StateID},
+    network::packet::SectionData,
+    world::location::{BlockPosition, Coordinate, CoordinatePair},
+};
+use quartz_nbt::{NbtCompound, NbtList};
+use serde::Deserialize;
+use std::fmt::{self, Debug, Formatter};
 
 #[derive(Deserialize)]
 #[allow(dead_code)]
@@ -157,7 +157,9 @@ impl Chunk {
         });
 
         sections.reverse();
-        (mask, SectionData { sections: sections.into_boxed_slice() })
+        (mask, SectionData {
+            sections: sections.into_boxed_slice(),
+        })
     }
 
     /// Gets the blocklights and blocklight bitmask for the chunk
@@ -168,8 +170,8 @@ impl Chunk {
                 Some(light) => {
                     blocklights.push(light.clone());
                     true
-                },
-                None => false
+                }
+                None => false,
             }
         });
 
@@ -180,15 +182,15 @@ impl Chunk {
     /// Gets the skylights and skylight bitmask for the chunk
     pub fn gen_sky_lights(&self) -> (u128, u128, Box<[LightBuffer]>) {
         let mut skylights = Vec::new();
-        let mask = self.section_store.gen_bit_mask(true, |section| {
-            match section.lighting().sky_light() {
-                Some(light) => {
-                    skylights.push(light.clone());
-                    true
-                },
-                None => false
-            }
-        });
+        let mask =
+            self.section_store
+                .gen_bit_mask(true, |section| match section.lighting().sky_light() {
+                    Some(light) => {
+                        skylights.push(light.clone());
+                        true
+                    }
+                    None => false,
+                });
 
         skylights.reverse();
         (mask, !mask | 1, skylights.into_boxed_slice())

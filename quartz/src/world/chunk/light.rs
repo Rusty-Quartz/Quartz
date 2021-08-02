@@ -1,21 +1,23 @@
-use std::fmt::{self, Display, Formatter};
-use std::ptr;
-use std::error::Error;
-use crate::network::{ReadFromPacket, WriteToPacket, PacketBuffer, PacketSerdeError};
+use crate::network::{PacketBuffer, PacketSerdeError, ReadFromPacket, WriteToPacket};
+use std::{
+    error::Error,
+    fmt::{self, Display, Formatter},
+    ptr,
+};
 
 pub const LIGHTING_LENGTH: usize = 2048;
 type RawLightBuffer = [u8; LIGHTING_LENGTH];
 
 pub struct Lighting {
-    block: Option<LightBuffer>,
-    sky: Option<LightBuffer>
+    pub(super) block: Option<LightBuffer>,
+    pub(super) sky: Option<LightBuffer>,
 }
 
 impl Lighting {
     pub const fn new() -> Self {
         Lighting {
             block: None,
-            sky: None
+            sky: None,
         }
     }
 
@@ -72,7 +74,7 @@ impl Lighting {
 #[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct LightBuffer {
-    data: Box<RawLightBuffer>
+    data: Box<RawLightBuffer>,
 }
 
 impl LightBuffer {
@@ -99,7 +101,7 @@ impl LightBuffer {
 
         Ok(LightBuffer {
             // Safety: we properly initialized the array above
-            data: unsafe { buf.assume_init() }
+            data: unsafe { buf.assume_init() },
         })
     }
 }
@@ -108,7 +110,9 @@ impl ReadFromPacket for LightBuffer {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let len: i32 = buffer.read_varying()?;
         if len as usize != LIGHTING_LENGTH {
-            return Err(PacketSerdeError::Internal("Found light buffer with length not matching LIGHTING_LENGTH"));
+            return Err(PacketSerdeError::Internal(
+                "Found light buffer with length not matching LIGHTING_LENGTH",
+            ));
         }
 
         let remaining = &buffer[buffer.cursor() ..];
@@ -133,14 +137,18 @@ impl WriteToPacket for LightBuffer {
 #[derive(Clone, Copy, Debug)]
 pub enum LightingInitError {
     InvalidLength(usize),
-    AlreadyInitialized
+    AlreadyInitialized,
 }
 
 impl Display for LightingInitError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidLength(len) => write!(f, "expected light buffer of length {} but found length of {}", LIGHTING_LENGTH, len),
-            Self::AlreadyInitialized => write!(f, "light buffer already initialized")
+            Self::InvalidLength(len) => write!(
+                f,
+                "expected light buffer of length {} but found length of {}",
+                LIGHTING_LENGTH, len
+            ),
+            Self::AlreadyInitialized => write!(f, "light buffer already initialized"),
         }
     }
 }

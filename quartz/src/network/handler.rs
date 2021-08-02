@@ -10,8 +10,8 @@ use crate::{
 };
 use futures_util::future::join_all;
 use hex::ToHex;
-use once_cell::sync::Lazy;
 use log::{debug, error};
+use once_cell::sync::Lazy;
 use openssl::{
     pkey::Private,
     rsa::{Padding, Rsa},
@@ -79,17 +79,20 @@ impl AsyncPacketHandler {
     }
 
     async fn handle_ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
-        conn.write_handle.send_packet(ClientBoundPacket::Pong { payload }).await;
+        conn.write_handle
+            .send_packet(ClientBoundPacket::Pong { payload })
+            .await;
     }
 
     async fn handle_login_start(&mut self, conn: &mut AsyncClientConnection, name: &String) {
         // If we are not running in online mode we just send LoginSuccess and skip encryption
-        if !config().read().unwrap().online_mode {
-            conn.write_handle.send_packet(ClientBoundPacket::LoginSuccess {
-                uuid: Uuid::from_u128(0),
-                username: name.clone(),
-            })
-            .await;
+        if !config().read().online_mode {
+            conn.write_handle
+                .send_packet(ClientBoundPacket::LoginSuccess {
+                    uuid: Uuid::from_u128(0),
+                    username: name.clone(),
+                })
+                .await;
 
             conn.forward_to_server(ServerBoundPacket::LoginSuccessServer {
                 uuid: Uuid::from_u128(0),
@@ -120,12 +123,13 @@ impl AsyncPacketHandler {
             }
         }
 
-        conn.write_handle.send_packet(ClientBoundPacket::EncryptionRequest {
-            server_id: "".to_owned(),
-            public_key: pub_key_der.into_boxed_slice(),
-            verify_token: verify_token.to_vec().into_boxed_slice(),
-        })
-        .await;
+        conn.write_handle
+            .send_packet(ClientBoundPacket::EncryptionRequest {
+                server_id: "".to_owned(),
+                public_key: pub_key_der.into_boxed_slice(),
+                verify_token: verify_token.to_vec().into_boxed_slice(),
+            })
+            .await;
     }
 
     async fn handle_encryption_response(
@@ -268,11 +272,12 @@ impl AsyncPacketHandler {
 
         match Uuid::from_str(&string_uuid) {
             Ok(uuid) => {
-                conn.write_handle.send_packet(ClientBoundPacket::LoginSuccess {
-                    uuid,
-                    username: self.username.clone(),
-                })
-                .await;
+                conn.write_handle
+                    .send_packet(ClientBoundPacket::LoginSuccess {
+                        uuid,
+                        username: self.username.clone(),
+                    })
+                    .await;
 
                 conn.connection_state = ConnectionState::Play;
 
@@ -311,10 +316,11 @@ impl AsyncPacketHandler {
             // The client would disconnect if they didn't get a packet before 20 seconds
             // So we wait 10 allowing 10 seconds of delay between packets
             tokio::time::sleep(Duration::from_secs(1)).await;
-            conn.write_handle.send_packet(ClientBoundPacket::KeepAlive {
-                keep_alive_id: self.keep_alive,
-            })
-            .await;
+            conn.write_handle
+                .send_packet(ClientBoundPacket::KeepAlive {
+                    keep_alive_id: self.keep_alive,
+                })
+                .await;
             self.last_keep_alive = SystemTime::now();
         }
     }
@@ -423,7 +429,7 @@ impl QuartzServer {
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
         let player_count = self.client_list.online_count().to_string();
-        let config = config().read().unwrap();
+        let config = config().read();
         let motd = &config.motd;
         let max_players = config.max_players.to_string();
 
@@ -466,7 +472,7 @@ impl QuartzServer {
     }
 
     async fn handle_status_request(&mut self, sender: usize) {
-        let config = config().read().unwrap();
+        let config = config().read();
         let json_response = json!({
             "version": {
                 "name": server::VERSION,
@@ -913,67 +919,52 @@ impl QuartzServer {
         log::info!("Chunk load time: {:?}", elapsed);
 
         let start = Instant::now();
-        let mut chunks = self.chunk_provider.regions.chunks_mut().await;
-        for x in -view_distance .. view_distance {
-            for z in -view_distance .. view_distance {
-                let chunk = match chunks
-                    .loaded_chunk_at(Coordinate::Chunk(CoordinatePair::new(x as i32, z as i32)))
-                {
-                    Some(c) => c,
-                    None => {
-                        log::error!("trying to get unloaded chunk {}, {}", x, z);
-                        continue;
-                    }
-                };
+        let vd = view_distance as u8 as usize;
+        let mut packets = Vec::with_capacity(vd * vd);
+        for chunk in self.chunk_provider.regions.loaded_chunks() {
+            let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
+            // code to output sections for debugging
+            // don't delete until we are sure we're sending sections correctly
+            // std::fs::write(
+            //     format!("./section_data/chunk_{}_{}.txt", x, z),
+            //     format!("{:02X?}", sections),
+            // )
+            // .unwrap();
 
-                let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
-                // code to output sections for debugging
-                // don't delete until we are sure we're sending sections correctly
-                // std::fs::write(
-                //     format!("./section_data/chunk_{}_{}.txt", x, z),
-                //     format!("{:02X?}", sections),
-                // )
-                // .unwrap();
+            let chunk_coords: CoordinatePair = chunk.coordinates().as_chunk().into();
 
-                let chunk_coords: CoordinatePair = chunk.coordinates().as_chunk().into();
-
-                fn mask_to_boxed_slice(mask: u128) -> Box<[i64]> {
-                    Box::<[_]>::from([mask as i64].as_ref())
-                }
-
-                self.client_list
-                    .send_packet(sender, ClientBoundPacket::ChunkData {
-                        chunk_x: chunk_coords.x,
-                        chunk_z: chunk_coords.z,
-                        primary_bit_mask: mask_to_boxed_slice(primary_bit_mask),
-                        heightmaps: chunk.get_heightmaps(),
-                        biomes: chunk.get_biomes().into_boxed_slice(),
-                        // TODO: send block entities for chunk when we support them
-                        block_entities: vec![].into_boxed_slice(),
-                        data: section_data,
-                    })
-                    .await;
-
-                let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) =
-                    chunk.gen_sky_lights();
-                let (block_light_mask, empty_block_light_mask, block_light_arrays) =
-                    chunk.gen_block_lights();
-
-                self.client_list
-                    .send_packet(sender, ClientBoundPacket::UpdateLight {
-                        chunk_x: chunk_coords.x,
-                        chunk_z: chunk_coords.z,
-                        trust_edges: true,
-                        sky_light_mask: mask_to_boxed_slice(sky_light_mask),
-                        block_light_mask: mask_to_boxed_slice(block_light_mask),
-                        empty_sky_light_mask: mask_to_boxed_slice(empty_sky_light_mask),
-                        empty_block_light_mask: mask_to_boxed_slice(empty_block_light_mask),
-                        sky_light_arrays,
-                        block_light_arrays,
-                    })
-                    .await;
+            fn mask_to_boxed_slice(mask: u128) -> Box<[i64]> {
+                Box::<[_]>::from([mask as i64].as_ref())
             }
+
+            packets.push(ClientBoundPacket::ChunkData {
+                chunk_x: chunk_coords.x,
+                chunk_z: chunk_coords.z,
+                primary_bit_mask: mask_to_boxed_slice(primary_bit_mask),
+                heightmaps: chunk.get_heightmaps(),
+                biomes: chunk.get_biomes().into_boxed_slice(),
+                // TODO: send block entities for chunk when we support them
+                block_entities: vec![].into_boxed_slice(),
+                data: section_data,
+            });
+
+            let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) = chunk.gen_sky_lights();
+            let (block_light_mask, empty_block_light_mask, block_light_arrays) =
+                chunk.gen_block_lights();
+
+            packets.push(ClientBoundPacket::UpdateLight {
+                chunk_x: chunk_coords.x,
+                chunk_z: chunk_coords.z,
+                trust_edges: true,
+                sky_light_mask: mask_to_boxed_slice(sky_light_mask),
+                block_light_mask: mask_to_boxed_slice(block_light_mask),
+                empty_sky_light_mask: mask_to_boxed_slice(empty_sky_light_mask),
+                empty_block_light_mask: mask_to_boxed_slice(empty_block_light_mask),
+                sky_light_arrays,
+                block_light_arrays,
+            });
         }
+        self.client_list.send_all(sender, packets).await;
         let elapsed = start.elapsed();
         log::info!("Chunk and light send time: {:?}", elapsed);
 

@@ -1,15 +1,16 @@
 use crate::{
     block::entity::BlockEntity,
     item::{get_item, Inventory, ItemStack},
+    util::uln::UlnStr,
     world::location::BlockPosition,
 };
 use quartz_nbt::NbtCompound;
-use crate::util::uln::UlnStr;
 
 // While this is somewhat accurate to how the Furnace BE will be implemented the tick method is no where near finished and some key fields are missing
 // Currently this is mostly for testing BEs
 
 pub struct FurnaceBlockEntity {
+    #[allow(dead_code)]
     pos: BlockPosition,
     custom_name: String,
     lock: bool,

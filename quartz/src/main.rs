@@ -7,7 +7,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let console_interface = Arc::new(Interface::new("quartz-server")?);
     console_interface.set_prompt("> ")?;
 
-    logging::init_logger(Some("quartz"), console_interface.clone())?;
+    logging::init_logger(
+        Some(|path| path.starts_with("quartz")),
+        console_interface.clone(),
+    )?;
 
     let config: Config;
     match load_config(Path::new("./config.json")) {

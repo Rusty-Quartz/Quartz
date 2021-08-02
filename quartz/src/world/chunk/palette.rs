@@ -1,7 +1,5 @@
-use std::num::{NonZeroU8};
-use crate::StateID;
-use crate::util::math::fast_ceil_log2_64;
-use crate::block::states::STATE_COUNT;
+use crate::{block::states::STATE_COUNT, util::math::fast_ceil_log2_64, StateID};
+use std::num::NonZeroU8;
 
 /// The minimum number of bits per block.
 pub const MIN_BITS_PER_BLOCK: u8 = 4;
@@ -12,10 +10,10 @@ pub const MAX_BITS_PER_BLOCK: u8 = fast_ceil_log2_64(STATE_COUNT as u64) as u8;
 pub const DIRECT_PALETTE_THRESHOLD: u8 = 9;
 
 pub struct Palette {
-    index_to_state: Vec<StateID>,
+    pub(super) index_to_state: Vec<StateID>,
     // TODO: consider changing index type when/if StateID is changed
     state_to_index: Vec<(StateID, u16)>,
-    bits_per_block: NonZeroU8
+    bits_per_block: NonZeroU8,
 }
 
 impl Palette {
@@ -24,7 +22,7 @@ impl Palette {
             index_to_state: Vec::new(),
             state_to_index: Vec::new(),
             // Safety: MIN_BITS_PER_BLOCK is not zero
-            bits_per_block: unsafe { NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK) }
+            bits_per_block: unsafe { NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK) },
         }
     }
 
@@ -32,7 +30,7 @@ impl Palette {
         Palette {
             index_to_state: vec![state],
             state_to_index: vec![(state, 0)],
-            bits_per_block: unsafe { NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK) }
+            bits_per_block: unsafe { NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK) },
         }
     }
 
@@ -71,23 +69,17 @@ impl Palette {
 
             // Safety: MIN_BITS_PER_BLOCK is greater than zero, and we take the max of it against
             // `raw_bits_per_block`
-            unsafe {
-                NonZeroU8::new_unchecked(bpb)
-            }
+            unsafe { NonZeroU8::new_unchecked(bpb) }
         } else {
             // If the palette is empty, use the minimum number of bits
             if raw_bits_per_block == 63 {
                 // Safety: MIN_BITS_PER_BLOCK is not zero
-                unsafe {
-                    NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK)
-                }
+                unsafe { NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK) }
             }
             // Otherwise use the maximum number of bits
             else {
                 // Safety: MAX_BITS_PER_BLOCK is not zero
-                unsafe {
-                    NonZeroU8::new_unchecked(MAX_BITS_PER_BLOCK)
-                }
+                unsafe { NonZeroU8::new_unchecked(MAX_BITS_PER_BLOCK) }
             }
         }
     }
@@ -101,19 +93,19 @@ impl Palette {
     #[inline]
     pub fn index_of(&self, state: StateID) -> Option<usize> {
         self.state_to_index
-            .binary_search_by_key(
-                &state,
-                |&(s, _)| s
-            )
+            .binary_search_by_key(&state, |&(s, _)| s)
             .ok()
             .map(|trans_index| self.state_to_index[trans_index].1 as usize)
     }
 
     pub fn insert(&mut self, state: StateID) -> InsertionResult {
         // Grab the index at which the state will be inserted in the state-to-index lookup map
-        let insertion_index = match self.state_to_index.binary_search_by_key(&state, |&(s, _)| s) {
+        let insertion_index = match self
+            .state_to_index
+            .binary_search_by_key(&state, |&(s, _)| s)
+        {
             Ok(index) => return InsertionResult::AlreadyInPalette { index },
-            Err(index) => index
+            Err(index) => index,
         };
 
         // Store the actual index of the state in the palette
@@ -123,7 +115,8 @@ impl Palette {
 
         // Add the state to each map
         self.index_to_state.push(state);
-        self.state_to_index.insert(insertion_index, (state, index as u16));
+        self.state_to_index
+            .insert(insertion_index, (state, index as u16));
 
         // If the current length is a power of two, then we may need to adjust bits_per_block
         let old_bits_per_block = if old_len.count_ones() == 1 {
@@ -144,22 +137,23 @@ impl Palette {
         };
 
         match old_bits_per_block {
-            None => InsertionResult::Inserted {
-                index
-            },
+            None => InsertionResult::Inserted { index },
             Some(old_bits_per_block) => InsertionResult::InsertedAndAltered {
                 index,
                 old_bits_per_block,
-                new_bits_per_block: self.bits_per_block
-            }
+                new_bits_per_block: self.bits_per_block,
+            },
         }
     }
 
     pub fn remove(&mut self, state: StateID) -> RemovalResult {
         // Grab the index of the element in the state-to-index map to remove
-        let removal_index = match self.state_to_index.binary_search_by_key(&state, |&(s, _)| s) {
+        let removal_index = match self
+            .state_to_index
+            .binary_search_by_key(&state, |&(s, _)| s)
+        {
             Ok(index) => index,
-            Err(_) => return RemovalResult::NotInPalette
+            Err(_) => return RemovalResult::NotInPalette,
         };
 
         // Grab the index in the index-to-state map at which to remove the element
@@ -192,14 +186,12 @@ impl Palette {
         };
 
         match old_bits_per_block {
-            None => RemovalResult::Removed {
-                index
-            },
+            None => RemovalResult::Removed { index },
             Some(old_bits_per_block) => RemovalResult::RemovedAndAltered {
                 index,
                 old_bits_per_block,
-                new_bits_per_block: self.bits_per_block
-            }
+                new_bits_per_block: self.bits_per_block,
+            },
         }
     }
 }
@@ -207,27 +199,27 @@ impl Palette {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InsertionResult {
     AlreadyInPalette {
-        index: usize
+        index: usize,
     },
     Inserted {
-        index: usize
+        index: usize,
     },
     InsertedAndAltered {
         index: usize,
         old_bits_per_block: NonZeroU8,
-        new_bits_per_block: NonZeroU8
-    }
+        new_bits_per_block: NonZeroU8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RemovalResult {
     NotInPalette,
     Removed {
-        index: usize
+        index: usize,
     },
     RemovedAndAltered {
         index: usize,
         old_bits_per_block: NonZeroU8,
-        new_bits_per_block: NonZeroU8
-    }
+        new_bits_per_block: NonZeroU8,
+    },
 }

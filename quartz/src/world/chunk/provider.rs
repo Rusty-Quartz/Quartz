@@ -3,35 +3,46 @@ use crate::world::{
     location::{Coordinate, CoordinatePair},
 };
 use byteorder::{BigEndian, ByteOrder};
+use dashmap::{
+    mapref::{
+        multiple::RefMulti,
+        one::{Ref, RefMut},
+    },
+    DashMap,
+};
 use flate2::write::{GzDecoder, ZlibDecoder};
 use log::{error, warn};
-use quartz_nbt::{
-    io::NbtIoError,
-    serde::deserialize_from_buffer,
-};
+use quartz_nbt::{io::NbtIoError, serde::deserialize_from_buffer};
 use quartz_util::hash::NumHasher;
-use tokio::{runtime::{Builder, Runtime}, fs::{OpenOptions, File}, io::{AsyncReadExt, AsyncSeekExt, SeekFrom}, sync::{
-    RwLock,
-    RwLockWriteGuard,
-}};
-use std::{collections::HashMap, future::Future, io::Write, path::{Path, PathBuf}, sync::{Arc, atomic::{AtomicUsize, Ordering}}, io::{self, Error as IoError, ErrorKind}};
-use std::collections::hash_map::Entry;
+use std::{
+    future::Future,
+    io::{self, Error as IoError, ErrorKind, Write},
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
+use tokio::{
+    fs::{File, OpenOptions},
+    io::{AsyncReadExt, AsyncSeekExt, SeekFrom},
+    runtime::{Builder, Runtime},
+    sync::Mutex,
+};
 
 pub struct ChunkProvider {
-    pub regions: RegionHandler,
-    rt: Runtime
+    pub regions: Arc<RegionHandler>,
+    rt: Runtime,
 }
 
 impl ChunkProvider {
     /// Creates a chunk provider for the given root directory with the given number of threads.
-    pub fn new<P: AsRef<Path>>(
-        world_name: String,
-        root_directory: P,
-    ) -> io::Result<Self> {
+    pub fn new<P: AsRef<Path>>(world_name: String, root_directory: P) -> io::Result<Self> {
         // Ensure the root directory exists
         std::fs::create_dir_all(root_directory.as_ref())?;
 
-        let regions = RegionHandler::new(root_directory.as_ref().to_owned());
+        let regions = Arc::new(RegionHandler::new(root_directory.as_ref().to_owned()));
 
         Ok(ChunkProvider {
             regions,
@@ -39,9 +50,13 @@ impl ChunkProvider {
                 .enable_io()
                 .thread_name_fn(move || {
                     static THREAD_ID: AtomicUsize = AtomicUsize::new(0);
-                    format!("{}/chunk-provider#{}", world_name, THREAD_ID.fetch_add(1, Ordering::AcqRel))
+                    format!(
+                        "{}/chunk-provider#{}",
+                        world_name,
+                        THREAD_ID.fetch_add(1, Ordering::AcqRel)
+                    )
                 })
-                .build()?
+                .build()?,
         })
     }
 
@@ -59,39 +74,41 @@ impl ChunkProvider {
     fn handle_request(&self, request: ProviderRequest) {
         let regions = self.regions.clone();
 
-        self.rt
-            .spawn(async move {
-                let result =
-                    Self::handle_request_internal(request.clone(), regions).await;
+        self.rt.spawn(async move {
+            let result = Self::handle_request_internal(request.clone(), regions).await;
 
-                if let Err(e) = result {
-                    error!("Failed to process request {:?}: {}", request, e);
-                }
-            });
+            if let Err(e) = result {
+                error!("Failed to process request {:?}: {}", request, e);
+            }
+        });
     }
 
     async fn handle_request_internal(
         request: ProviderRequest,
-        handler: RegionHandler,
+        handler: Arc<RegionHandler>,
     ) -> Result<(), NbtIoError> {
         match request {
             ProviderRequest::LoadFull(coords) => {
-                let mut regions = handler.regions_mut().await;
-                let region = regions.region_at(coords).await?;
+                let mut region = handler.region_at(coords).await?;
 
-                // The chunk data is still available, so we can just mark it as used and return early
+                // Check if the chunk data is still available, to see if we can just mark it as
+                // active and return early
                 if region.recover_cached_chunk(coords) {
                     // Drops the guard
                     return Ok(());
                 }
 
-                let chunk_nbt = region.load_chunk_nbt(coords).await?;
+                // We skip a downgrade on `region` here because futures are lazy and the overhead
+                // is minimal
+                let chunk_nbt = region
+                    .chunk_nbt(coords)
+                    .map_err(|msg| NbtIoError::Custom(msg.to_owned().into_boxed_str()))?;
 
                 drop(region);
-                drop(regions);
 
                 match chunk_nbt {
                     Some(chunk_nbt) => {
+                        let chunk_nbt = chunk_nbt.await?;
                         Self::decode_and_cache_chunk(handler, coords, chunk_nbt).await?;
                     }
                     None => {
@@ -103,9 +120,7 @@ impl ChunkProvider {
             }
 
             ProviderRequest::Unload(coords) => {
-                let mut regions = handler.regions_mut().await;
-
-                let region = match regions.loaded_region_at(coords) {
+                let mut region = match handler.mut_loaded_region_at(coords) {
                     Some(region) => region,
                     None => return Ok(()),
                 };
@@ -120,12 +135,10 @@ impl ChunkProvider {
                 // We can unload the region since it has no more loaded chunks
 
                 drop(region);
-                let _region = match regions.remove_region(coords) {
+                let _region = match handler.remove_region(coords) {
                     Some(region) => region,
                     None => return Ok(()),
                 };
-                
-                drop(regions);
 
                 // TODO: write region to disk
                 Ok(())
@@ -133,21 +146,25 @@ impl ChunkProvider {
         }
     }
 
-    async fn decode_and_cache_chunk(handler: RegionHandler, coords: Coordinate, chunk_nbt: Vec<u8>) -> Result<(), NbtIoError> {
+    async fn decode_and_cache_chunk(
+        handler: Arc<RegionHandler>,
+        coords: Coordinate,
+        chunk_nbt: Vec<u8>,
+    ) -> Result<(), NbtIoError> {
         let mut decompressed = Vec::new();
 
         match chunk_nbt[0] {
             2 => {
                 let mut decoder = ZlibDecoder::new(decompressed);
-                decoder.write_all(&chunk_nbt[1..])?;
+                decoder.write_all(&chunk_nbt[1 ..])?;
                 decompressed = decoder.finish()?;
-            },
+            }
             // GZip compression (not used in practice)
             1 => {
                 let mut decoder = GzDecoder::new(decompressed);
-                decoder.write_all(&chunk_nbt[1..])?;
+                decoder.write_all(&chunk_nbt[1 ..])?;
                 decompressed = decoder.finish()?;
-            },
+            }
             _ =>
                 return Err(IoError::new(
                     ErrorKind::InvalidData,
@@ -162,18 +179,8 @@ impl ChunkProvider {
 
         let (raw_chunk, _) = deserialize_from_buffer::<RawChunk>(&decompressed)?;
         let chunk: Chunk = raw_chunk.into();
-
-        let mut regions = handler.regions_mut().await;
-        match regions.loaded_region_at(chunk.coordinates()) {
-            Some(region) => {
-                handler.chunks_mut().await.cache_chunk(&mut *region, chunk);
-                Ok(())
-            },
-            None => Err(NbtIoError::Custom(
-                String::from("Attempted to cache chunk in an unloaded region")
-                    .into_boxed_str(),
-            )),
-        }
+        handler.cache_chunk(chunk);
+        Ok(())
     }
 }
 
@@ -183,123 +190,134 @@ pub enum ProviderRequest {
     Unload(Coordinate),
 }
 
-pub type Map<T> = HashMap<CoordinatePair, T, NumHasher>;
+pub type Map<T> = DashMap<CoordinatePair, T, NumHasher>;
+pub type MapRef<'a, T> = Ref<'a, CoordinatePair, T, NumHasher>;
+pub type MapRefMut<'a, T> = RefMut<'a, CoordinatePair, T, NumHasher>;
+pub type MapRefMulti<'a, T> = RefMulti<'a, CoordinatePair, T, NumHasher>;
 
-#[derive(Clone)]
 pub struct RegionHandler {
-    regions: Arc<RwLock<Map<Region>>>,
-    chunks: Arc<RwLock<Map<Chunk>>>,
+    regions: Map<Region>,
+    chunks: Map<Chunk>,
     root_directory: PathBuf,
+    // Dashmap will deadlock if a ref is held across a `.await`, so we use this async mutex to
+    // gain exclusive access for the specific operation of inserting a region into the region map.
+    // This mutex also ensures that we do not double-load a region.
+    load_region: Mutex<()>,
 }
 
 impl RegionHandler {
     fn new(root_directory: PathBuf) -> Self {
         RegionHandler {
-            regions: Arc::new(RwLock::new(HashMap::with_hasher(NumHasher))),
-            chunks: Arc::new(RwLock::new(HashMap::with_hasher(NumHasher))),
+            regions: Map::with_hasher(NumHasher),
+            chunks: Map::with_hasher(NumHasher),
             root_directory,
+            load_region: Mutex::new(()),
         }
     }
 
-    pub async fn regions_mut(&self) -> MapGuardMut<'_, Region> {
-        MapGuardMut {
-            handler: self,
-            guard: self.regions.write().await
+    async fn region_at(&self, location: Coordinate) -> io::Result<MapRefMut<'_, Region>> {
+        let reg_coords = location.as_region().into();
+
+        // Optimistically try to get a mutable reference to the region in the map
+        if let Some(region) = self.regions.get_mut(&reg_coords) {
+            return Ok(region);
         }
-    }
 
-    pub async fn chunks_mut(&self) -> MapGuardMut<'_, Chunk> {
-        MapGuardMut {
-            handler: self,
-            guard: self.chunks.write().await
+        // We use this async mutex to define a critical zone where we can have the same effect as
+        // holding a reference to the underlying map while awaiting futures
+        let guard = self.load_region.lock().await;
+
+        // If we were not the first to get to the lock above, then another thread may have loaded
+        // the region we want for us, so check again before executing the load.
+        if let Some(region) = self.regions.get_mut(&reg_coords) {
+            return Ok(region);
         }
-    }
-}
 
-pub struct MapGuardMut<'a, T> {
-    handler: &'a RegionHandler,
-    guard: RwLockWriteGuard<'a, Map<T>>
-}
+        let start = Instant::now();
+        let region = Region::new(&self.root_directory, location).await?;
+        let region_ref = self.regions.entry(reg_coords).or_insert(region);
+        let elapsed = start.elapsed();
+        log::info!("Region load time: {:?}", elapsed);
 
-impl<'a> MapGuardMut<'a, Region> {
-    async fn region_at(&mut self, location: Coordinate) -> io::Result<&mut Region> {
-        Ok(self
-            .guard
-            .entry(location.as_region().into())
-            .or_insert(Region::new(&self.handler.root_directory, location).await?))
+        drop(guard);
+
+        Ok(region_ref)
     }
 
     #[inline]
-    pub fn loaded_region_at(&mut self, location: Coordinate) -> Option<&mut Region> {
-        self.guard.get_mut(&location.as_region().into())
+    pub fn loaded_region_at(&self, location: Coordinate) -> Option<MapRef<'_, Region>> {
+        self.regions.get(&location.as_region().into())
     }
 
     #[inline]
-    fn remove_region(&mut self, location: Coordinate) -> Option<Region> {
-        self.guard.remove(&location.as_region().into())
-    }
-}
-
-impl<'a> MapGuardMut<'a, Chunk> {
-    pub fn loaded_chunk_at(&mut self, location: Coordinate) -> Option<&mut Chunk> {
-        self.guard.get_mut(&location.as_chunk().into())
+    pub fn mut_loaded_region_at(&self, location: Coordinate) -> Option<MapRefMut<'_, Region>> {
+        self.regions.get_mut(&location.as_region().into())
     }
 
-    fn cache_chunk(&mut self, region: &mut Region, chunk: Chunk) {
-        if let Some(chunk_info) = region.mut_chunk_info_at(chunk.coordinates()) {
-            chunk_info.cache_inhabited = true;
-            chunk_info.cache_active = true;
+    #[inline]
+    pub fn remove_region(&self, location: Coordinate) -> Option<Region> {
+        self.regions
+            .remove(&location.as_region().into())
+            .map(|(_, region)| region)
+    }
+
+    #[inline]
+    pub fn loaded_chunks(&self) -> impl Iterator<Item = MapRefMulti<'_, Chunk>> {
+        self.chunks.iter()
+    }
+
+    #[inline]
+    pub fn loaded_chunk_at(&self, location: Coordinate) -> Option<MapRef<'_, Chunk>> {
+        self.chunks.get(&location.as_chunk().into())
+    }
+
+    #[inline]
+    pub fn mut_loaded_chunk_at(&self, location: Coordinate) -> Option<MapRefMut<'_, Chunk>> {
+        self.chunks.get_mut(&location.as_chunk().into())
+    }
+
+    fn cache_chunk(&self, chunk: Chunk) {
+        let coords = chunk.coordinates();
+
+        let mut region = match self.mut_loaded_region_at(coords) {
+            Some(region) => region,
+            None => {
+                error!(
+                    "Failed to cache chunk at {:?}: associated region not loaded.",
+                    coords
+                );
+                return;
+            }
+        };
+
+        match region.mut_chunk_info_at(coords) {
+            Some(chunk_info) => {
+                chunk_info.cache_inhabited = true;
+                chunk_info.cache_active = true;
+            }
+            None => {
+                // We explicitly panic here because this is a serious bug
+                panic!(
+                    "Failed to cache chunk at {:?}: region and chunk coordinates not synchronized",
+                    coords
+                );
+            }
         }
 
-        let entry = self.guard.entry(chunk.coordinates().as_chunk().into());
-        match entry {
-            Entry::Occupied(mut cached) => {
-                *cached.get_mut() = chunk;
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(chunk);
-            },
-        }
-    }
+        drop(region);
 
-    pub fn chunk_at(
-        &mut self,
-        region: &mut Region,
-        absolute_position: Coordinate,
-    ) -> Option<&mut Chunk> {
-        let chunk = self.guard.get_mut(&absolute_position.as_chunk().into());
-
-        match chunk {
-            Some(chunk) => {
-                let chunk_info = match region.mut_chunk_info_at(absolute_position) {
-                    Some(info) => info,
-                    None => {
-                        warn!(
-                            "Failed to extract chunk info from region at {:?}",
-                            absolute_position
-                        );
-                        return None;
-                    }
-                };
-
-                if !chunk_info.cache_active {
-                    chunk_info.cache_active = true;
-                    region.loaded_count += 1;
-                }
-
-                Some(chunk)
-            }
-
-            None => None,
+        let entry = self.chunks.insert(coords.as_chunk().into(), chunk);
+        if entry.is_some() {
+            warn!("Overwrote chunk at {:?} while caching new chunk", coords)
         }
     }
 }
 
 pub struct Region {
-    file: File,
+    file: Arc<Mutex<File>>,
     chunk_offset: CoordinatePair,
     loaded_count: usize,
-    chunk_info: Box<[ChunkDataInfo]>,
+    chunk_info: Box<[ChunkMetadata]>,
 }
 
 impl Region {
@@ -310,16 +328,17 @@ impl Region {
         let file_path =
             root_directory.join(format!("r.{}.{}.mca", region_offset.x, region_offset.z));
 
-        let mut chunk_info: Vec<ChunkDataInfo> = Vec::with_capacity(1024);
-        chunk_info.resize_with(1024, ChunkDataInfo::uninitialized);
+        let mut chunk_info: Vec<ChunkMetadata> = Vec::with_capacity(1024);
+        chunk_info.resize_with(1024, ChunkMetadata::uninitialized);
 
         if file_path.exists() {
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(file_path)
+                .await?;
             let mut region = Region {
-                file: OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .open(file_path)
-                    .await?,
+                file: Arc::new(Mutex::new(file)),
                 chunk_offset,
                 chunk_info: chunk_info.into_boxed_slice(),
                 loaded_count: 0,
@@ -329,7 +348,7 @@ impl Region {
             Ok(region)
         } else {
             Ok(Region {
-                file: File::create(file_path).await?,
+                file: Arc::new(Mutex::new(File::create(file_path).await?)),
                 chunk_offset,
                 chunk_info: chunk_info.into_boxed_slice(),
                 loaded_count: 0,
@@ -338,18 +357,17 @@ impl Region {
     }
 
     async fn read_file_header(&mut self) -> io::Result<()> {
-        if self.chunk_info.len() != 1024 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Region::read_file_header called with invalid or uninitialized field chunk_info.",
-            ));
-        }
+        assert_eq!(
+            self.chunk_info.len(),
+            1024,
+            "Region::read_file_header called with invalid or uninitialized field chunk_info."
+        );
 
         let mut buffer = vec![0; 8192].into_boxed_slice();
-        self.file.read_exact(&mut *buffer).await?;
+        self.file.lock().await.read_exact(&mut *buffer).await?;
 
         let mut j: usize;
-        let mut chunk_info: &mut ChunkDataInfo;
+        let mut chunk_info: &mut ChunkMetadata;
         for i in 0 .. 1024 {
             j = i * 4;
 
@@ -380,12 +398,12 @@ impl Region {
             + (absolute_position.z - self.chunk_offset.z) * 32) as usize
     }
 
-    fn chunk_info_at(&self, absolute_position: Coordinate) -> Option<&ChunkDataInfo> {
+    fn chunk_info_at(&self, absolute_position: Coordinate) -> Option<&ChunkMetadata> {
         self.chunk_info
             .get(self.index_absolute(absolute_position.as_chunk().into()))
     }
 
-    fn mut_chunk_info_at(&mut self, absolute_position: Coordinate) -> Option<&mut ChunkDataInfo> {
+    fn mut_chunk_info_at(&mut self, absolute_position: Coordinate) -> Option<&mut ChunkMetadata> {
         self.chunk_info
             .get_mut(self.index_absolute(absolute_position.as_chunk().into()))
     }
@@ -411,18 +429,15 @@ impl Region {
     /// returned indicates whether or not the chunk was actually on disk, if false is returned then that
     /// indicates the chunk was never saved before. If `Ok(true)` is returned, then the chunk was saved on disk
     /// before and has been loaded into the given buffer.
-    async fn load_chunk_nbt(
-        &mut self,
+    fn chunk_nbt(
+        &self,
         absolute_position: Coordinate,
-    ) -> Result<Option<Vec<u8>>, NbtIoError> {
+    ) -> Result<Option<impl Future<Output = Result<Vec<u8>, NbtIoError>>>, &'static str> {
+        let file = self.file.clone();
+
         let chunk_info = match self.chunk_info_at(absolute_position) {
             Some(chunk_info) => chunk_info,
-            None =>
-                return Err(IoError::new(
-                    ErrorKind::InvalidInput,
-                    "Attempted to load chunk outside of region",
-                )
-                .into()),
+            None => return Err("Attempted to load chunk outside of region"),
         };
 
         if chunk_info.is_uninitialized() {
@@ -431,22 +446,26 @@ impl Region {
 
         // The sector offset accounts for the tables at the beginning
         let seek_offset = (chunk_info.sector_offset as u64) * 4096;
-        self.file
-            .seek(SeekFrom::Start(seek_offset))
-            .await?;
 
-        // Read the length
-        let mut buf = [0u8; 4];
-        self.file.read_exact(&mut buf).await?;
-        let length = BigEndian::read_u32(&buf) as usize;
+        Ok(Some(async move {
+            let mut file_lock = file.lock().await;
+            file_lock.seek(SeekFrom::Start(seek_offset)).await?;
 
-        let mut buf: Vec<u8> = Vec::with_capacity(length);
-        unsafe {
-            buf.set_len(length);
-        }
+            // Read the length
+            let mut buf = [0u8; 4];
+            file_lock.read_exact(&mut buf).await?;
+            let length = BigEndian::read_u32(&buf) as usize;
 
-        self.file.read_exact(&mut buf).await?;
-        Ok(Some(buf))
+            let mut buf: Vec<u8> = Vec::with_capacity(length);
+            unsafe {
+                buf.set_len(length);
+            }
+
+            file_lock.read_exact(&mut buf).await?;
+            drop(file_lock);
+
+            Ok(buf)
+        }))
     }
 
     fn mark_chunk_inactive(&mut self, absolute_position: Coordinate) {
@@ -466,8 +485,8 @@ impl Region {
     }
 }
 
-// TODO: Consider boxing
-struct ChunkDataInfo {
+#[derive(Clone, Copy)]
+struct ChunkMetadata {
     sector_offset: u32,
     last_saved: u32,
     sector_count: u8,
@@ -478,9 +497,9 @@ struct ChunkDataInfo {
     cache_active: bool,
 }
 
-impl ChunkDataInfo {
+impl ChunkMetadata {
     pub fn uninitialized() -> Self {
-        ChunkDataInfo {
+        ChunkMetadata {
             sector_offset: 0,
             sector_count: 0,
             last_saved: 0,

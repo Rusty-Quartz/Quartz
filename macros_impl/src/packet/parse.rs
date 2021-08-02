@@ -214,6 +214,30 @@ where
             ));
         }
 
+        if params
+            .len
+            .as_ref()
+            .map(|len| len == &ArrayLength::None && side == Side::Read)
+            .unwrap_or(false)
+        {
+            return Err(Error::new_spanned(
+                ty,
+                "Parameter `no_prefix` is incompatible with this type when reading.",
+            ));
+        }
+
+        if params
+            .condition
+            .as_ref()
+            .map(|con| con == &OptionCondition::None && side == Side::Read)
+            .unwrap_or(false)
+        {
+            return Err(Error::new_spanned(
+                ty,
+                "Parameter `no_condition` is incompatible with this type when reading.",
+            ));
+        }
+
         fields.push(Field::regular(
             name,
             ty,
@@ -313,6 +337,20 @@ impl Parse for PacketSerdeParams {
 
                     params.condition = Some(OptionCondition::Prefixed);
                 }
+                "no_len" => {
+                    if params.len.is_some() {
+                        return Err(Error::new_spanned(ident, "Duplicate length parameter"));
+                    }
+
+                    params.len = Some(ArrayLength::None);
+                }
+                "no_condition" => {
+                    if params.condition.is_some() {
+                        return Err(Error::new_spanned(ident, "Duplicate condition parameter"));
+                    }
+
+                    params.condition = Some(OptionCondition::None);
+                }
                 _ =>
                     return Err(Error::new_spanned(
                         ident,
@@ -342,15 +380,19 @@ impl Default for PacketSerdeParams {
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub enum ArrayLength {
     Expr(Expr),
     Prefixed,
     Greedy,
+    None,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum OptionCondition {
     Expr(Expr),
     Prefixed,
+    None,
 }
 
 pub struct EnumStructVariant {

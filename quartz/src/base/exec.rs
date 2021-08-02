@@ -1,13 +1,12 @@
 use linefeed::{DefaultTerminal, Interface};
 use log::{error, info};
-use once_cell::sync::{OnceCell, Lazy};
+use once_cell::sync::OnceCell;
+use parking_lot::{Mutex, RwLock};
 use std::{
     fmt::Display,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
-        RwLock,
-        Mutex
     },
     time::{Duration, Instant},
 };
@@ -20,7 +19,7 @@ use crate::{CommandExecutor, Config, Diagnostics, QuartzServer};
 pub(crate) static RUNNING: AtomicBool = AtomicBool::new(false);
 static CONFIG: OnceCell<RwLock<Config>> = OnceCell::new();
 static RAW_CONSOLE: OnceCell<Arc<Interface<DefaultTerminal>>> = OnceCell::new();
-pub static DIAGNOSTICS: Lazy<Mutex<Diagnostics>> = Lazy::new(|| Mutex::new(Diagnostics::new()));
+pub static DIAGNOSTICS: Mutex<Diagnostics> = Mutex::new(Diagnostics::new());
 static COMMAND_EXECUTOR: OnceCell<CommandExecutor> = OnceCell::new();
 
 /// Returns whether or not the server is running.
@@ -86,7 +85,7 @@ pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
         let mut clock = ServerClock::new(50);
 
         while RUNNING.load(Ordering::Acquire) {
-            if let Ok(mut guard) = DIAGNOSTICS.try_lock() {
+            if let Some(mut guard) = DIAGNOSTICS.try_lock() {
                 guard.microseconds_per_tick = clock.micros_ema;
             }
 
