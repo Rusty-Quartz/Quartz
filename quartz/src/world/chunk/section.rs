@@ -1,4 +1,11 @@
-use super::{ChunkIoError, CompactStateBuffer, Lighting, Palette, DIRECT_PALETTE_THRESHOLD};
+use super::{
+    ChunkDecodeError,
+    CompactStateBuffer,
+    LightBuffer,
+    Lighting,
+    Palette,
+    DIRECT_PALETTE_THRESHOLD,
+};
 use crate::{
     block::{
         states::{is_air, AIR},
@@ -6,13 +13,16 @@ use crate::{
         StateBuilder,
     },
     network::{
-        packet::{ClientSection, SectionAndLightData},
+        packet::{ClientSection, SectionAndLightData, SectionData},
         PacketBuffer,
+        PacketSerdeError,
+        ReadFromPacket,
         WriteToPacket,
     },
     BlockState,
     StateID,
 };
+use log::warn;
 use quartz_util::uln::UlnStr;
 use serde::{
     de::{self, SeqAccess, Visitor},
@@ -53,7 +63,7 @@ impl Section {
         }
     }
 
-    fn from_raw(raw: RawSection<'_>) -> Result<Self, ChunkIoError> {
+    fn from_raw(raw: RawSection<'_>) -> Result<Self, ChunkDecodeError> {
         let (palette, states) = if raw.palette.is_none() || raw.block_states.is_none() {
             (Palette::new(), CompactStateBuffer::empty())
         } else {
@@ -61,13 +71,13 @@ impl Section {
 
             for palette_entry in raw.palette.unwrap() {
                 let mut state = BlockState::builder(palette_entry.name).ok_or_else(|| {
-                    ChunkIoError::UnknownBlockState(palette_entry.name.to_owned())
+                    ChunkDecodeError::UnknownBlockState(palette_entry.name.to_owned())
                 })?;
 
                 for (name, value) in palette_entry.properties {
                     state
                         .add_property(name, value)
-                        .map_err(|msg| ChunkIoError::UnknownStateProperty(msg))?;
+                        .map_err(|msg| ChunkDecodeError::UnknownStateProperty(msg))?;
                 }
 
                 palette.insert(state.build().id());
@@ -116,6 +126,10 @@ impl Section {
     }
 
     pub fn block_count(&self) -> usize {
+        if self.palette.states().all(|state| !is_air(state)) {
+            return 4096;
+        }
+
         self.states
             .iter()
             .flat_map(|entry| self.map_state_entry(entry))
@@ -133,13 +147,7 @@ impl Section {
         let palette = if self.is_pal_direct {
             None
         } else {
-            Some(
-                self.palette
-                    .states()
-                    .map(|state| state as i32)
-                    .collect::<Vec<i32>>()
-                    .into_boxed_slice(),
-            )
+            Some(self.palette.states().map(|state| state as i32).collect())
         };
         let data = Box::<[u64]>::from(self.states.inner());
 
@@ -151,7 +159,7 @@ impl Section {
         }
     }
 
-    pub fn into_packet_data(self) -> SectionAndLightData {
+    pub fn into_packet_data(self) -> (ClientSection, Option<LightBuffer>, Option<LightBuffer>) {
         let block_count = self.block_count() as i16;
         let bits_per_block = self.palette.bits_per_block().get();
         let palette = if self.is_pal_direct {
@@ -162,22 +170,21 @@ impl Section {
                     .index_to_state
                     .into_iter()
                     .map(|state| state as i32)
-                    .collect::<Vec<i32>>()
-                    .into_boxed_slice(),
+                    .collect(),
             )
         };
         let data = self.states.into_inner().into_boxed_slice();
 
-        SectionAndLightData {
-            section: ClientSection {
+        (
+            ClientSection {
                 block_count,
                 bits_per_block,
                 palette,
                 data,
             },
-            block_light: self.lighting.block,
-            sky_light: self.lighting.sky,
-        }
+            self.lighting.block,
+            self.lighting.sky,
+        )
     }
 
     #[inline]
@@ -324,7 +331,7 @@ impl SectionStore {
             .map(|index| &self.sections[index])
     }
 
-    pub fn gen_bit_mask<F>(&self, include_boundary_sections: bool, mut f: F) -> u128
+    pub fn gen_bit_mask<F>(&self, include_boundary_sections: bool, mut f: F) -> BitMask
     where F: FnMut(&Section) -> bool {
         let sections = if include_boundary_sections {
             self.section_mapping.as_ref()
@@ -332,18 +339,64 @@ impl SectionStore {
             &self.section_mapping.as_ref()[1 .. self.section_mapping.len() - 1]
         };
 
-        let mut mask = 0;
-        for &index in sections.iter().rev() {
-            mask <<= 1;
-
-            if let Some(index) = index.as_option() {
-                if f(&self.sections[index]) {
-                    mask |= 1;
+        let mut mask = BitMask::new();
+        for (raw_index, &map_index) in sections.iter().enumerate() {
+            if let Some(map_index) = map_index.as_option() {
+                if f(&self.sections[map_index]) {
+                    mask.set(raw_index);
                 }
             }
         }
 
         mask
+    }
+
+    pub fn into_packet_data(mut self) -> SectionAndLightData {
+        let mut primary_bit_mask = BitMask::new();
+        let mut block_light_mask = BitMask::new();
+        let mut sky_light_mask = BitMask::new();
+
+        self.sections.sort_by_key(|section| section.y);
+        let max_idx = self.sections.last().map(|section| section.y.as_index());
+
+        let mut sections = Vec::with_capacity(self.sections.len().max(2) - 2);
+        let mut block_light = Vec::new();
+        let mut sky_light = Vec::new();
+
+        for section in self.sections {
+            let index = section.y.as_index();
+            let is_empty = section.is_empty();
+
+            let (section, block, sky) = section.into_packet_data();
+
+            if !is_empty && index > 0 && index < max_idx.unwrap() {
+                primary_bit_mask.set(index - 1);
+                sections.push(section);
+            }
+
+            if let Some(block) = block {
+                block_light_mask.set(index);
+                block_light.push(block);
+            }
+
+            if let Some(sky) = sky {
+                sky_light_mask.set(index);
+                sky_light.push(sky);
+            }
+        }
+
+        SectionAndLightData {
+            primary_bit_mask,
+            sections: SectionData {
+                sections: sections.into_boxed_slice(),
+            },
+            block_light_mask,
+            sky_light_mask,
+            empty_block_light_mask: block_light_mask.as_empty(),
+            empty_sky_light_mask: sky_light_mask.as_empty(),
+            block_light: block_light.into_boxed_slice(),
+            sky_light: sky_light.into_boxed_slice(),
+        }
     }
 
     // TODO: impl AsRef and things
@@ -413,6 +466,61 @@ impl Display for SectionInsertionError {
 }
 
 impl Error for SectionInsertionError {}
+
+#[derive(Clone, Copy, Debug)]
+pub struct BitMask(u128);
+
+impl BitMask {
+    pub fn new() -> Self {
+        Self(0)
+    }
+
+    pub fn into_raw(self) -> u128 {
+        self.0
+    }
+
+    pub fn set(&mut self, index: usize) {
+        self.0 |= 1u128 << index;
+    }
+
+    pub fn as_empty(&self) -> Self {
+        Self(!self.0 | 1)
+    }
+}
+
+impl ReadFromPacket for BitMask {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let len = buffer.read_varying::<i32>()? as usize;
+
+        if len > 2 {
+            warn!("Encountered bit mask containing more than 128 bits");
+        }
+
+        let mut mask = 0;
+        for _ in 0 .. len.min(2) {
+            mask <<= 64;
+            mask |= buffer.read::<u64>()? as u128;
+        }
+
+        Ok(Self(mask))
+    }
+}
+
+impl WriteToPacket for BitMask {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        let lo = (self.0 & u64::MAX as u128) as u64;
+        let hi = (self.0 >> 64) as u64;
+
+        if hi == 0 {
+            buffer.write_varying(&1i32);
+            buffer.write(&lo);
+        } else {
+            buffer.write_varying(&2i32);
+            buffer.write(&lo);
+            buffer.write(&hi);
+        };
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 struct RawSection<'a> {

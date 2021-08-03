@@ -6,9 +6,11 @@ use crate::{
     display_to_console,
     network::{packet::*, AsyncClientConnection, ConnectionState, PacketBuffer},
     server::{self, QuartzServer},
-    world::location::{BlockPosition, Coordinate, CoordinatePair},
+    world::{
+        chunk::provider::ProviderRequest,
+        location::{BlockPosition, Coordinate},
+    },
 };
-use futures_util::future::join_all;
 use hex::ToHex;
 use log::{debug, error};
 use once_cell::sync::Lazy;
@@ -179,7 +181,8 @@ impl AsyncPacketHandler {
         decrypted_secret = decrypted_secret[.. 16].to_vec();
 
         // Initiate encryption
-        if let Err(e) = conn.initiate_encryption(decrypted_secret.as_slice()).await {
+        let init_encryption_result = conn.initiate_encryption(decrypted_secret.as_slice());
+        if let Err(e) = init_encryption_result {
             error!(
                 "Failed to initialize encryption for client connetion: {}",
                 e
@@ -253,8 +256,13 @@ impl AsyncPacketHandler {
             properties: [Properties; 1],
         }
 
-        // TODO: Currently disabled cause no need rn, will enable via config later
-        // conn.send_packet(&ClientBoundPacket::SetCompression{threshhold: /* maximum size of uncompressed packet */})
+        // TODO: enable compression properly here
+        const TEST_THRESHOLD: i32 = 0;
+        conn.write_handle
+            .send_packet(WrappedClientBoundPacket::EnableCompression {
+                threshold: TEST_THRESHOLD,
+            })
+            .await;
 
         // Make a get request
         let mojang_req = ureq::get(&url).call();
@@ -904,69 +912,61 @@ impl QuartzServer {
             })
             .await;
 
+        let write_handle = self.client_list.create_write_handle(sender).unwrap();
         let start = Instant::now();
-        let mut chunk_futures = Vec::new();
         for x in -view_distance .. view_distance {
             for z in -view_distance .. view_distance {
-                chunk_futures.push(
-                    self.chunk_provider
-                        .load_full(Coordinate::chunk(x as i32, z as i32)),
-                );
+                let coords = Coordinate::chunk(x as i32, z as i32);
+                self.chunk_provider.request(ProviderRequest::MinLoadSend {
+                    coords,
+                    handle: write_handle.clone(),
+                });
+                // self.chunk_provider
+                //     .request(ProviderRequest::LoadFull(coords));
             }
         }
-        join_all(chunk_futures).await;
+        // self.chunk_provider.join_pending().await;
         let elapsed = start.elapsed();
         log::info!("Chunk load time: {:?}", elapsed);
 
-        let start = Instant::now();
-        let vd = view_distance as u8 as usize;
-        let mut packets = Vec::with_capacity(vd * vd);
-        for chunk in self.chunk_provider.regions.loaded_chunks() {
-            let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
-            // code to output sections for debugging
-            // don't delete until we are sure we're sending sections correctly
-            // std::fs::write(
-            //     format!("./section_data/chunk_{}_{}.txt", x, z),
-            //     format!("{:02X?}", sections),
-            // )
-            // .unwrap();
+        // let start = Instant::now();
+        // let vd = view_distance as u8 as usize;
+        // let mut packets = Vec::with_capacity(vd * vd);
+        // for chunk in self.chunk_provider.store.loaded_chunks() {
+        //     let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
 
-            let chunk_coords: CoordinatePair = chunk.coordinates().as_chunk().into();
+        //     let chunk_coords: CoordinatePair = chunk.coordinates().as_chunk().into();
 
-            fn mask_to_boxed_slice(mask: u128) -> Box<[i64]> {
-                Box::<[_]>::from([mask as i64].as_ref())
-            }
+        //     packets.push(ClientBoundPacket::ChunkData {
+        //         chunk_x: chunk_coords.x,
+        //         chunk_z: chunk_coords.z,
+        //         primary_bit_mask: primary_bit_mask,
+        //         heightmaps: chunk.get_heightmaps(),
+        //         biomes: Box::from(chunk.biomes()),
+        //         // TODO: send block entities for chunk when we support them
+        //         block_entities: vec![].into_boxed_slice(),
+        //         data: section_data,
+        //     });
 
-            packets.push(ClientBoundPacket::ChunkData {
-                chunk_x: chunk_coords.x,
-                chunk_z: chunk_coords.z,
-                primary_bit_mask: mask_to_boxed_slice(primary_bit_mask),
-                heightmaps: chunk.get_heightmaps(),
-                biomes: chunk.get_biomes().into_boxed_slice(),
-                // TODO: send block entities for chunk when we support them
-                block_entities: vec![].into_boxed_slice(),
-                data: section_data,
-            });
+        //     let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) = chunk.gen_sky_lights();
+        //     let (block_light_mask, empty_block_light_mask, block_light_arrays) =
+        //         chunk.gen_block_lights();
 
-            let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) = chunk.gen_sky_lights();
-            let (block_light_mask, empty_block_light_mask, block_light_arrays) =
-                chunk.gen_block_lights();
-
-            packets.push(ClientBoundPacket::UpdateLight {
-                chunk_x: chunk_coords.x,
-                chunk_z: chunk_coords.z,
-                trust_edges: true,
-                sky_light_mask: mask_to_boxed_slice(sky_light_mask),
-                block_light_mask: mask_to_boxed_slice(block_light_mask),
-                empty_sky_light_mask: mask_to_boxed_slice(empty_sky_light_mask),
-                empty_block_light_mask: mask_to_boxed_slice(empty_block_light_mask),
-                sky_light_arrays,
-                block_light_arrays,
-            });
-        }
-        self.client_list.send_all(sender, packets).await;
-        let elapsed = start.elapsed();
-        log::info!("Chunk and light send time: {:?}", elapsed);
+        //     packets.push(ClientBoundPacket::UpdateLight {
+        //         chunk_x: chunk_coords.x,
+        //         chunk_z: chunk_coords.z,
+        //         trust_edges: true,
+        //         sky_light_mask,
+        //         block_light_mask,
+        //         empty_sky_light_mask,
+        //         empty_block_light_mask,
+        //         sky_light_arrays,
+        //         block_light_arrays,
+        //     });
+        // }
+        // self.client_list.send_all(sender, packets).await;
+        // let elapsed = start.elapsed();
+        // log::info!("Chunk and light send time: {:?}", elapsed);
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::SpawnPosition {

@@ -25,7 +25,7 @@ use std::{
     error::Error,
     net::TcpStream as StdTcpStream,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::Ordering,
         mpsc::{self, Receiver, Sender},
         Arc,
     },
@@ -74,7 +74,7 @@ impl QuartzServer {
             sync_packet_receiver: receiver,
             console_command_handler: None,
             chunk_provider: ChunkProvider::new(
-                "world".to_owned(),
+                "world",
                 "/home/cassy/Documents/mc-vanilla-server/world/region",
             )
             .expect("Error making chunk provider"),
@@ -82,10 +82,7 @@ impl QuartzServer {
                 .enable_io()
                 // TODO: remove after keep alive is implemented on the tick
                 .enable_time()
-                .thread_name_fn(|| {
-                    static THREAD_ID: AtomicUsize = AtomicUsize::new(0);
-                    format!("tcp-thread#{}", THREAD_ID.fetch_add(1, Ordering::AcqRel))
-                })
+                .thread_name("tcp-worker")
                 .build()
                 .expect("Failed to construct TCP server runtime"),
         }
@@ -283,6 +280,7 @@ impl QuartzServer {
 
     pub(crate) async fn tick(&mut self) {
         self.handle_packets().await;
+        self.chunk_provider.flush_ready().await;
     }
 
     async fn handle_packets(&mut self) {
@@ -353,6 +351,12 @@ impl ClientList {
             .count()
     }
 
+    pub fn create_write_handle(&self, client_id: usize) -> Option<AsyncWriteHandle> {
+        self.0
+            .get(&client_id)
+            .map(|client| client.connection.clone())
+    }
+
     /// Sends a packet to the client with the given ID.
     pub async fn send_packet(&mut self, client_id: usize, packet: ClientBoundPacket) {
         match self.0.get_mut(&client_id) {
@@ -372,7 +376,7 @@ impl ClientList {
     /// Sends a raw byte buffer to the client with the given ID.
     pub async fn send_buffer(&mut self, client_id: usize, buffer: PacketBuffer) {
         match self.0.get_mut(&client_id) {
-            Some(client) => client.connection.send_buffer(buffer).await,
+            Some(client) => client.connection.send_packet(buffer).await,
             None => warn!("Attempted to send buffer to disconnected client."),
         }
     }

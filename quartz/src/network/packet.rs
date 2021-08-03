@@ -1,6 +1,9 @@
 use crate::{
     network::{PacketBuffer, PacketSerdeError, ReadFromPacket, WriteToPacket},
-    world::{chunk::LightBuffer, location::BlockPosition},
+    world::{
+        chunk::{BitMask, LightBuffer},
+        location::BlockPosition,
+    },
 };
 use quartz_chat::Component;
 use quartz_macros::{ReadFromPacket, WriteToPacket};
@@ -11,6 +14,7 @@ use uuid::Uuid;
 include!(concat!(env!("OUT_DIR"), "/packet_def_output.rs"));
 
 /// A wraper for a server-bound packet which includes the sender ID.
+#[derive(Debug)]
 pub struct WrappedServerBoundPacket {
     /// The ID of the packet sender.
     pub sender: usize,
@@ -36,6 +40,9 @@ pub enum WrappedClientBoundPacket {
     Buffer(PacketBuffer),
     /// A generic item which can we written to a packet buffer.
     Custom(Box<dyn WriteToPacket + Send + Sync + 'static>),
+    EnableCompression {
+        threshold: i32,
+    },
     /// Specifies that the connection should be forcefully terminated.
     Disconnect,
 }
@@ -1046,7 +1053,12 @@ impl ReadFromPacket for SectionData {
 }
 
 pub struct SectionAndLightData {
-    pub section: ClientSection,
-    pub block_light: Option<LightBuffer>,
-    pub sky_light: Option<LightBuffer>,
+    pub primary_bit_mask: BitMask,
+    pub sections: SectionData,
+    pub sky_light_mask: BitMask,
+    pub block_light_mask: BitMask,
+    pub empty_sky_light_mask: BitMask,
+    pub empty_block_light_mask: BitMask,
+    pub block_light: Box<[LightBuffer]>,
+    pub sky_light: Box<[LightBuffer]>,
 }

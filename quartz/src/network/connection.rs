@@ -232,7 +232,7 @@ impl IoHandle {
 
             // If that length is zero, the packet was not compressed
             if data_len == 0 {
-                data_len = raw_len;
+                data_len = raw_len - PacketBuffer::varint_size(raw_len as i32);
                 compressed = false;
             }
             // The packet is compressed
@@ -301,7 +301,9 @@ impl IoHandle {
             aux_buffer.write_bytes(&packet_buffer[packet_buffer.cursor() ..]);
 
             // Only decompress to the end of this packet
-            let compressed_end = raw_len - packet_buffer.cursor();
+            // Cursor = vsize(raw_len) + vsize(data_len)
+            // compressed_end = raw_len - vsize(raw_len)
+            let compressed_end = (raw_len + PacketBuffer::varint_size(data_len as i32)) - packet_buffer.cursor();
             let mut decoder = ZlibDecoder::new(&aux_buffer[.. compressed_end]);
 
             // Prepare the packet buffer for decompression
@@ -358,12 +360,11 @@ impl AsyncWriteHandle {
     }
 
     /// Sends a packet to the client.
-    pub async fn send_packet(&self, packet: ClientBoundPacket) {
-        self.try_send(WrappedClientBoundPacket::Singleton(packet))
-            .await;
+    pub async fn send_packet(&self, packet: impl Into<WrappedClientBoundPacket>) {
+        self.try_send(packet.into()).await;
     }
 
-    pub async fn send_all<I>(&mut self, packets: I)
+    pub async fn send_all<I>(&self, packets: I)
     where
         I: IntoIterator,
         I::Item: Into<WrappedClientBoundPacket>,
@@ -371,15 +372,8 @@ impl AsyncWriteHandle {
         let packets = packets
             .into_iter()
             .map(|packet| packet.into())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+            .collect::<Box<[_]>>();
         self.try_send(WrappedClientBoundPacket::Multiple(packets))
-            .await;
-    }
-
-    /// Sends the given raw bytes to the client.
-    pub async fn send_buffer(&self, buffer: PacketBuffer) {
-        self.try_send(WrappedClientBoundPacket::Buffer(buffer))
             .await;
     }
 
@@ -460,6 +454,8 @@ impl AsyncClientConnection {
                     }
                     return;
                 }
+
+                let _ = write_handle.flush().await;
             }
         };
 
@@ -482,20 +478,13 @@ impl AsyncClientConnection {
             let write_fut = io_handle
                 .lock()
                 .write_packet_data(buffer, aux_buffer, write_handle);
-            let result = match write_fut {
-                Ok(fut) => fut.await,
-                Err(e) => Err(e),
-            };
-
-            if let Err(e) = result {
-                error!("Failed to send packet data: {}", e);
+            if let Ok(fut) = write_fut {
+                let _ = fut.await;
             }
         }
 
         async fn write_raw_buffer(buffer: &PacketBuffer, write_handle: &mut OwnedWriteHalf) {
-            if let Err(e) = write_handle.write_all(&buffer[..]).await {
-                error!("Failed to send buffer: {}", e);
-            }
+            let _ = write_handle.write_all(&buffer[..]).await;
         }
 
         match wrapped_packet {
@@ -519,6 +508,10 @@ impl AsyncClientConnection {
                             continue;
                         }
                         WrappedClientBoundPacket::Disconnect => disconnect_when_done = true,
+                        WrappedClientBoundPacket::EnableCompression { .. } => warn!(
+                            "Attempted to send compression-enabling packet in multi-packet \
+                             payload. This packet will be dropped."
+                        ),
                         WrappedClientBoundPacket::Multiple(..) => {
                             warn!(
                                 "Attempted to write nested \
@@ -528,18 +521,7 @@ impl AsyncClientConnection {
                         }
                     }
 
-                    let write_fut =
-                        io_handle
-                            .lock()
-                            .write_packet_data(buffer, aux_buffer, write_handle);
-                    let result = match write_fut {
-                        Ok(fut) => fut.await,
-                        Err(e) => Err(e),
-                    };
-
-                    if let Err(e) = result {
-                        error!("Failed to send packet data: {}", e);
-                    }
+                    write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
                 }
 
                 return disconnect_when_done;
@@ -552,6 +534,24 @@ impl AsyncClientConnection {
                 buffer.clear();
                 buffer.write(&*packet);
                 write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
+            }
+
+            WrappedClientBoundPacket::EnableCompression { threshold } => {
+                buffer.clear();
+                buffer.write(&ClientBoundPacket::SetCompression { threshold });
+
+                // TODO: this scope should not be needed. Someone reproduce this error in a
+                // controlled env and submit an issue
+                let write_fut = {
+                    let mut guard = io_handle.lock();
+                    let write_fut = guard.write_packet_data(buffer, aux_buffer, write_handle);
+                    guard.set_compression_threshold(threshold);
+                    write_fut
+                };
+
+                if let Ok(fut) = write_fut {
+                    let _ = fut.await;
+                }
             }
 
             WrappedClientBoundPacket::Disconnect => return true,
@@ -571,14 +571,17 @@ impl AsyncClientConnection {
     }
 
     /// Attempts to initialize encryption with the given secret key.
-    pub async fn initiate_encryption(
-        &mut self,
-        shared_secret: &[u8],
-    ) -> StdResult<(), PacketSerdeError> {
+    pub fn initiate_encryption(&self, shared_secret: &[u8]) -> StdResult<(), PacketSerdeError> {
         self.io_handle
             .lock()
             .enable_encryption(shared_secret)
             .map_err(Into::into)
+    }
+
+    pub fn set_compression_threshold(&self, compression_threshold: i32) {
+        self.io_handle
+            .lock()
+            .set_compression_threshold(compression_threshold);
     }
 
     /// Reads packet data from the underlying stream, blocking the current thread. After the initial read,

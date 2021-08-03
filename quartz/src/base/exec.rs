@@ -119,13 +119,16 @@ impl ServerClock {
     }
 
     /// The tick code has finished executing, so record the time and sleep if extra time remains.
-    async fn finish_tick(&mut self) {
+    async fn finish_tick(&mut self) -> f64 {
         let elapsed = self.time.elapsed();
-        self.micros_ema = (99.0 * self.micros_ema + elapsed.as_micros() as f64) / 100.0;
+        let micros = elapsed.as_micros() as f64;
+        self.micros_ema = (99.0 * self.micros_ema + micros) / 100.0;
 
         if elapsed.as_millis() < 50 {
             tokio::time::sleep(self.full_tick - elapsed).await;
         }
+
+        micros
     }
 
     /// Converts a milliseconds pet tick value to ticks per second.

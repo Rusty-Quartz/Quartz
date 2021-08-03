@@ -1690,8 +1690,7 @@
           },
           {
             "name": "primary_bit_mask",
-            "type": "i64",
-            "array": true
+            "type": "mask"
           },
           {
             "name": "heightmaps",
@@ -1807,23 +1806,19 @@
           },
           {
             "name": "sky_light_mask",
-            "type": "i64",
-            "array": true
+            "type": "mask"
           },
           {
             "name": "block_light_mask",
-            "type": "i64",
-            "array": true
+            "type": "mask"
           },
           {
             "name": "empty_sky_light_mask",
-            "type": "i64",
-            "array": true
+            "type": "mask"
           },
           {
             "name": "empty_block_light_mask",
-            "type": "i64",
-            "array": true
+            "type": "mask"
           },
           {
             "name": "sky_light_arrays",

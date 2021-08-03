@@ -7,7 +7,7 @@ pub mod chunk {
     mod section;
     mod states;
 
-    pub use chunk::Chunk;
+    pub use chunk::*;
     pub use error::*;
     pub use light::*;
     pub use palette::*;

@@ -1,4 +1,4 @@
-use super::{LightBuffer, SectionStore};
+use super::{BitMask, LightBuffer, SectionStore};
 use crate::{
     base::{BlockState, StateID},
     network::packet::SectionData,
@@ -8,54 +8,6 @@ use quartz_nbt::{NbtCompound, NbtList};
 use serde::Deserialize;
 use std::fmt::{self, Debug, Formatter};
 
-#[derive(Deserialize)]
-#[allow(dead_code)]
-pub(crate) struct RawChunk {
-    #[serde(rename = "DataVersion")]
-    data_version: i32,
-    #[serde(rename = "Level")]
-    level: RawChunkData,
-}
-
-#[derive(Deserialize)]
-#[allow(dead_code)]
-pub(crate) struct RawChunkData {
-    #[serde(rename = "Biomes")]
-    biomes: Box<[i32]>,
-    #[serde(rename = "CarvingMasks")]
-    carving_masks: Option<NbtCompound>,
-    #[serde(rename = "Heightmaps")]
-    heightmaps: NbtCompound,
-    #[serde(rename = "LastUpdate")]
-    last_update: i64,
-    #[serde(rename = "Lights")]
-    lights: Option<NbtList>,
-    #[serde(rename = "LiquidsToBeTicked")]
-    liquids_to_be_ticked: Option<NbtList>,
-    #[serde(rename = "LiquidTicks")]
-    liquid_ticks: Option<NbtList>,
-    #[serde(rename = "InhabitedTime")]
-    inhabited_time: i64,
-    #[serde(rename = "PostProcessing")]
-    post_processing: Option<NbtList>,
-    #[serde(rename = "Sections")]
-    sections: SectionStore,
-    #[serde(rename = "Status")]
-    status: String,
-    #[serde(rename = "TileEntities")]
-    tile_entities: Option<NbtList>,
-    #[serde(rename = "TileTicks")]
-    tile_ticks: Option<NbtList>,
-    #[serde(rename = "ToBeTicked")]
-    to_be_ticked: Option<NbtList>,
-    #[serde(rename = "Structures")]
-    structures: Option<NbtCompound>,
-    #[serde(rename = "xPos")]
-    x_pos: i32,
-    #[serde(rename = "zPos")]
-    z_pos: i32,
-}
-
 pub struct Chunk {
     block_offset: CoordinatePair,
     section_store: SectionStore,
@@ -64,9 +16,9 @@ pub struct Chunk {
     biomes: Box<[i32]>,
 }
 
-impl Into<Chunk> for RawChunk {
-    fn into(self) -> Chunk {
-        let level = self.level;
+impl From<RawChunk> for Chunk {
+    fn from(raw: RawChunk) -> Self {
+        let level = raw.level;
         let block_offset = CoordinatePair::new(level.x_pos * 16, level.z_pos * 16);
 
         Chunk {
@@ -142,11 +94,11 @@ impl Chunk {
         self.heightmaps.clone()
     }
 
-    pub fn get_biomes(&self) -> Vec<i32> {
-        self.biomes.to_vec()
+    pub fn biomes(&self) -> &[i32] {
+        &self.biomes
     }
 
-    pub fn gen_client_section_data(&self) -> (u128, SectionData) {
+    pub fn gen_client_section_data(&self) -> (BitMask, SectionData) {
         let mut sections = Vec::new();
         let mask = self.section_store.gen_bit_mask(false, |section| {
             let not_empty = !section.is_empty();
@@ -156,14 +108,13 @@ impl Chunk {
             not_empty
         });
 
-        sections.reverse();
         (mask, SectionData {
             sections: sections.into_boxed_slice(),
         })
     }
 
     /// Gets the blocklights and blocklight bitmask for the chunk
-    pub fn gen_block_lights(&self) -> (u128, u128, Box<[LightBuffer]>) {
+    pub fn gen_block_lights(&self) -> (BitMask, BitMask, Box<[LightBuffer]>) {
         let mut blocklights = Vec::new();
         let mask = self.section_store.gen_bit_mask(true, |section| {
             match section.lighting().block_light() {
@@ -175,12 +126,11 @@ impl Chunk {
             }
         });
 
-        blocklights.reverse();
-        (mask, !mask | 1, blocklights.into_boxed_slice())
+        (mask, mask.as_empty(), blocklights.into_boxed_slice())
     }
 
     /// Gets the skylights and skylight bitmask for the chunk
-    pub fn gen_sky_lights(&self) -> (u128, u128, Box<[LightBuffer]>) {
+    pub fn gen_sky_lights(&self) -> (BitMask, BitMask, Box<[LightBuffer]>) {
         let mut skylights = Vec::new();
         let mask =
             self.section_store
@@ -192,8 +142,7 @@ impl Chunk {
                     None => false,
                 });
 
-        skylights.reverse();
-        (mask, !mask | 1, skylights.into_boxed_slice())
+        (mask, mask.as_empty(), skylights.into_boxed_slice())
     }
 }
 
@@ -201,4 +150,74 @@ impl Debug for Chunk {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Chunk@{:?}", self.block_offset)
     }
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+pub(crate) struct RawChunk {
+    #[serde(rename = "DataVersion")]
+    data_version: i32,
+    #[serde(rename = "Level")]
+    level: RawChunkData,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+pub(crate) struct RawClientChunk {
+    #[serde(rename = "DataVersion")]
+    pub data_version: i32,
+    #[serde(rename = "Level")]
+    pub level: RawClientChunkData,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+pub(crate) struct RawChunkData {
+    #[serde(rename = "Biomes")]
+    biomes: Box<[i32]>,
+    #[serde(rename = "CarvingMasks")]
+    carving_masks: Option<NbtCompound>,
+    #[serde(rename = "Heightmaps")]
+    heightmaps: NbtCompound,
+    #[serde(rename = "LastUpdate")]
+    last_update: i64,
+    #[serde(rename = "Lights")]
+    lights: Option<NbtList>,
+    #[serde(rename = "LiquidsToBeTicked")]
+    liquids_to_be_ticked: Option<NbtList>,
+    #[serde(rename = "LiquidTicks")]
+    liquid_ticks: Option<NbtList>,
+    #[serde(rename = "InhabitedTime")]
+    inhabited_time: i64,
+    #[serde(rename = "PostProcessing")]
+    post_processing: Option<NbtList>,
+    #[serde(rename = "Sections")]
+    sections: SectionStore,
+    #[serde(rename = "Status")]
+    status: String,
+    #[serde(rename = "TileEntities")]
+    tile_entities: Option<NbtList>,
+    #[serde(rename = "TileTicks")]
+    tile_ticks: Option<NbtList>,
+    #[serde(rename = "ToBeTicked")]
+    to_be_ticked: Option<NbtList>,
+    #[serde(rename = "Structures")]
+    structures: Option<NbtCompound>,
+    #[serde(rename = "xPos")]
+    x_pos: i32,
+    #[serde(rename = "zPos")]
+    z_pos: i32,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+pub(crate) struct RawClientChunkData {
+    #[serde(rename = "Biomes")]
+    pub biomes: Box<[i32]>,
+    #[serde(rename = "Heightmaps")]
+    pub heightmaps: NbtCompound,
+    #[serde(rename = "Sections")]
+    pub sections: SectionStore,
+    #[serde(rename = "TileEntities")]
+    pub tile_entities: Option<NbtList>,
 }

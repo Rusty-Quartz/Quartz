@@ -1,5 +1,5 @@
-use crate::world::chunk::LightingInitError;
-use quartz_nbt::{NbtReprError, NbtStructureError};
+use crate::world::{chunk::LightingInitError, location::Coordinate};
+use quartz_nbt::{io::NbtIoError, NbtReprError, NbtStructureError};
 use quartz_util::uln::UnlocalizedName;
 use std::{
     error::Error,
@@ -8,59 +8,76 @@ use std::{
 };
 
 #[derive(Debug)]
-pub enum ChunkIoError {
+pub enum ChunkDecodeError {
     StdIo(IoError),
+    NbtIo(NbtIoError),
+    NbtRepr(NbtReprError),
     UnknownBlockState(UnlocalizedName),
     UnknownStateProperty(String),
     Lighting(LightingInitError),
-    Nbt(NbtReprError),
-    InvalidNbtData(String),
+    ChunkRegionDesync(Coordinate),
+    UnknownCompression(u8),
 }
 
-impl Display for ChunkIoError {
+impl Display for ChunkDecodeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            ChunkIoError::StdIo(error) => Display::fmt(error, f),
-            ChunkIoError::UnknownBlockState(state) => write!(f, "Unknown block state {}", state),
-            ChunkIoError::UnknownStateProperty(msg) => Display::fmt(msg, f),
-            ChunkIoError::Lighting(error) => Display::fmt(error, f),
-            ChunkIoError::Nbt(error) => Display::fmt(error, f),
-            ChunkIoError::InvalidNbtData(msg) => write!(f, "Invalid NBT Data: {}", msg),
+            ChunkDecodeError::StdIo(error) => Display::fmt(error, f),
+            ChunkDecodeError::NbtIo(error) => Display::fmt(error, f),
+            ChunkDecodeError::NbtRepr(error) => Display::fmt(error, f),
+            ChunkDecodeError::UnknownBlockState(state) =>
+                write!(f, "Unknown block state {}", state),
+            ChunkDecodeError::UnknownStateProperty(msg) => Display::fmt(msg, f),
+            ChunkDecodeError::Lighting(error) => Display::fmt(error, f),
+            ChunkDecodeError::ChunkRegionDesync(coords) =>
+                write!(f, "Attempted to load chunk outside of region at {}", coords),
+            ChunkDecodeError::UnknownCompression(id) => write!(
+                f,
+                "Encountered unknown compression scheme {}, expected 1 or 2",
+                id
+            ),
         }
     }
 }
 
-impl Error for ChunkIoError {
+impl Error for ChunkDecodeError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            ChunkIoError::StdIo(error) => Some(error),
-            ChunkIoError::Lighting(error) => Some(error),
-            ChunkIoError::Nbt(error) => Some(error),
+            ChunkDecodeError::StdIo(error) => Some(error),
+            ChunkDecodeError::NbtIo(error) => Some(error),
+            ChunkDecodeError::Lighting(error) => Some(error),
+            ChunkDecodeError::NbtRepr(error) => Some(error),
             _ => None,
         }
     }
 }
 
-impl From<IoError> for ChunkIoError {
+impl From<IoError> for ChunkDecodeError {
     fn from(x: IoError) -> Self {
-        ChunkIoError::StdIo(x)
+        ChunkDecodeError::StdIo(x)
     }
 }
 
-impl From<NbtReprError> for ChunkIoError {
+impl From<NbtIoError> for ChunkDecodeError {
+    fn from(x: NbtIoError) -> Self {
+        ChunkDecodeError::NbtIo(x)
+    }
+}
+
+impl From<NbtReprError> for ChunkDecodeError {
     fn from(x: NbtReprError) -> Self {
-        ChunkIoError::Nbt(x)
+        ChunkDecodeError::NbtRepr(x)
     }
 }
 
-impl From<NbtStructureError> for ChunkIoError {
+impl From<NbtStructureError> for ChunkDecodeError {
     fn from(x: NbtStructureError) -> Self {
-        ChunkIoError::Nbt(x.into())
+        ChunkDecodeError::NbtRepr(x.into())
     }
 }
 
-impl From<LightingInitError> for ChunkIoError {
+impl From<LightingInitError> for ChunkDecodeError {
     fn from(x: LightingInitError) -> Self {
-        ChunkIoError::Lighting(x)
+        ChunkDecodeError::Lighting(x)
     }
 }

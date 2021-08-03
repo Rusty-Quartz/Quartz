@@ -35,7 +35,8 @@
         "player_info_action": "crate::network::packet::PlayerInfoAction",
         "tag_array": "crate::network::packet::TagArray",
         "section_data": "crate::network::packet::SectionData",
-        "jigsaw_update_data": "Box<crate::network::packet::JigsawUpdateData>"
+        "jigsaw_update_data": "Box<crate::network::packet::JigsawUpdateData>",
+        "mask": "crate::world::chunk::BitMask"
     },
     "primitives": [
         "bool",
