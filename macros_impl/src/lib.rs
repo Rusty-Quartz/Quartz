@@ -5,8 +5,19 @@ use proc_macro_crate::{crate_name, FoundCrate};
 use quote::quote;
 use syn::{Error, GenericArgument, Ident, PathArguments, Result, Type};
 
-pub fn the_crate() -> TokenStream {
+pub fn quartz() -> TokenStream {
     match crate_name("quartz") {
+        Ok(FoundCrate::Itself) => quote! { crate },
+        Ok(FoundCrate::Name(name)) => {
+            let name = Ident::new(&name, Span::call_site());
+            quote! { ::#name }
+        }
+        Err(e) => Error::new(Span::call_site(), format!("{}", e)).to_compile_error(),
+    }
+}
+
+pub fn quartz_net() -> TokenStream {
+    match crate_name("quartz_net") {
         Ok(FoundCrate::Itself) => quote! { crate },
         Ok(FoundCrate::Name(name)) => {
             let name = Ident::new(&name, Span::call_site());

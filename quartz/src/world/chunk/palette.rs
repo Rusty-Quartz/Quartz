@@ -1,4 +1,6 @@
-use crate::{block::states::STATE_COUNT, util::math::fast_ceil_log2_64, StateID};
+use qdat::block::states::STATE_COUNT;
+
+use crate::{util::math::fast_ceil_log2_64, StateID};
 use std::num::NonZeroU8;
 
 /// The minimum number of bits per block.

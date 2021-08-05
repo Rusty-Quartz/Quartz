@@ -17,6 +17,8 @@ path = "src/lib.rs"
 quartz_chat = { path = "../chat" }
 quartz_util = { path = "../util" }
 quartz_macros = { path = "../macros" }
+quartz_net = { path = "../network" }
+qdat = { path = "../qdat" }
 
 # External dependencies
 byteorder = "1.4.3"
@@ -24,13 +26,13 @@ dashmap = "4.0.2"
 enum_dispatch = "0.3.7"
 flate2 = "1.0.20"
 futures-util = "0.3.16"
+hecs = {git = "https://github.com/Rusty-Quartz/checs"}
 hex = "0.4.3"
 linefeed = "0.6.0"
 log = "0.4.14"
 once_cell = "1.8.0"
 openssl = "0.10.34"
 parking_lot = { version = "0.11.1", features = ["nightly"] }
-phf = { version = "0.9.0", features = ["macros"] }
 quartz_commands = "0.1.0"
 quartz_nbt = { version = "0.2.4", features = ["serde"] }
 rand = "0.8.4"

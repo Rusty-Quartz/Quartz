@@ -1,9 +1,9 @@
 use crate::{
     block::entity::BlockEntity,
     item::{get_item, Inventory, ItemStack},
-    util::uln::UlnStr,
-    world::location::BlockPosition,
 };
+use qdat::{world::location::BlockPosition, UlnStr};
+
 use quartz_nbt::NbtCompound;
 
 // While this is somewhat accurate to how the Furnace BE will be implemented the tick method is no where near finished and some key fields are missing

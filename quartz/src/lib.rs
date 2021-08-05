@@ -18,6 +18,7 @@ pub mod block;
 pub mod command;
 /// Contains all relevant code to items and their implementations.
 pub mod item;
+
 /// Contains packet definitions and connection handlers.
 pub mod network;
 pub mod scheduler;

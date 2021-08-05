@@ -1,4 +1,4 @@
-use crate::StateID;
+use crate::block::StateID;
 
 include!(concat!(env!("OUT_DIR"), "/blockstate_output.rs"));
 
@@ -11,7 +11,7 @@ pub const fn is_air(state: StateID) -> bool {
     state == AIR || state == VOID_AIR || state == CAVE_AIR
 }
 
-pub(crate) struct BlockStateMetadata {
+pub struct BlockStateMetadata {
     pub default_state_data: BlockStateData,
     pub internal_block_id: usize,
 }

@@ -1,10 +1,7 @@
 use crate::{
     config,
     item::init_items,
-    network::{
-        packet::{ClientBoundPacket, ServerBoundPacket, WrappedServerBoundPacket},
-        *,
-    },
+    network::*,
     raw_console,
     world::chunk::ChunkProvider,
     Registry,
@@ -15,12 +12,12 @@ use linefeed::{
     prompter::Prompter,
     DefaultTerminal,
     ReadResult,
-    Signal
+    Signal,
 };
 use log::*;
 use openssl::rsa::Rsa;
-// use smol::{channel, net::TcpListener, Executor};
 use parking_lot::Mutex;
+use quartz_net::{packets::*, PacketBuffer};
 use std::{
     collections::HashMap,
     error::Error,
@@ -75,11 +72,8 @@ impl QuartzServer {
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
             console_command_handler: None,
-            chunk_provider: ChunkProvider::new(
-                "world",
-                "/home/cassy/Documents/mc-vanilla-server/world/region",
-            )
-            .expect("Error making chunk provider"),
+            chunk_provider: ChunkProvider::new("world", "./world/region")
+                .expect("Error making chunk provider"),
             tcp_server_runtime: Builder::new_multi_thread()
                 .enable_io()
                 // TODO: remove after keep alive is implemented on the tick
@@ -142,9 +136,9 @@ impl QuartzServer {
                 let (sender, receiver) = mpsc::channel::<Vec<String>>();
 
                 // Send the completion request
-                pipe.send(WrappedServerBoundPacket::new(
+                pipe.send(WrappedServerBoundPacket::internal(
                     0,
-                    ServerBoundPacket::ConsoleCompletion {
+                    InternalPacket::ConsoleCompletion {
                         // Take the slice of the command up to the cursor
                         command: prompter.buffer()[.. prompter.cursor()].to_owned(),
                         response: sender,
@@ -197,9 +191,9 @@ impl QuartzServer {
                             interface.add_history_unique(command.clone());
 
                             // Forward the command to the server thread
-                            let packet = WrappedServerBoundPacket::new(
+                            let packet = WrappedServerBoundPacket::internal(
                                 0,
-                                ServerBoundPacket::ConsoleCommand {
+                                InternalPacket::ConsoleCommand {
                                     command: command.trim().to_owned(),
                                 },
                             );
@@ -208,9 +202,12 @@ impl QuartzServer {
                             }
                         }
                         Some(ReadResult::Signal(Signal::Interrupt | Signal::Quit)) => {
-                            let _ = packet_pipe.send(WrappedServerBoundPacket::new(0, ServerBoundPacket::ConsoleCommand {
-                                command: "stop".to_owned()
-                            }));
+                            let _ = packet_pipe.send(WrappedServerBoundPacket::internal(
+                                0,
+                                InternalPacket::ConsoleCommand {
+                                    command: "stop".to_owned(),
+                                },
+                            ));
                         }
                         _ => {}
                     },
@@ -267,9 +264,9 @@ impl QuartzServer {
                     );
 
                     // Register the client
-                    let result = sync_packet_sender.send(WrappedServerBoundPacket::new(
+                    let result = sync_packet_sender.send(WrappedServerBoundPacket::internal(
                         0,
-                        ServerBoundPacket::ClientConnected {
+                        InternalPacket::ClientConnected {
                             id: next_connection_id,
                             write_handle: conn.write_handle.clone(),
                         },
@@ -301,11 +298,21 @@ impl QuartzServer {
 
     async fn handle_packets(&mut self) {
         while let Ok(wrapped_packet) = self.sync_packet_receiver.try_recv() {
-            match wrapped_packet.packet {
-                ServerBoundPacket::ClientConnected { id, write_handle } =>
-                    self.client_list.add_client(id, write_handle),
-                ServerBoundPacket::ClientDisconnected { id } => self.client_list.remove_client(id),
-                _ => dispatch_sync_packet(&wrapped_packet, self).await,
+            match wrapped_packet {
+                WrappedServerBoundPacket::External { sender, packet } =>
+                    dispatch_sync_packet(&WrappedServerBoundPacket::external(sender, packet), self)
+                        .await,
+                WrappedServerBoundPacket::Internal { sender, packet } => match packet {
+                    InternalPacket::ClientConnected { id, write_handle } =>
+                        self.client_list.add_client(id, write_handle),
+                    InternalPacket::ClientDisconnected { id } => self.client_list.remove_client(id),
+                    _ =>
+                        dispatch_sync_packet(
+                            &WrappedServerBoundPacket::internal(sender, packet),
+                            self,
+                        )
+                        .await,
+                },
             }
         }
     }

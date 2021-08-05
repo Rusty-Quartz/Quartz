@@ -1,10 +1,6 @@
-mod init;
 mod inventory;
-mod item;
-#[allow(missing_docs)]
-mod item_info;
-
-pub use init::*;
+mod item_stack;
 pub use inventory::*;
-pub use item::*;
-pub use item_info::*;
+pub use item_stack::*;
+mod init;
+pub use init::*;

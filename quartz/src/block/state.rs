@@ -1,10 +1,10 @@
-use quartz_util::uln::UlnStr;
-
-use crate::{
-    base::*,
-    block::{states::BlockStateData, Block},
+use qdat::{
+    block::{states::BlockStateData, Block, StateID},
+    UlnStr,
 };
 use std::fmt::Debug;
+
+use crate::StaticRegistry;
 
 pub trait BlockStateImpl: Sized {
     type Builder: StateBuilder<Self>;

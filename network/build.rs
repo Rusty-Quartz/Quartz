@@ -10,19 +10,31 @@ use quartz_macros_impl::packet::{
 use quote::{format_ident, quote};
 use serde::Deserialize;
 use serde_json;
-use std::{collections::HashMap, env, fs, path::Path};
+use std::{collections::HashMap, env, ffi::OsStr, fs, path::Path, process::Command};
 use syn::{Ident, Type};
 
-pub fn gen_packet_handlers() {
+fn format_in_place(file: &OsStr) {
+    Command::new("rustfmt")
+        .arg(file)
+        .output()
+        .expect(&format!("Failed to format file: {:?}", file));
+}
+
+
+fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let packet_enums_dest_path = Path::new(&out_dir).join("packet_def_output.rs");
     let handler_dest_path = Path::new(&out_dir).join("packet_handler_output.rs");
 
     // Load in json files
-    let states_raw: Vec<StatePacketInfo> =
-        serde_json::from_str(include_str!("./assets/protocol.json")).expect("Error reading file");
-    let mappings: Mappings = serde_json::from_str(include_str!("./assets/mappings.json"))
-        .expect("Error reading mappings.json");
+    let states_raw: Vec<StatePacketInfo> = serde_json::from_str(
+        &include_str!("../assets/protocol.json").replace("quartz_net", "crate"),
+    )
+    .expect("Error reading file");
+    let mappings: Mappings = serde_json::from_str(
+        &include_str!("../assets/mappings.json").replace("quartz_net", "crate"),
+    )
+    .expect("Error reading mappings.json");
 
     let mut states: Vec<String> = Vec::new();
     let mut server_bound: Vec<Packet> = Vec::new();
@@ -30,19 +42,19 @@ pub fn gen_packet_handlers() {
 
     // gen packet lists
     for state in states_raw.clone() {
-        states.push(state.name);
-
-        if state.server_bound.is_some() {
+        if state.server_bound.is_some() && state.name != "__internal__" {
             for packet in state.server_bound.unwrap() {
                 server_bound.push(packet);
             }
         }
 
-        if state.client_bound.is_some() {
+        if state.client_bound.is_some() && state.name != "__internal__" {
             for packet in state.client_bound.unwrap() {
                 client_bound.push(packet);
             }
         }
+
+        states.push(state.name);
     }
 
     let client_packet_enum = gen_packet_enum(
@@ -59,8 +71,6 @@ pub fn gen_packet_handlers() {
         true,
         &mappings,
     );
-    let handle_packet = gen_handle_packet(&states_raw, &mappings);
-    let sync_dispatch = gen_sync_dispatch(&server_bound, &mappings);
 
     ////////////////////////////////////////
     // Write Output
@@ -75,21 +85,12 @@ pub fn gen_packet_handlers() {
         .to_string(),
     )
     .unwrap();
-    fs::write(
-        &handler_dest_path,
-        (quote! {
-            #handle_packet
-            #sync_dispatch
-        })
-        .to_string(),
-    )
-    .unwrap();
 
-    super::format_in_place(packet_enums_dest_path.as_os_str());
-    super::format_in_place(handler_dest_path.as_os_str());
+    format_in_place(packet_enums_dest_path.as_os_str());
+    format_in_place(handler_dest_path.as_os_str());
 
-    println!("cargo:rerun-if-changed=buildscript/assets/protocol.json");
-    println!("cargo:rerun-if-changed=buildscript/assets/mappings.json");
+    println!("cargo:rerun-if-changed=../../assets/protocol.json");
+    println!("cargo:rerun-if-changed=../../assets/mappings.json");
     println!("cargo:rerun-if-changed=buildscript/packets.rs");
 }
 
@@ -204,10 +205,10 @@ fn gen_packet_enum(
             });
 
             quote! {
-                crate::network::ConnectionState::#state_name => {
+                crate::ConnectionState::#state_name => {
                     match id {
                         #( #match_arms, )*
-                        id @ _ => Err(crate::network::PacketSerdeError::InvalidId(id))
+                        id @ _ => Err(crate::PacketSerdeError::InvalidId(id))
                     }
                 }
             }
@@ -228,9 +229,9 @@ fn gen_packet_enum(
         impl #enum_name {
             pub fn read_from(
                 buffer: &mut PacketBuffer,
-                connection_state: crate::network::ConnectionState,
+                connection_state: crate::ConnectionState,
                 packet_len: usize
-            ) -> Result<Self, crate::network::PacketSerdeError>
+            ) -> Result<Self, crate::PacketSerdeError>
             {
                 let initial_len = buffer.len();
                 let truncated_len = buffer.cursor() + packet_len;
@@ -246,11 +247,11 @@ fn gen_packet_enum(
                 #[inline(always)]
                 fn read_internal(
                     buffer: &mut PacketBuffer,
-                    connection_state: crate::network::ConnectionState,
-                ) -> Result<#enum_name, crate::network::PacketSerdeError> {
+                    connection_state: crate::ConnectionState,
+                ) -> Result<#enum_name, crate::PacketSerdeError> {
                     let id;
-                    if connection_state == crate::network::ConnectionState::Handshake && buffer.peek_one()? == crate::network::LEGACY_PING_PACKET_ID as u8 {
-                        id = crate::network::LEGACY_PING_PACKET_ID;
+                    if connection_state == crate::ConnectionState::Handshake && buffer.peek_one()? == crate::LEGACY_PING_PACKET_ID as u8 {
+                        id = crate::LEGACY_PING_PACKET_ID;
                         buffer.read_one()?;
                     } else {
                         id = buffer.read_varying::<i32>()?;
@@ -258,13 +259,13 @@ fn gen_packet_enum(
 
                     match connection_state {
                         #( #state_deserializers, )*
-                        _ => Err(crate::network::PacketSerdeError::Internal("Attempted to read packet in invalid connection state"))
+                        _ => Err(crate::PacketSerdeError::Internal("Attempted to read packet in invalid connection state"))
                     }
                 }
                 let mut ret = read_internal(buffer, connection_state);
 
                 if buffer.len() != truncated_len {
-                    ret = Err(crate::network::PacketSerdeError::Internal("Packet buffer written to while being read from"));
+                    ret = Err(crate::PacketSerdeError::Internal("Packet buffer written to while being read from"));
                 }
 
                 unsafe {
@@ -275,145 +276,11 @@ fn gen_packet_enum(
             }
         }
 
-        impl crate::network::WriteToPacket for #enum_name {
-            fn write_to(&self, buffer: &mut crate::network::PacketBuffer) {
+        impl crate::WriteToPacket for #enum_name {
+            fn write_to(&self, buffer: &mut crate::PacketBuffer) {
                 match self {
                     #( #write_variants ),*
                     #default_case
-                }
-            }
-        }
-    }
-}
-
-fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenStream {
-    let state_deserializers = states
-        .iter()
-        .filter(|state_info| state_info.server_bound.is_some() && state_info.name != "__internal__")
-        .map(|state_info| {
-            let state_name = format_ident!("{}", &state_info.name);
-            let match_arms = state_info
-                .server_bound
-                .as_ref()
-                .unwrap()
-                .iter()
-                .map(|packet| {
-                    let id = Literal::i32_unsuffixed(
-                        i32::from_str_radix(&packet.id[2..], 16)
-                            .expect("Invalid packet ID encountered in JSON.")
-                    );
-                    let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
-                    let field_names = packet.fields.iter().map(|field| format_ident!("{}", &field.name)).collect::<Vec<_>>();
-                    let read_fields = packet
-                        .codegen_fields(mappings, false)
-                        .map(|(field, _)| gen_deserialize_field(&quote! {crate}, &field, &format_ident!("buffer")));
-                    let handler = if packet.asynchronous {
-                        let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
-                        let field_borrows = packet.field_borrows(mappings);
-                        quote! { async_handler.#handler_name(conn, #( #field_borrows ),*).await; }
-                    } else {
-                        quote! { conn.forward_to_server(crate::network::packet::ServerBoundPacket::#variant_name { #( #field_names ),* }); }
-                    };
-                    quote! {
-                        #id => {
-                            #( #read_fields )*
-                            #handler
-                            Ok(())
-                        }
-                    }
-                });
-            quote! {
-                crate::network::ConnectionState::#state_name => {
-                    match id {
-                        #( #match_arms, )*
-                        id @ _ => Err(crate::network::PacketSerdeError::InvalidId(id))
-                    }
-                }
-            }
-        });
-
-    quote! {
-        pub(crate) async fn handle_packet(
-            conn: &mut AsyncClientConnection,
-            async_handler: &mut AsyncPacketHandler,
-            packet_len: usize
-        ) -> Result<(), crate::network::PacketSerdeError>
-        {
-            let initial_len = conn.read_buffer.len();
-            let truncated_len = conn.read_buffer.cursor() + packet_len;
-            unsafe {
-                conn.read_buffer.set_len(truncated_len);
-            }
-
-            #[inline(always)]
-            async fn handle_packet_internal(
-                conn: &mut AsyncClientConnection,
-                async_handler: &mut AsyncPacketHandler,
-            ) -> Result<(), crate::network::PacketSerdeError> {
-                let buffer = &mut conn.read_buffer;
-
-                let id;
-                if conn.connection_state == ConnectionState::Handshake && buffer.peek_one()? == crate::network::LEGACY_PING_PACKET_ID as u8 {
-                    id = crate::network::LEGACY_PING_PACKET_ID;
-                    buffer.read_one()?;
-                } else {
-                    id = buffer.read_varying::<i32>()?;
-                }
-
-                match conn.connection_state {
-                    #( #state_deserializers, )*
-                    _ => {
-                        log::warn!("Attempted to read packet in connection state {:?}", conn.connection_state);
-                        Ok(())
-                    }
-                }
-            }
-            let mut ret = handle_packet_internal(conn, async_handler).await;
-
-            if conn.read_buffer.len() != truncated_len {
-                ret = Err(crate::network::PacketSerdeError::Internal("Packet buffer written to while being read from"));
-            }
-
-            unsafe {
-                conn.read_buffer.set_len(initial_len);
-            }
-
-            ret
-        }
-    }
-}
-
-fn gen_sync_dispatch(server_bound: &[Packet], mappings: &Mappings) -> TokenStream {
-    let match_arms = server_bound
-        .iter()
-        .filter(|packet| !packet.asynchronous)
-        .map(|packet| {
-            let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
-            let field_names = packet
-                .fields
-                .iter()
-                .filter(|field| !field.unused)
-                .map(|field| format_ident!("{}", field.name));
-            let field_derefs = packet.field_derefs(mappings);
-            let handler_name = format_ident!("handle_{}", packet.name.to_ascii_lowercase());
-            let sender = if packet.sender_independent {
-                None
-            } else {
-                Some(quote! { sender, })
-            };
-            quote! {
-                crate::network::packet::ServerBoundPacket::#variant_name { #( #field_names ),* } =>
-                    handler.#handler_name(#sender #( #field_derefs ),*).await
-            }
-        });
-
-    quote! {
-        pub async fn dispatch_sync_packet(wrapped_packet: &crate::network::packet::WrappedServerBoundPacket, handler: &mut crate::QuartzServer) {
-            let sender = wrapped_packet.sender;
-            match &wrapped_packet.packet {
-                #( #match_arms, )*
-                _ => {
-                    log::warn!("Async packet sent to sync packet dispatcher");
                 }
             }
         }
@@ -537,43 +404,6 @@ impl Packet {
         })
     }
 
-    pub fn field_borrows<'a>(
-        &'a self,
-        mappings: &'a Mappings,
-    ) -> impl Iterator<Item = TokenStream> + 'a {
-        self.fields
-            .iter()
-            .filter(|field| !field.unused)
-            .map(move |field| {
-                let field_name = format_ident!("{}", field.name);
-                if (field.array || !mappings.primitives.contains(&field.var_type))
-                    && !field.pass_raw
-                {
-                    quote! { &#field_name }
-                } else {
-                    quote! { #field_name }
-                }
-            })
-    }
-
-    pub fn field_derefs<'a>(
-        &'a self,
-        mappings: &'a Mappings,
-    ) -> impl Iterator<Item = TokenStream> + 'a {
-        self.fields
-            .iter()
-            .filter(|field| !field.unused)
-            .map(move |field| {
-                let field_name = format_ident!("{}", field.name);
-                // This performs a copy, so ignore the pass raw condition
-                if mappings.primitives.contains(&field.var_type) {
-                    quote! { *#field_name }
-                } else {
-                    quote! { #field_name }
-                }
-            })
-    }
-
     #[inline(always)]
     fn dispatch_default() -> bool {
         true
@@ -646,6 +476,7 @@ impl Field {
 #[derive(Deserialize)]
 struct Mappings {
     types: HashMap<String, String>,
+    #[allow(dead_code)]
     primitives: Vec<String>,
     variable_repr: Vec<String>,
 }

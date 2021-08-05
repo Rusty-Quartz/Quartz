@@ -6,7 +6,7 @@ use super::{
     parse::{ArrayLength, EnumStructVariant, Field, FieldType},
     OptionCondition,
 };
-use crate::the_crate;
+use crate::quartz_net;
 
 pub fn gen_struct_serializer_impl(input: DeriveInput, fields: &[Field]) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -14,11 +14,11 @@ pub fn gen_struct_serializer_impl(input: DeriveInput, fields: &[Field]) -> Token
     let serialize_fields = fields
         .iter()
         .map(|field| gen_serialize_struct_field(field, &format_ident!("__buffer")));
-    let the_crate = the_crate();
+    let quartz_net = quartz_net();
 
     quote! {
-        impl #impl_generics #the_crate::network::WriteToPacket for #name #ty_generics #where_clause {
-            fn write_to(&self, __buffer: &mut #the_crate::network::PacketBuffer) {
+        impl #impl_generics #quartz_net::WriteToPacket for #name #ty_generics #where_clause {
+            fn write_to(&self, __buffer: &mut #quartz_net::PacketBuffer) {
                 #( #serialize_fields )*
             }
         }
@@ -29,7 +29,7 @@ pub fn gen_enum_serializer_impl(input: DeriveInput, variants: &[EnumStructVarian
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = &input.ident;
     let any_unit = variants.iter().any(|variant| variant.fields.is_empty());
-    let the_crate = the_crate();
+    let quartz_net = quartz_net();
 
     let serialize_variants = variants
         .iter()
@@ -57,8 +57,8 @@ pub fn gen_enum_serializer_impl(input: DeriveInput, variants: &[EnumStructVarian
     };
 
     quote! {
-        impl #impl_generics #the_crate::network::WriteToPacket for #name #ty_generics #where_clause {
-            fn write_to(&self, __buffer: &mut #the_crate::network::PacketBuffer) {
+        impl #impl_generics #quartz_net::WriteToPacket for #name #ty_generics #where_clause {
+            fn write_to(&self, __buffer: &mut #quartz_net::PacketBuffer) {
                 match self {
                     #( #serialize_variants, )*
                     #default_branch
@@ -71,15 +71,15 @@ pub fn gen_enum_serializer_impl(input: DeriveInput, variants: &[EnumStructVarian
 pub fn gen_struct_deserializer_impl(input: DeriveInput, fields: &[Field]) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = &input.ident;
-    let the_crate = the_crate();
+    let quartz_net = quartz_net();
     let deserialize_fields = fields
         .iter()
-        .map(|field| gen_deserialize_field(&the_crate, field, &format_ident!("__buffer")));
+        .map(|field| gen_deserialize_field(&quartz_net, field, &format_ident!("__buffer")));
     let field_names = fields.iter().map(|field| &field.name);
 
     quote! {
-        impl #impl_generics #the_crate::network::ReadFromPacket for #name #ty_generics #where_clause {
-            fn read_from(__buffer: &mut #the_crate::network::PacketBuffer) -> ::core::result::Result<Self, #the_crate::network::PacketSerdeError> {
+        impl #impl_generics #quartz_net::ReadFromPacket for #name #ty_generics #where_clause {
+            fn read_from(__buffer: &mut #quartz_net::PacketBuffer) -> ::core::result::Result<Self, #quartz_net::PacketSerdeError> {
                 #( #deserialize_fields )*
                 Ok(Self { #( #field_names ),* })
             }
@@ -206,7 +206,7 @@ fn write_fn_for_field(field: &Field) -> Ident {
 }
 
 pub fn gen_deserialize_field(
-    the_crate: &TokenStream,
+    quartz_net: &TokenStream,
     field: &Field,
     buffer_ident: &Ident,
 ) -> TokenStream {
@@ -237,7 +237,7 @@ pub fn gen_deserialize_field(
                     #len
                     let mut __array = vec![0u8; __len].into_boxed_slice();
                     if #buffer_ident.read_bytes(&mut __array) != __len {
-                        return ::core::result::Result::Err(#the_crate::network::PacketSerdeError::EndOfBuffer);
+                        return ::core::result::Result::Err(#quartz_net::PacketSerdeError::EndOfBuffer);
                     }
                     __array
                 }}

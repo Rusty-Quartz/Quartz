@@ -1,12 +1,5 @@
-use crate::network::{
-    packet::{
-        ClientBoundPacket,
-        ServerBoundPacket,
-        WrappedClientBoundPacket,
-        WrappedServerBoundPacket,
-    },
-    *,
-};
+use crate::network::*;
+
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use log::*;
 use openssl::{
@@ -14,6 +7,13 @@ use openssl::{
     symm::{Cipher, Crypter, Mode},
 };
 use parking_lot::Mutex;
+use quartz_net::{
+    packets::{ClientBoundPacket, ServerBoundPacket},
+    ConnectionState,
+    PacketBuffer,
+    PacketSerdeError,
+    LEGACY_PING_PACKET_ID,
+};
 use std::{
     future::Future,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result, Write},
@@ -28,22 +28,6 @@ use tokio::{
     },
     sync::mpsc::{self, UnboundedSender},
 };
-
-/// All possible states of a client's connection to the server.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ConnectionState {
-    /// The handshake state of the connection in which the client selects the next state to enter:
-    /// either the `Status` state or `Login` state.
-    Handshake,
-    /// The client is requesting a server status ping.
-    Status,
-    /// The client is logging into the server.
-    Login,
-    /// The client has successfully logged into the server and is playing the game.
-    Play,
-    /// The client has disconnected.
-    Disconnected,
-}
 
 /// Assists in pre-processing connection data, such as handling compression and encryption. If the
 /// compression threshold is greater than zero, then Zlib compression is applied to packets whose
@@ -576,9 +560,22 @@ impl AsyncClientConnection {
     pub fn forward_to_server(&mut self, packet: ServerBoundPacket) {
         if let Err(e) = self
             .sync_packet_sender
-            .send(WrappedServerBoundPacket::new(self.id, packet))
+            .send(WrappedServerBoundPacket::external(self.id, packet))
         {
             error!("Failed to forward synchronous packet to server: {}", e);
+        }
+    }
+
+    /// Forwards an internal packet to the server thread for handling.
+    pub fn forward_internal_to_server(&mut self, packet: InternalPacket) {
+        if let Err(e) = self
+            .sync_packet_sender
+            .send(WrappedServerBoundPacket::internal(self.id, packet))
+        {
+            error!(
+                "Failed to forward synchronous internal packet to server: {}",
+                e
+            );
         }
     }
 

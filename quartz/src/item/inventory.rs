@@ -1,4 +1,4 @@
-use crate::item::item::{ItemStack, OptionalItemStack};
+use crate::item::{ItemStack, OptionalItemStack};
 use quartz_nbt::{NbtCompound, NbtList};
 
 /// Represents a basic inventory

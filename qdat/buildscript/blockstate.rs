@@ -12,7 +12,7 @@ pub fn gen_blockstates() {
 
     // Load in the block info from blocks.json
     let mut data = serde_json::from_str::<IndexMap<String, RawBlockInfo>>(include_str!(
-        "./assets/blocks.json"
+        "../../assets/blocks.json"
     ))
     .expect("Error parsing blocks.json");
 
@@ -50,7 +50,7 @@ pub fn gen_blockstates() {
     .unwrap();
     super::format_in_place(dest_path.as_os_str());
 
-    println!("cargo:rerun-if-changed=buildscript/assets/blocks.json");
+    println!("cargo:rerun-if-changed=../../assets/blocks.json");
     println!("cargo:rerun-if-changes=buildscript/blockstate.rs");
 }
 
@@ -577,7 +577,7 @@ fn gen_name_lookup(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
     }).collect::<Vec<_>>();
 
     quote! {
-        pub(crate) static BLOCK_LOOKUP_BY_NAME: phf::Map<&'static str, BlockStateMetadata> = phf_map! {
+        pub static BLOCK_LOOKUP_BY_NAME: phf::Map<&'static str, BlockStateMetadata> = phf_map! {
             #(#lookups),*
         };
     }

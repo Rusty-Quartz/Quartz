@@ -1,4 +1,3 @@
-use crate::network::{PacketBuffer, PacketSerdeError, ReadFromPacket, WriteToPacket};
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
@@ -9,8 +8,8 @@ pub const LIGHTING_LENGTH: usize = 2048;
 type RawLightBuffer = [u8; LIGHTING_LENGTH];
 
 pub struct Lighting {
-    pub(super) block: Option<LightBuffer>,
-    pub(super) sky: Option<LightBuffer>,
+    pub block: Option<LightBuffer>,
+    pub sky: Option<LightBuffer>,
 }
 
 impl Lighting {
@@ -74,11 +73,11 @@ impl Lighting {
 #[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct LightBuffer {
-    data: Box<RawLightBuffer>,
+    pub data: Box<RawLightBuffer>,
 }
 
 impl LightBuffer {
-    fn new(source: &[u8]) -> Result<Self, LightingInitError> {
+    pub fn new(source: &[u8]) -> Result<Self, LightingInitError> {
         if source.len() != LIGHTING_LENGTH {
             return Err(LightingInitError::InvalidLength(source.len()));
         }
@@ -103,34 +102,6 @@ impl LightBuffer {
             // Safety: we properly initialized the array above
             data: unsafe { buf.assume_init() },
         })
-    }
-}
-
-impl ReadFromPacket for LightBuffer {
-    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        let len: i32 = buffer.read_varying()?;
-        if len as usize != LIGHTING_LENGTH {
-            return Err(PacketSerdeError::Internal(
-                "Found light buffer with length not matching LIGHTING_LENGTH",
-            ));
-        }
-
-        let remaining = &buffer[buffer.cursor() ..];
-
-        if remaining.len() < LIGHTING_LENGTH {
-            return Err(PacketSerdeError::EndOfBuffer);
-        }
-
-        let light = Self::new(&remaining[.. LIGHTING_LENGTH]).unwrap();
-        buffer.set_cursor(buffer.cursor() + LIGHTING_LENGTH);
-        Ok(light)
-    }
-}
-
-impl WriteToPacket for LightBuffer {
-    fn write_to(&self, buffer: &mut PacketBuffer) {
-        buffer.write_varying(&(LIGHTING_LENGTH as i32));
-        buffer.write_bytes(self.data.as_ref())
     }
 }
 

@@ -4,13 +4,13 @@ use crate::{
     command_executor,
     config,
     display_to_console,
-    network::{packet::*, AsyncClientConnection, ConnectionState, PacketBuffer},
+    network::{AsyncClientConnection, InternalPacket, WrappedClientBoundPacket},
     server::{self, QuartzServer},
-    world::{
-        chunk::provider::ProviderRequest,
-        location::{BlockPosition, Coordinate},
-    },
+    world::chunk::provider::ProviderRequest,
 };
+use qdat::world::location::{BlockPosition, Coordinate};
+use quartz_net::{packet_types::*, packets::*, ConnectionState, PacketBuffer, PROTOCOL_VERSION};
+
 use hex::ToHex;
 use log::{debug, error};
 use once_cell::sync::Lazy;
@@ -19,10 +19,10 @@ use openssl::{
     rsa::{Padding, Rsa},
     sha,
 };
+use qdat::UnlocalizedName;
 use quartz_chat::{color::PredefinedColor, Component};
 use quartz_commands::CommandModule;
 use quartz_nbt::NbtCompound;
-use quartz_util::uln::UnlocalizedName;
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use serde::Deserialize;
@@ -33,11 +33,6 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use uuid::Uuid;
-
-/// The numeric protocol version the server uses.
-pub const PROTOCOL_VERSION: i32 = 755;
-/// The ID for the legacy ping packet.
-pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
 include!(concat!(env!("OUT_DIR"), "/packet_handler_output.rs"));
 
@@ -96,7 +91,7 @@ impl AsyncPacketHandler {
                 })
                 .await;
 
-            conn.forward_to_server(ServerBoundPacket::LoginSuccessServer {
+            conn.forward_internal_to_server(InternalPacket::LoginSuccessServer {
                 uuid: Uuid::from_u128(0),
                 username: name.clone(),
             });
@@ -289,7 +284,7 @@ impl AsyncPacketHandler {
 
                 conn.connection_state = ConnectionState::Play;
 
-                conn.forward_to_server(ServerBoundPacket::LoginSuccessServer {
+                conn.forward_internal_to_server(InternalPacket::LoginSuccessServer {
                     uuid,
                     username: self.username.clone(),
                 })
@@ -1046,6 +1041,6 @@ pub async fn handle_async_connection(
         }
     }
 
-    conn.forward_to_server(ServerBoundPacket::ClientDisconnected { id: conn.id });
+    conn.forward_internal_to_server(InternalPacket::ClientDisconnected { id: conn.id });
     debug!("Client disconnected");
 }

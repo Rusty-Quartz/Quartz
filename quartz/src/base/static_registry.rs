@@ -1,21 +1,18 @@
 use crate::{
-    block::{
-        entity::StaticBlockEntity,
-        init::*,
-        states::BLOCK_LOOKUP_BY_NAME,
-        Block,
-        StaticBlockState,
-    },
+    block::{entity::StaticBlockEntity, StaticBlockState, *},
     command::StaticCommandExecutor,
 };
 use log::info;
 use once_cell::sync::OnceCell;
-use quartz_util::uln::UlnStr;
+use qdat::{
+    block::{states::BLOCK_LOOKUP_BY_NAME, Block},
+    UlnStr,
+};
 
 static GLOBAL_STATIC_REGISTRY: OnceCell<StaticRegistry> = OnceCell::new();
 
 pub type BlockState = StaticBlockState;
-pub type StateID = u16;
+pub type StateID = qdat::block::StateID;
 pub type BlockEntity = StaticBlockEntity;
 pub type Registry = StaticRegistry;
 pub type CommandExecutor = StaticCommandExecutor;

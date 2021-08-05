@@ -1,16 +1,16 @@
-use crate::{
-    base::{assets, StateID},
-    block::{
-        behavior::{BlockBehaviorSMT, DefaultBehavior},
-        states::BLOCK_LOOKUP_BY_NAME,
-        *,
-    },
+use qdat::{
+    block::{states::BLOCK_LOOKUP_BY_NAME, Block, BlockBehaviorSMT, StateID},
+    UnlocalizedName,
 };
-use quartz_util::uln::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::{BTreeMap, HashMap};
 use tinyvec::ArrayVec;
+
+use crate::{
+    assets,
+    block::{BlockStateImpl, StateBuilder, StaticBlockState, StaticStateBuilder},
+};
 
 pub(crate) fn load_raw_block_data<'de>() -> HashMap<String, RawBlockInfo> {
     serde_json::from_str::<HashMap<String, RawBlockInfo>>(assets::BLOCK_INFO)
@@ -23,7 +23,7 @@ pub(crate) fn attach_behavior(raw: &mut HashMap<String, RawBlockInfo>) {
             $(
                 raw.get_mut(concat!("minecraft:", $block_name))
                     .expect("Invalid block name during behavior attachment")
-                    .behavior = Some(BlockBehaviorSMT::new::<$behavior>());
+                    .behavior = Some(BlockBehaviorSMT::new());
             )+
         };
     }
@@ -58,7 +58,7 @@ pub(crate) fn make_block_list(raw: &HashMap<String, RawBlockInfo>) -> Vec<Block>
             behavior: block_info
                 .behavior
                 .clone()
-                .unwrap_or(BlockBehaviorSMT::new::<DefaultBehavior>()),
+                .unwrap_or(BlockBehaviorSMT::new()),
         });
     }
 

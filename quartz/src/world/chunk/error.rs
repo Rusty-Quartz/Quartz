@@ -1,6 +1,8 @@
-use crate::world::{chunk::LightingInitError, location::Coordinate};
+use qdat::{
+    world::{lighting::LightingInitError, location::Coordinate},
+    UnlocalizedName,
+};
 use quartz_nbt::{io::NbtIoError, NbtReprError, NbtStructureError};
-use quartz_util::uln::UnlocalizedName;
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},

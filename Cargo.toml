@@ -4,7 +4,9 @@ members = [
     "quartz",
     "macros",
     "macros_impl",
-    "util"
+    "util",
+    "qdat",
+    "network"
 ]
 
 [profile.release]

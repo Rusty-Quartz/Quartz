@@ -1,13 +1,15 @@
-use crate::{
-    base::assets,
-    item::{Item, ItemInfo},
-};
 use log::info;
 use once_cell::sync::OnceCell;
-use quartz_util::uln::{UlnStr, UnlocalizedName};
+use qdat::{
+    item::{Item, ItemInfo},
+    UlnStr,
+    UnlocalizedName,
+};
 use serde::Deserialize;
 use serde_json::from_str;
 use std::collections::HashMap;
+
+use crate::assets;
 
 static ITEM_LIST: OnceCell<HashMap<UnlocalizedName, Item>> = OnceCell::new();
 

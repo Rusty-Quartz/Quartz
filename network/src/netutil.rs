@@ -5,7 +5,6 @@ use quartz_nbt::{
     io::{read_nbt, write_nbt, Flavor, NbtIoError},
     NbtCompound,
 };
-use quartz_util::uln::UnlocalizedName;
 use std::{
     error::Error,
     fmt::{self, Debug, Display, Formatter},
@@ -18,7 +17,7 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::world::location::BlockPosition;
+use qdat::{world::location::BlockPosition, UnlocalizedName};
 
 /// A wrapper around a vec used for reading/writing packet data efficiently.
 pub struct PacketBuffer {

@@ -14,7 +14,7 @@ pub mod math;
 /// Contains an implementation of a single-access box allowing for interior mutability.
 pub mod single_access;
 /// An implementation of Minecraft's unlocalized name.
-pub mod uln;
+// pub mod uln;
 /// Allows for downcasting of trait types.
 pub mod variant;
 

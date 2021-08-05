@@ -1,10 +1,13 @@
-use super::{BitMask, LightBuffer, SectionStore};
 use crate::{
     base::{BlockState, StateID},
-    network::packet::SectionData,
-    world::location::{BlockPosition, Coordinate, CoordinatePair},
+    world::chunk::SectionStore,
+};
+use qdat::world::{
+    lighting::LightBuffer,
+    location::{BlockPosition, Coordinate, CoordinatePair},
 };
 use quartz_nbt::{NbtCompound, NbtList};
+use quartz_net::{packet_types::SectionData, BitMask};
 use serde::Deserialize;
 use std::fmt::{self, Debug, Formatter};
 
@@ -36,14 +39,14 @@ impl Chunk {
     }
 
     #[inline]
-    fn section_index_absolute(&self, pos: BlockPosition) -> usize {
+    fn _section_index_absolute(&self, pos: BlockPosition) -> usize {
         ((pos.x - self.block_offset.x)
             + (pos.z - self.block_offset.z) * 16
             + (pos.y as i32 % 16) * 256) as usize
     }
 
     #[inline]
-    pub fn block_state_at(&self, absolute_position: BlockPosition) -> Option<&'static BlockState> {
+    pub fn block_state_at(&self, _absolute_position: BlockPosition) -> Option<&'static BlockState> {
         // match self
         //     .section_store
         //     .section_mapping
@@ -65,8 +68,8 @@ impl Chunk {
     /// Returns the old state
     pub fn set_block_state_at(
         &mut self,
-        absolute_position: BlockPosition,
-        state: StateID,
+        _absolute_position: BlockPosition,
+        _state: StateID,
     ) -> Option<&'static BlockState> {
         // let index = self.section_index_absolute(absolute_position);
         // match self
