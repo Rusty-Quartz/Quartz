@@ -15,6 +15,7 @@ use linefeed::{
     prompter::Prompter,
     DefaultTerminal,
     ReadResult,
+    Signal
 };
 use log::*;
 use openssl::rsa::Rsa;
@@ -24,6 +25,7 @@ use std::{
     collections::HashMap,
     error::Error,
     net::TcpStream as StdTcpStream,
+    process::abort,
     sync::{
         atomic::Ordering,
         mpsc::{self, Receiver, Sender},
@@ -183,6 +185,15 @@ impl QuartzServer {
                 match interface.read_line_step(Some(Duration::from_millis(50))) {
                     Ok(result) => match result {
                         Some(ReadResult::Input(command)) => {
+                            if command == "abort" {
+                                // There are lots of opportunities for accidental deadlocking
+                                // which could prevent commands from being processed. This is
+                                // a utility for exiting the process if such an event were to
+                                // occur.
+
+                                abort();
+                            }
+
                             interface.add_history_unique(command.clone());
 
                             // Forward the command to the server thread
@@ -195,6 +206,11 @@ impl QuartzServer {
                             if let Err(e) = packet_pipe.send(packet) {
                                 error!("Failed to forward console command to server thread: {}", e);
                             }
+                        }
+                        Some(ReadResult::Signal(Signal::Interrupt | Signal::Quit)) => {
+                            let _ = packet_pipe.send(WrappedServerBoundPacket::new(0, ServerBoundPacket::ConsoleCommand {
+                                command: "stop".to_owned()
+                            }));
                         }
                         _ => {}
                     },

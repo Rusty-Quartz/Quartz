@@ -19,7 +19,7 @@ use std::{
 };
 
 /// This limit ensures that we can store two of this value inside a usize without the resulting
-/// usize being greater than `isize::MAX`.
+/// value being greater than `isize::MAX`.
 const MAX_ULN_LENGTH: usize = (1 << (usize::BITS / 2 - 1)) - 1;
 
 /// An owned unlocalized name, or a two-part identifier composed of a namespace and identifier
@@ -48,6 +48,35 @@ impl UnlocalizedName {
         UnlocalizedName { ptr, meta }
     }
 
+    /// Constructs an unlocalized name from the given string representation and colon without
+    /// performing any checks.
+    ///
+    /// # Safety
+    ///
+    /// The length of the string and the value of `colon` must satisfy the safety requirements of
+    /// `Meta::new`, and the length of `repr` cannot be zero.
+    unsafe fn from_string_unchecked(repr: String, colon: Option<NonZeroUsize>) -> Self {
+        // Safety: safe by the contract with the caller
+        let len = NonZeroUsize::new_unchecked(repr.len());
+
+        let repr = Box::into_raw(repr.into_boxed_str().into_boxed_bytes()) as *mut u8;
+
+        // Safety: pointer came from a Box and therefore is not null
+        let ptr = NonNull::new_unchecked(repr);
+
+        // Safety: safe by the contract with the caller
+        let meta = Meta::new(len, colon);
+
+        // Safety:
+        // 1. We obtained `ptr` from an owned value, therefore it is unique and valid
+        // 2. `ptr` was obtained via Box::into_raw
+        // 3. The length portion of the metadata is equal to the length of the slice from which we
+        //    obtained `ptr`
+        // 4. The aforementioned slice was obtained from a string, therefore `ptr` points to valid
+        //    UTF-8
+        UnlocalizedName::from_raw(ptr, meta)
+    }
+
     /// Returns an owned unlocalized name with namespace "minecraft" and the given identifier.
     ///
     /// # Examples
@@ -57,40 +86,110 @@ impl UnlocalizedName {
     /// let stone = UnlocalizedName::minecraft("stone");
     /// ```
     ///
+    /// ```should_panic
+    /// # use quartz_util::uln::UnlocalizedName;
+    /// let invalid = UnlocalizedName::minecraft("");
+    /// ```
+    ///
     /// # Panics
     ///
     /// Panics if the length of `ident` cannot fit within half the width of a `usize`. In other
     /// words, `ident.len()` must be less than `1 << (usize::BITS / 2 - 1)`.
+    /// Panics if the length of `ident` is zero.
     #[inline]
     pub fn minecraft(ident: impl Into<String>) -> Self {
         let repr: String = ident.into();
-        let len = match NonZeroUsize::new(repr.len()) {
-            Some(len) => {
-                if len.get() > MAX_ULN_LENGTH {
-                    panic!("{}", ParseUnlocalizedNameError::StringTooLarge(len.get()));
-                }
 
-                len
-            }
-            None => panic!("{}", ParseUnlocalizedNameError::EmptyInput),
-        };
+        if repr.len() > MAX_ULN_LENGTH {
+            panic!("{}", ParseUnlocalizedNameError::StringTooLarge(repr.len()));
+        }
 
-        let repr = Box::into_raw(repr.into_boxed_str().into_boxed_bytes()) as *mut u8;
-
-        // Safety: pointer came from a Box and therefore is not null
-        let ptr = unsafe { NonNull::new_unchecked(repr) };
+        if repr.len() == 0 {
+            panic!("{}", ParseUnlocalizedNameError::EmptyInput);
+        }
 
         // Safety: `len` is checked above and `colon` is not present
-        let meta = unsafe { Meta::new(len, None) };
+        unsafe { Self::from_string_unchecked(repr, None) }
+    }
 
-        // Safety:
-        // 1. We obtained `ptr` from an owned value, therefore it is unique and valid
-        // 2. `ptr` was obtained via Box::into_raw
-        // 3. The length portion of the metadata is equal to the length of the slice from which we
-        //    obtained `ptr`
-        // 4. The aforementioned slice was obtained from a string, therefore `ptr` points to valid
-        //    UTF-8
-        unsafe { UnlocalizedName::from_raw(ptr, meta) }
+    /// Parses the given string into an unlocalized name. This method performs minimal copies and
+    /// mutations to the given string.
+    ///
+    /// If the string is not in the form `namespace:identifier` then it is assumed that just an
+    /// identifier was provided, and the namespace "minecraft" is used instead. This function will
+    /// return an error if the given string has an empty namespace or empty identifier, in other
+    /// words the string is in the form `namespace:`, `:identifier`, or an empty string.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use quartz_util::uln::UnlocalizedName;
+    /// let stone = UnlocalizedName::from_string("minecraft:stone".to_owned()).unwrap();
+    /// assert_eq!(stone.namespace(), "minecraft");
+    /// assert_eq!(stone.identifier(), "stone");
+    ///
+    /// let advancement = UnlocalizedName::from_string(
+    ///     "story/mine_diamond".to_owned()
+    /// ).unwrap();
+    /// assert_eq!(advancement.namespace(), "minecraft");
+    ///
+    /// let foobar = UnlocalizedName::from_string("foo:bar".to_owned()).unwrap();
+    /// assert_eq!(foobar.namespace(), "foo");
+    /// assert_eq!(foobar.identifier(), "bar");
+    ///
+    /// assert!(UnlocalizedName::from_string(":P".to_owned()).is_err());
+    /// assert!(UnlocalizedName::from_string(":".to_owned()).is_err());
+    /// assert!(UnlocalizedName::from_string("".to_owned()).is_err());
+    /// ```
+    pub fn from_string(mut s: String) -> Result<Self, ParseUnlocalizedNameError> {
+        if s.len() > MAX_ULN_LENGTH {
+            return Err(ParseUnlocalizedNameError::StringTooLarge(s.len()));
+        }
+
+        if s.len() == 0 {
+            return Err(ParseUnlocalizedNameError::EmptyInput);
+        }
+
+        let index = match s.find(':') {
+            Some(index) => index,
+            None => return Ok(Self::minecraft(s)),
+        };
+
+        if index >= s.len() - 1 {
+            return Err(ParseUnlocalizedNameError::EmptyIdentifier);
+        }
+
+        match NonZeroUsize::new(index) {
+            mut colon @ Some(_) => {
+                if &s[.. index] == "minecraft" {
+                    let ptr = s.as_mut_ptr();
+                    let repr_len = s.len() - index - 1;
+
+                    unsafe {
+                        // Safety:
+                        //  - `src` is valid until the end of the string, which is
+                        //    `index + 1 + repr_len`
+                        //  - `dst` is also valid until the end of the string, and is strictly
+                        //    less than `src`
+                        //  - `src` and `dst` are aligned correctly for the type `u8`
+                        ptr::copy(ptr.add(index + 1), ptr, repr_len);
+
+                        // Safety: `repr_len` is less than the old length of the vec and therefore
+                        // less than the capacity, and above we ensure that the bytes up to
+                        // `repr_len` are valid UTF-8
+                        s.as_mut_vec().set_len(repr_len);
+                    }
+
+                    colon = None;
+                }
+
+                // The length is checked above before this match statement. If colon is some, then
+                // it is guaranteed to be greater than zero, and above we check that is is less
+                // than `s.len() - 1`. If we
+                Ok(unsafe { Self::from_string_unchecked(s, colon) })
+            }
+            None => Err(ParseUnlocalizedNameError::EmptyNamespace),
+        }
     }
 
     /// Parses the given string into an unlocalized name and converts it to an owned value. See
@@ -138,6 +237,11 @@ impl<'de> Deserialize<'de> for UnlocalizedName {
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 write!(formatter, "an unlocalized name")
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where E: de::Error {
+                UnlocalizedName::from_string(v).map_err(de::Error::custom)
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -370,10 +474,16 @@ impl UlnStr {
     /// let stone = UlnStr::minecraft("stone");
     /// ```
     ///
+    /// ```should_panic
+    /// # use quartz_util::uln::UlnStr;
+    /// let invalid = UlnStr::minecraft("");
+    /// ```
+    ///
     /// # Panics
     ///
     /// Panics if the length of `ident` cannot fit within half the width of a `usize`. In other
     /// words, `ident.len()` must be less than `1 << (usize::BITS / 2 - 1)`.
+    /// Panics if the length of `ident` is zero.
     #[inline]
     pub fn minecraft(ident: &str) -> &Self {
         if ident.len() > MAX_ULN_LENGTH {
@@ -399,7 +509,6 @@ impl UlnStr {
     ///
     /// ```
     /// # use quartz_util::uln::UlnStr;
-    ///
     /// let stone = UlnStr::from_str("minecraft:stone").unwrap();
     /// assert_eq!(stone.namespace(), "minecraft");
     /// assert_eq!(stone.identifier(), "stone");
@@ -412,6 +521,8 @@ impl UlnStr {
     /// assert_eq!(foobar.identifier(), "bar");
     ///
     /// assert!(UlnStr::from_str(":P").is_err());
+    /// assert!(UlnStr::from_str(":").is_err());
+    /// assert!(UlnStr::from_str("").is_err());
     /// ```
     pub fn from_str(s: &str) -> Result<&Self, ParseUnlocalizedNameError> {
         if s.len() > MAX_ULN_LENGTH {
@@ -427,7 +538,7 @@ impl UlnStr {
             None => return Ok(Self::minecraft(s)),
         };
 
-        if index == s.len() - 1 {
+        if index >= s.len() - 1 {
             return Err(ParseUnlocalizedNameError::EmptyIdentifier);
         }
 
@@ -451,7 +562,6 @@ impl UlnStr {
     ///
     /// ```
     /// # use quartz_util::uln::UlnStr;
-    ///
     /// let stone = UlnStr::minecraft("stone");
     /// let custom = UlnStr::from_str("my_namespace:item").unwrap();
     ///
@@ -474,7 +584,6 @@ impl UlnStr {
     ///
     /// ```
     /// # use quartz_util::uln::UlnStr;
-    ///
     /// let stone = UlnStr::minecraft("stone");
     /// let custom = UlnStr::from_str("my_namespace:item").unwrap();
     ///

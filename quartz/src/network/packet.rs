@@ -40,9 +40,12 @@ pub enum WrappedClientBoundPacket {
     Buffer(PacketBuffer),
     /// A generic item which can we written to a packet buffer.
     Custom(Box<dyn WriteToPacket + Send + Sync + 'static>),
+    /// Enables compression synchronously on the client channel.
     EnableCompression {
         threshold: i32,
     },
+    /// Flushes the client channel.
+    Flush,
     /// Specifies that the connection should be forcefully terminated.
     Disconnect,
 }

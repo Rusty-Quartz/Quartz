@@ -496,6 +496,7 @@ impl AsyncClientConnection {
 
             WrappedClientBoundPacket::Multiple(packets) => {
                 let mut disconnect_when_done = false;
+                let mut flush = false;
 
                 for packet in packets.iter() {
                     buffer.clear();
@@ -507,6 +508,7 @@ impl AsyncClientConnection {
                             write_raw_buffer(buffer, write_handle).await;
                             continue;
                         }
+                        WrappedClientBoundPacket::Flush => flush = true,
                         WrappedClientBoundPacket::Disconnect => disconnect_when_done = true,
                         WrappedClientBoundPacket::EnableCompression { .. } => warn!(
                             "Attempted to send compression-enabling packet in multi-packet \
@@ -522,6 +524,12 @@ impl AsyncClientConnection {
                     }
 
                     write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
+                }
+
+                if flush {
+                    if let Err(e) = write_handle.flush().await {
+                        error!("Failed to flush connection socket: {}", e);
+                    }
                 }
 
                 return disconnect_when_done;
@@ -540,8 +548,6 @@ impl AsyncClientConnection {
                 buffer.clear();
                 buffer.write(&ClientBoundPacket::SetCompression { threshold });
 
-                // TODO: this scope should not be needed. Someone reproduce this error in a
-                // controlled env and submit an issue
                 let write_fut = {
                     let mut guard = io_handle.lock();
                     let write_fut = guard.write_packet_data(buffer, aux_buffer, write_handle);
@@ -553,6 +559,12 @@ impl AsyncClientConnection {
                     let _ = fut.await;
                 }
             }
+
+            WrappedClientBoundPacket::Flush => {
+                if let Err(e) = write_handle.flush().await {
+                    error!("Failed to flush connection socket: {}", e);
+                }
+            },
 
             WrappedClientBoundPacket::Disconnect => return true,
         }
