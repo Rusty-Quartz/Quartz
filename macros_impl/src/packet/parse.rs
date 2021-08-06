@@ -217,7 +217,7 @@ where
         if params
             .len
             .as_ref()
-            .map(|len| len == &ArrayLength::None && side == Side::Read)
+            .map(|len| matches!(len, ArrayLength::None) && side == Side::Read)
             .unwrap_or(false)
         {
             return Err(Error::new_spanned(
@@ -229,7 +229,7 @@ where
         if params
             .condition
             .as_ref()
-            .map(|con| con == &OptionCondition::None && side == Side::Read)
+            .map(|con| matches!(con, OptionCondition::None) && side == Side::Read)
             .unwrap_or(false)
         {
             return Err(Error::new_spanned(
@@ -380,7 +380,6 @@ impl Default for PacketSerdeParams {
     }
 }
 
-#[derive(PartialEq, Eq)]
 pub enum ArrayLength {
     Expr(Expr),
     Prefixed,
@@ -388,7 +387,6 @@ pub enum ArrayLength {
     None,
 }
 
-#[derive(PartialEq, Eq)]
 pub enum OptionCondition {
     Expr(Expr),
     Prefixed,

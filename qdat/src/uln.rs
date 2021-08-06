@@ -82,12 +82,12 @@ impl UnlocalizedName {
     /// # Examples
     ///
     /// ```
-    /// # use quartz_util::uln::UnlocalizedName;
+    /// # use qdat::uln::UnlocalizedName;
     /// let stone = UnlocalizedName::minecraft("stone");
     /// ```
     ///
     /// ```should_panic
-    /// # use quartz_util::uln::UnlocalizedName;
+    /// # use qdat::uln::UnlocalizedName;
     /// let invalid = UnlocalizedName::minecraft("");
     /// ```
     ///
@@ -123,7 +123,7 @@ impl UnlocalizedName {
     /// # Examples
     ///
     /// ```
-    /// # use quartz_util::uln::UnlocalizedName;
+    /// # use qdat::uln::UnlocalizedName;
     /// let stone = UnlocalizedName::from_string("minecraft:stone".to_owned()).unwrap();
     /// assert_eq!(stone.namespace(), "minecraft");
     /// assert_eq!(stone.identifier(), "stone");
@@ -205,7 +205,7 @@ impl UnlocalizedName {
     /// # Examples
     ///
     /// ```
-    /// # use quartz_util::uln::UnlocalizedName;
+    /// # use qdat::uln::UnlocalizedName;
     /// let stone = UnlocalizedName::minecraft("stone");
     /// let borrowed = stone.as_uln_str();
     ///
@@ -394,6 +394,48 @@ impl PartialEq<Cow<'_, UlnStr>> for UnlocalizedName {
     }
 }
 
+impl PartialEq<String> for UnlocalizedName {
+    #[inline]
+    fn eq(&self, other: &String) -> bool {
+        &**self == &**other
+    }
+}
+
+impl PartialEq<UnlocalizedName> for String {
+    #[inline]
+    fn eq(&self, other: &UnlocalizedName) -> bool {
+        &**other == &**self
+    }
+}
+
+impl PartialEq<str> for UnlocalizedName {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        &**self == other
+    }
+}
+
+impl PartialEq<UnlocalizedName> for str {
+    #[inline]
+    fn eq(&self, other: &UnlocalizedName) -> bool {
+        &**other == self
+    }
+}
+
+impl PartialEq<&str> for UnlocalizedName {
+    #[inline]
+    fn eq(&self, other: &&str) -> bool {
+        &**self == *other
+    }
+}
+
+impl PartialEq<UnlocalizedName> for &str {
+    #[inline]
+    fn eq(&self, other: &UnlocalizedName) -> bool {
+        &**other == *self
+    }
+}
+
 impl PartialOrd for UnlocalizedName {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -470,12 +512,12 @@ impl UlnStr {
     /// # Examples
     ///
     /// ```
-    /// # use quartz_util::uln::UlnStr;
+    /// # use qdat::uln::UlnStr;
     /// let stone = UlnStr::minecraft("stone");
     /// ```
     ///
     /// ```should_panic
-    /// # use quartz_util::uln::UlnStr;
+    /// # use qdat::uln::UlnStr;
     /// let invalid = UlnStr::minecraft("");
     /// ```
     ///
@@ -508,7 +550,7 @@ impl UlnStr {
     /// # Examples
     ///
     /// ```
-    /// # use quartz_util::uln::UlnStr;
+    /// # use qdat::uln::UlnStr;
     /// let stone = UlnStr::from_str("minecraft:stone").unwrap();
     /// assert_eq!(stone.namespace(), "minecraft");
     /// assert_eq!(stone.identifier(), "stone");
@@ -561,7 +603,7 @@ impl UlnStr {
     /// # Examples
     ///
     /// ```
-    /// # use quartz_util::uln::UlnStr;
+    /// # use qdat::uln::UlnStr;
     /// let stone = UlnStr::minecraft("stone");
     /// let custom = UlnStr::from_str("my_namespace:item").unwrap();
     ///
@@ -583,7 +625,7 @@ impl UlnStr {
     /// # Examples
     ///
     /// ```
-    /// # use quartz_util::uln::UlnStr;
+    /// # use qdat::uln::UlnStr;
     /// let stone = UlnStr::minecraft("stone");
     /// let custom = UlnStr::from_str("my_namespace:item").unwrap();
     ///
@@ -716,6 +758,59 @@ impl PartialEq<Cow<'_, UlnStr>> for UlnStr {
             &Cow::Borrowed(uln_str) => self == uln_str,
             Cow::Owned(uln) => self == &**uln,
         }
+    }
+}
+
+impl PartialEq<str> for UlnStr {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        let (repr, colon) = self.unpack();
+
+        match colon {
+            None => {
+                let other_colon = other.find(':');
+                match other_colon {
+                    None => other == repr,
+                    Some(colon) => &other[.. colon] == "minecraft" && &other[colon + 1 ..] == repr
+                }
+            },
+            Some(..) => other == repr
+        }
+    }
+}
+
+impl PartialEq<UlnStr> for str {
+    #[inline]
+    fn eq(&self, other: &UlnStr) -> bool {
+        other == self
+    }
+}
+
+impl PartialEq<&str> for UlnStr {
+    #[inline]
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+
+impl PartialEq<UlnStr> for &str {
+    #[inline]
+    fn eq(&self, other: &UlnStr) -> bool {
+        other == *self
+    }
+}
+
+impl PartialEq<String> for UlnStr {
+    #[inline]
+    fn eq(&self, other: &String) -> bool {
+        self == &**other
+    }
+}
+
+impl PartialEq<UlnStr> for String {
+    #[inline]
+    fn eq(&self, other: &UlnStr) -> bool {
+        other == &**self
     }
 }
 
@@ -871,4 +966,26 @@ fn cloning() {
     assert_eq!(uln, uln2);
     assert_eq!(uln, uln_str);
     assert_eq!(uln, uln3);
+}
+
+#[test]
+fn equality() {
+    let dirt = UnlocalizedName::minecraft("dirt");
+    let custom = UnlocalizedName::from_str("foo:bar").unwrap();
+
+    assert_eq!(dirt, "dirt");
+    assert_eq!(dirt, "minecraft:dirt");
+    assert_ne!(dirt, "stone");
+    assert_ne!(dirt, "minecraft:stone");
+
+    assert_eq!(dirt, "dirt".to_owned());
+    assert_eq!(dirt, "minecraft:dirt".to_owned());
+    assert_ne!(dirt, "stone".to_owned());
+    assert_ne!(dirt, "minecraft:stone".to_owned());
+
+    assert_eq!(custom, "foo:bar");
+    assert_ne!(custom, "bar");
+
+    assert_eq!(custom, "foo:bar".to_owned());
+    assert_ne!(custom, "bar".to_owned());
 }
