@@ -1,27 +1,40 @@
+use std::sync::mpsc::Sender;
+
 use quartz_net::{
-    packets::{ClientBoundPacket, ServerBoundPacket},
+    ClientBoundPacket, ServerBoundPacket,
     PacketBuffer,
     WriteToPacket,
 };
-
-include!(concat!(env!("OUT_DIR"), "/packet_def_output.rs"));
+use uuid::Uuid;
+use super::AsyncWriteHandle;
 
 pub enum WrappedServerBoundPacket {
     External {
         sender: usize,
         packet: ServerBoundPacket,
     },
-    Internal {
-        sender: usize,
-        packet: InternalPacket,
+    ClientConnected {
+        id: usize,
+        write_handle: AsyncWriteHandle
     },
+    ClientDisconnected {
+        id: usize,
+    },
+    LoginSuccess {
+        id: usize,
+        uuid: Uuid,
+        username: String,
+    },
+    ConsoleCommand {
+        command: String,
+    },
+    ConsoleCompletion {
+        command: String,
+        response: Sender<Vec<String>>
+    }
 }
 
 impl WrappedServerBoundPacket {
-    pub fn internal(sender: usize, packet: InternalPacket) -> Self {
-        WrappedServerBoundPacket::Internal { sender, packet }
-    }
-
     pub fn external(sender: usize, packet: ServerBoundPacket) -> Self {
         WrappedServerBoundPacket::External { sender, packet }
     }

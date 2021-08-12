@@ -284,7 +284,6 @@
       {
         "dispatch": true,
         "name": "keep_alive",
-        "async": true,
         "id": "0x0F",
         "fields": [
           {
@@ -1783,7 +1782,7 @@
           {
             "name": "data",
             "type": "particle",
-            "deserialize_with": "quartz_net::packet_types::ParticleData::read_particle_data(particle_id, buffer)?"
+            "deserialize_with": "quartz_net::packet_data::ParticleData::read_particle_data(particle_id, buffer)?"
           }
         ]
       },
@@ -2244,7 +2243,7 @@
             "name": "player",
             "type": "wrapped_player_info_action",
             "array": true,
-            "deserialize_with": "{let mut res = Vec::new(); for _ in 0..buffer.read_varying::<i32>()? { res.push(quartz_net::packet_types::WrappedPlayerInfoAction::read_action(action, buffer)?); } res.into_boxed_slice()}"
+            "deserialize_with": "{let mut res = Vec::new(); for _ in 0..buffer.read_varying::<i32>()? { res.push(quartz_net::packet_data::WrappedPlayerInfoAction::read_action(action, buffer)?); } res.into_boxed_slice()}"
           }
         ]
       },
@@ -2685,7 +2684,7 @@
           },
           {
             "name": "metadata",
-            "type": "Box<[quartz_net::packet_types::EntityMetadataWrapper]>"
+            "type": "Box<[quartz_net::packet_data::EntityMetadataWrapper]>"
           }
         ]
       },
@@ -2738,7 +2737,7 @@
           },
           {
             "name": "equipment",
-            "type": "Box<[quartz_net::packet_types::EquipmentSlot]>"
+            "type": "Box<[quartz_net::packet_data::EquipmentSlot]>"
           }
         ]
       },
@@ -3454,82 +3453,5 @@
         ]
       }
     ]
-  },
-  {
-    "name": "__internal__",
-    "server_bound": [
-      {
-        "sender_independent": true,
-        "name": "client_connected",
-        "id": "0xFF",
-        "internal": true,
-        "fields": [
-          {
-            "name": "id",
-            "type": "usize"
-          },
-          {
-            "name": "write_handle",
-            "type": "crate::network::AsyncWriteHandle"
-          }
-        ]
-      },
-      {
-        "sender_independent": true,
-        "name": "client_disconnected",
-        "id": "0xFF",
-        "internal": true,
-        "fields": [
-          {
-            "name": "id",
-            "type": "usize"
-          }
-        ]
-      },
-      {
-        "name": "login_success_server",
-        "id": "0xFF",
-        "internal": true,
-        "fields": [
-          {
-            "name": "uuid",
-            "type": "uuid"
-          },
-          {
-            "name": "username",
-            "type": "string"
-          }
-        ]
-      },
-      {
-        "sender_independent": true,
-        "name": "console_command",
-        "id": "0xFF",
-        "internal": true,
-        "fields": [
-          {
-            "name": "command",
-            "type": "string"
-          }
-        ]
-      },
-      {
-        "sender_independent": true,
-        "name": "console_completion",
-        "id": "0xFF",
-        "internal": true,
-        "fields": [
-          {
-            "name": "command",
-            "type": "string"
-          },
-          {
-            "name": "response",
-            "type": "std::sync::mpsc::Sender<Vec<String>>"
-          }
-        ]
-      }
-    ],
-    "client_bound": []
   }
 ]

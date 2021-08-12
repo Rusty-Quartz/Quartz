@@ -82,7 +82,7 @@ pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
         .expect("Failed to build main-tick runtime");
     let local_set = LocalSet::new();
     local_set.block_on(&rt, async {
-        let mut clock = ServerClock::new(50);
+        let mut clock = ServerClock::new();
 
         while RUNNING.load(Ordering::Acquire) {
             if let Some(mut guard) = DIAGNOSTICS.try_lock() {
@@ -96,19 +96,20 @@ pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
     });
 }
 
+const FULL_TICK_LENGTH: u64 = 50;
+const FULL_TICK: Duration = Duration::from_millis(FULL_TICK_LENGTH);
+
 /// Keeps track of the time each tick takes and regulates the server ticks per second (TPS).
 pub struct ServerClock {
     micros_ema: f64,
-    full_tick: Duration,
     time: Instant,
 }
 
 impl ServerClock {
     /// Creates a new clock with the given tick length in milliseconds.
-    pub fn new(tick_length: u128) -> Self {
+    pub fn new() -> Self {
         ServerClock {
             micros_ema: 0.0,
-            full_tick: Duration::from_millis(tick_length as u64),
             time: Instant::now(),
         }
     }
@@ -124,8 +125,8 @@ impl ServerClock {
         let micros = elapsed.as_micros() as f64;
         self.micros_ema = (99.0 * self.micros_ema + micros) / 100.0;
 
-        if elapsed.as_millis() < 50 {
-            tokio::time::sleep(self.full_tick - elapsed).await;
+        if elapsed < FULL_TICK {
+            tokio::time::sleep(FULL_TICK - elapsed).await;
         }
 
         micros
@@ -134,8 +135,8 @@ impl ServerClock {
     /// Converts a milliseconds pet tick value to ticks per second.
     #[inline]
     pub fn as_tps(mspt: f64) -> f64 {
-        if mspt < 50.0 {
-            1000.0 / 50.0
+        if mspt < FULL_TICK_LENGTH as f64 {
+            1000.0 / FULL_TICK_LENGTH as f64
         } else {
             1000.0 / mspt
         }
@@ -144,6 +145,6 @@ impl ServerClock {
     /// The maximum tps the server will tick at.
     #[inline]
     pub fn max_tps() -> f64 {
-        1000.0 / 50.0
+        1000.0 / FULL_TICK_LENGTH as f64
     }
 }

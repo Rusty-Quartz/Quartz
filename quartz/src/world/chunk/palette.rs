@@ -32,7 +32,8 @@ impl Palette {
         Palette {
             index_to_state: vec![state],
             state_to_index: vec![(state, 0)],
-            bits_per_block: unsafe { NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK) },
+            bits_per_block: NonZeroU8::new(MIN_BITS_PER_BLOCK)
+                .expect("MIN_BITS_PER_BLOCK should not be zero"),
         }
     }
 

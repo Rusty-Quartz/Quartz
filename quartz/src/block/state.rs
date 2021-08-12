@@ -194,7 +194,7 @@ impl StateBuilder<StaticBlockState> for StaticStateBuilder {
     fn with_property_unchecked(mut self, name: &str, value: &str) -> Self {
         match self.state.data.with_property(name, value) {
             Some(data) => self.state.data = data,
-            None => unsafe { std::hint::unreachable_unchecked() },
+            None => panic!("Unknown property {}", name),
         }
 
         self

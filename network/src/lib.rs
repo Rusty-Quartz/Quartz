@@ -1,7 +1,9 @@
-pub mod packets {
-    use crate::{PacketBuffer, PacketSerdeError};
-    include!(concat!(env!("OUT_DIR"), "/packet_def_output.rs"));
-}
+mod netutil;
+mod bitmask;
+pub mod packet_data;
+
+pub use netutil::*;
+pub use bitmask::*;
 
 /// All possible states of a client's connection to the server.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -24,8 +26,4 @@ pub const PROTOCOL_VERSION: i32 = 755;
 /// The ID for the legacy ping packet.
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
-mod netutil;
-pub mod packet_types;
-pub use netutil::*;
-mod bitmask;
-pub use bitmask::BitMask;
+include!(concat!(env!("OUT_DIR"), "/packet_def_output.rs"));

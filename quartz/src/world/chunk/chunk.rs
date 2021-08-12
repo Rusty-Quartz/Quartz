@@ -7,7 +7,7 @@ use qdat::world::{
     location::{BlockPosition, Coordinate, CoordinatePair},
 };
 use quartz_nbt::{NbtCompound, NbtList};
-use quartz_net::{packet_types::SectionData, BitMask};
+use quartz_net::{packet_data::SectionData, BitMask};
 use serde::Deserialize;
 use std::fmt::{self, Debug, Formatter};
 

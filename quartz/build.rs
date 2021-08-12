@@ -10,7 +10,7 @@ use quote::{format_ident, quote};
 use serde::Deserialize;
 use serde_json;
 use std::{collections::HashMap, env, ffi::OsStr, fs, path::Path, process::Command};
-use syn::{Ident, Type};
+use syn::Type;
 
 fn format_in_place(file: &OsStr) {
     Command::new("rustfmt")
@@ -22,7 +22,6 @@ fn format_in_place(file: &OsStr) {
 
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
-    let packet_enums_dest_path = Path::new(&out_dir).join("packet_def_output.rs");
     let handler_dest_path = Path::new(&out_dir).join("packet_handler_output.rs");
 
     // Load in json files
@@ -34,19 +33,12 @@ fn main() {
     let mut states: Vec<String> = Vec::new();
     let mut server_bound: Vec<Packet> = Vec::new();
     let mut client_bound: Vec<Packet> = Vec::new();
-    let mut server_bound_internal: Vec<Packet> = Vec::new();
 
     // gen packet lists
     for state in states_raw.clone() {
         if state.server_bound.is_some() {
-            if state.name == "__internal__" {
-                for packet in state.server_bound.unwrap() {
-                    server_bound_internal.push(packet);
-                }
-            } else {
-                for packet in state.server_bound.unwrap() {
-                    server_bound.push(packet);
-                }
+            for packet in state.server_bound.unwrap() {
+                server_bound.push(packet);
             }
         }
 
@@ -68,27 +60,13 @@ fn main() {
     //     &mappings,
     // );
 
-    let server_packet_enum = gen_packet_enum(
-        format_ident!("InternalPacket"),
-        &server_bound_internal,
-        &mappings,
-    );
     let handle_packet = gen_handle_packet(&states_raw, &mappings);
-    let sync_dispatch = gen_sync_dispatch(&server_bound, &server_bound_internal, &mappings);
+    let sync_dispatch = gen_sync_dispatch(&server_bound, &mappings);
 
     ////////////////////////////////////////
     // Write Output
     ////////////////////////////////////////
 
-    fs::write(
-        &packet_enums_dest_path,
-        (quote! {
-            // #client_packet_enum
-            #server_packet_enum
-        })
-        .to_string(),
-    )
-    .unwrap();
     fs::write(
         &handler_dest_path,
         (quote! {
@@ -99,40 +77,11 @@ fn main() {
     )
     .unwrap();
 
-    format_in_place(packet_enums_dest_path.as_os_str());
     format_in_place(handler_dest_path.as_os_str());
 
     println!("cargo:rerun-if-changed=../../assets/protocol.json");
     println!("cargo:rerun-if-changed=../../assets/mappings.json");
     println!("cargo:rerun-if-changed=buildscript/packets.rs");
-}
-
-fn gen_packet_enum(enum_name: Ident, packet_arr: &[Packet], mappings: &Mappings) -> TokenStream {
-    let variant_names = packet_arr
-        .iter()
-        .map(|packet| format_ident!("{}", snake_to_pascal(&packet.name)))
-        .collect::<Vec<_>>();
-    let variants = packet_arr.iter().enumerate().map(|(index, packet)| {
-        let variant_name = &variant_names[index];
-        if packet.fields.is_empty() {
-            quote! { #variant_name }
-        } else {
-            let fields = packet
-                .fields
-                .iter()
-                .map(|field| field.struct_field_def(mappings));
-            quote! {
-                #variant_name { #( #fields ),* }
-            }
-        }
-    });
-
-    quote! {
-        #[derive(Debug)]
-        pub enum #enum_name {
-            #( #variants ),*
-        }
-    }
 }
 
 fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenStream {
@@ -161,7 +110,7 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
                         let field_borrows = packet.field_borrows(mappings);
                         quote! { async_handler.#handler_name(conn, #( #field_borrows ),*).await; }
                     } else {
-                        quote! { conn.forward_to_server(quartz_net::packets::ServerBoundPacket::#variant_name { #( #field_names ),* }); }
+                        quote! { conn.forward_to_server(quartz_net::ServerBoundPacket::#variant_name { #( #field_names ),* }); }
                     };
                     quote! {
                         #id => {
@@ -234,51 +183,30 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
 
 fn gen_sync_dispatch(
     server_bound: &[Packet],
-    internal: &[Packet],
     mappings: &Mappings,
 ) -> TokenStream {
     let match_arms = server_bound
         .iter()
         .filter(|packet| !packet.asynchronous)
-        .map(|packet| gen_packet_dispatch(packet, mappings, false));
-
-    let internal_match_arms = internal
-        .iter()
-        .filter(|p| !p.asynchronous)
-        .map(|packet| gen_packet_dispatch(packet, mappings, true));
+        .map(|packet| gen_packet_dispatch(packet, mappings));
 
     quote! {
-        pub async fn dispatch_sync_packet(wrapped_packet: &crate::network::packet::WrappedServerBoundPacket, handler: &mut crate::QuartzServer) {
-            match &wrapped_packet {
-                crate::network::packet::WrappedServerBoundPacket::External {
-                    packet,
-                    sender
-                } => {
-                    match packet {
-                        #( #match_arms, )*
-                        _ => {
-                            log::warn!("Async packet sent to sync packet dispatcher");
-                        }
-                    }
-                },
-                crate::network::packet::WrappedServerBoundPacket::Internal {
-                    packet,
-                    sender
-                } => {
-                    match packet {
-                        #( #internal_match_arms, )*
-                        #[allow(unreachable_patterns)]
-                        _ => {
-                            log::warn!("Async packet sent to sync packet dispatcher");
-                        }
-                    }
+        pub async fn dispatch_sync_packet(
+            sender: usize,
+            packet: &crate::network::ServerBoundPacket,
+            handler: &mut crate::QuartzServer
+        ) {
+            match packet {
+                #( #match_arms, )*
+                _ => {
+                    log::warn!("Async packet sent to sync packet dispatcher");
                 }
             }
         }
     }
 }
 
-fn gen_packet_dispatch(packet: &Packet, mappings: &Mappings, internal: bool) -> TokenStream {
+fn gen_packet_dispatch(packet: &Packet, mappings: &Mappings) -> TokenStream {
     let variant_name = format_ident!("{}", snake_to_pascal(&packet.name));
     let field_names = packet
         .fields
@@ -290,18 +218,11 @@ fn gen_packet_dispatch(packet: &Packet, mappings: &Mappings, internal: bool) -> 
     let sender = if packet.sender_independent {
         None
     } else {
-        Some(quote! { *sender, })
+        Some(quote! { sender, })
     };
-    if internal {
-        quote! {
-            crate::network::InternalPacket::#variant_name { #( #field_names ),* } =>
-                handler.#handler_name(#sender #( #field_derefs ),*).await
-        }
-    } else {
-        quote! {
-            quartz_net::packets::ServerBoundPacket::#variant_name { #( #field_names ),* } =>
-                handler.#handler_name(#sender #( #field_derefs ),*).await
-        }
+    quote! {
+        quartz_net::ServerBoundPacket::#variant_name { #( #field_names ),* } =>
+            handler.#handler_name(#sender #( #field_derefs ),*).await
     }
 }
 
@@ -503,28 +424,6 @@ impl Field {
             ))
             .expect("Invalid type or type mapping encountered in JSON")
         })
-    }
-
-    pub fn struct_field_def(&self, mappings: &Mappings) -> TokenStream {
-        let name = format_ident!("{}", self.name);
-        let ty: Type = match syn::parse_str(parse_type(&self.var_type, mappings)) {
-            Ok(ty) => ty,
-            Err(e) => return e.to_compile_error(),
-        };
-        match (self.option, self.array) {
-            (true, true) => quote! {
-                #name: Option<Box<[#ty]>>
-            },
-            (true, false) => quote! {
-                #name: Option<#ty>
-            },
-            (false, true) => quote! {
-                #name: Box<[#ty]>
-            },
-            (false, false) => quote! {
-                #name: #ty
-            },
-        }
     }
 }
 

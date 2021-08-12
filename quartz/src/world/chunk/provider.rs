@@ -1,5 +1,5 @@
 use crate::{
-    network::{AsyncWriteHandle, WrappedClientBoundPacket},
+    network::{AsyncWriteHandle, WrappedClientBoundPacket, packet_data::SectionAndLightData, ClientBoundPacket},
     world::chunk::{chunk::RawChunk, Chunk, ChunkDecodeError, RawClientChunk},
 };
 use byteorder::{BigEndian, ByteOrder};
@@ -15,7 +15,6 @@ use futures_util::{poll, stream::FuturesUnordered, StreamExt};
 use log::{error, warn};
 use qdat::world::location::{Coordinate, CoordinatePair};
 use quartz_nbt::serde::deserialize_from_buffer;
-use quartz_net::{packet_types::SectionAndLightData, packets::ClientBoundPacket};
 use quartz_util::hash::NumHasher;
 use serde::Deserialize;
 use std::{
@@ -220,7 +219,7 @@ impl ChunkProvider {
             ));
 
             drop(chunk);
-            handle.send_all(packets).await;
+            handle.send_all(packets);
             return Ok(());
         }
 
@@ -287,7 +286,7 @@ impl ChunkProvider {
             }
         }
 
-        handle.send_all(packets).await;
+        handle.send_all(packets);
         Ok(())
     }
 

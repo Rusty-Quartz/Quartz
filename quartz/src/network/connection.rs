@@ -8,7 +8,7 @@ use openssl::{
 };
 use parking_lot::Mutex;
 use quartz_net::{
-    packets::{ClientBoundPacket, ServerBoundPacket},
+    ClientBoundPacket, ServerBoundPacket,
     ConnectionState,
     PacketBuffer,
     PacketSerdeError,
@@ -52,16 +52,16 @@ impl IoHandle {
     /// using the temporary buffer for the encryption.
     fn write_encrypted<'a>(
         encrypter: Option<&mut Crypter>,
-        source: &'a [u8],
+        data: &'a [u8],
         temp: &'a mut PacketBuffer,
         stream: &'a mut OwnedWriteHalf,
     ) -> Result<impl Future<Output = Result<()>> + 'a> {
         let bytes = if let Some(encrypter) = encrypter {
-            temp.resize(source.len());
-            encrypter.update(&source[..], &mut temp[..])?;
+            temp.resize(data.len());
+            encrypter.update(&data[..], &mut temp[..])?;
             &temp[..]
         } else {
-            &source[..]
+            &data[..]
         };
 
         Ok(async move { stream.write_all(bytes).await })
@@ -112,20 +112,18 @@ impl IoHandle {
         self.compression_threshold = compression_threshold;
     }
 
-    /// Writes the raw packet data bytes to the given stream, applying compression and encryption if needed.
-    fn write_packet_data<'a>(
-        &mut self,
+    fn preprocess_packet<'a>(
         packet_data: &'a mut PacketBuffer,
         aux_buffer: &'a mut PacketBuffer,
-        stream: &'a mut OwnedWriteHalf,
-    ) -> Result<impl Future<Output = Result<()>> + 'a> {
+        compression_threshold: i32
+    ) -> Result<PreprocessedPacket<'a>> {
         // Prepare the operation buffer
         aux_buffer.clear();
 
         // We need to check to see if the packet should be compressed
-        if self.compression_threshold >= 0 {
+        if compression_threshold >= 0 {
             // We're past the compression threshold so perform the compression
-            if packet_data.cursor() >= self.compression_threshold as usize {
+            if packet_data.cursor() >= compression_threshold as usize {
                 let data_len = packet_data.cursor();
 
                 // Compress the packet data and write to the operation buffer
@@ -147,12 +145,10 @@ impl IoHandle {
                 packet_data.write_varying(&(data_len as i32));
                 packet_data.write_bytes(&aux_buffer[..]);
 
-                IoHandle::write_encrypted(
-                    self.encrypter.as_mut(),
-                    &packet_data[..],
-                    aux_buffer,
-                    stream,
-                )
+                Ok(PreprocessedPacket {
+                    data: &packet_data[..],
+                    temp: aux_buffer,
+                })
             }
             // The packet length is not past the threshold so no need to compress, however the header is still modified
             else {
@@ -162,12 +158,10 @@ impl IoHandle {
                 aux_buffer.write_one(0);
                 aux_buffer.write_bytes(&packet_data[..]);
 
-                IoHandle::write_encrypted(
-                    self.encrypter.as_mut(),
-                    &aux_buffer[..],
-                    packet_data,
-                    stream,
-                )
+                Ok(PreprocessedPacket {
+                    data: &aux_buffer[..],
+                    temp: packet_data,
+                })
             }
         }
         // The packet does not need to be compressed, so just record the length and write the raw bytes
@@ -175,13 +169,39 @@ impl IoHandle {
             aux_buffer.write_varying(&(packet_data.len() as i32));
             aux_buffer.write_bytes(&packet_data[..]);
 
-            IoHandle::write_encrypted(
-                self.encrypter.as_mut(),
-                &aux_buffer[..],
-                packet_data,
-                stream,
-            )
+            Ok(PreprocessedPacket {
+                data: &aux_buffer[..],
+                temp: packet_data,
+            })
         }
+    }
+
+    fn write_packet_encrypted<'a>(
+        &mut self,
+        packet: PreprocessedPacket<'a>,
+        stream: &'a mut OwnedWriteHalf,
+    ) -> Result<impl Future<Output = Result<()>> + 'a> {
+        Self::write_encrypted(self.encrypter.as_mut(), packet.data, packet.temp, stream)
+    }
+
+    fn write_bytes_encrypted<'a>(
+        &mut self,
+        data: &'a [u8],
+        temp: &'a mut PacketBuffer,
+        stream: &'a mut OwnedWriteHalf,
+    ) -> Result<impl Future<Output = Result<()>> + 'a> {
+        Self::write_encrypted(self.encrypter.as_mut(), data, temp, stream)
+    }
+
+    /// Writes the raw packet data bytes to the given stream, applying compression and encryption if needed.
+    fn write_packet_data<'a>(
+        &mut self,
+        packet_data: &'a mut PacketBuffer,
+        aux_buffer: &'a mut PacketBuffer,
+        stream: &'a mut OwnedWriteHalf,
+    ) -> Result<impl Future<Output = Result<()>> + 'a> {
+        let packet = Self::preprocess_packet(packet_data, aux_buffer, self.compression_threshold)?;
+        self.write_packet_encrypted(packet, stream)
     }
 
     /// Reads the packet header, collects the remaining bytes and decrypts and decompresses the packet,
@@ -287,7 +307,8 @@ impl IoHandle {
             // Only decompress to the end of this packet
             // Cursor = vsize(raw_len) + vsize(data_len)
             // compressed_end = raw_len - vsize(raw_len)
-            let compressed_end = (raw_len + PacketBuffer::varint_size(data_len as i32)) - packet_buffer.cursor();
+            let compressed_end =
+                (raw_len + PacketBuffer::varint_size(data_len as i32)) - packet_buffer.cursor();
             let mut decoder = ZlibDecoder::new(&aux_buffer[.. compressed_end]);
 
             // Prepare the packet buffer for decompression
@@ -317,6 +338,11 @@ impl IoHandle {
     }
 }
 
+struct PreprocessedPacket<'a> {
+    data: &'a [u8],
+    temp: &'a mut PacketBuffer,
+}
+
 struct CollectedPacket<'a> {
     packet_buffer: &'a mut PacketBuffer,
     aux_buffer: &'a mut PacketBuffer,
@@ -337,18 +363,18 @@ impl AsyncWriteHandle {
     // These functions are async so that if we bound the channel it's not a breaking change
 
     /// Attempts to send the given wrapped packet, logging an error if the operation fails.
-    async fn try_send(&self, packet: WrappedClientBoundPacket) {
+    fn try_send(&self, packet: WrappedClientBoundPacket) {
         if let Err(e) = self.0.send(packet) {
             error!("Failed to forward client-bound packet to serializer: {}", e);
         }
     }
 
     /// Sends a packet to the client.
-    pub async fn send_packet(&self, packet: impl Into<WrappedClientBoundPacket>) {
-        self.try_send(packet.into()).await;
+    pub fn send_packet(&self, packet: impl Into<WrappedClientBoundPacket>) {
+        self.try_send(packet.into());
     }
 
-    pub async fn send_all<I>(&self, packets: I)
+    pub fn send_all<I>(&self, packets: I)
     where
         I: IntoIterator,
         I::Item: Into<WrappedClientBoundPacket>,
@@ -357,13 +383,12 @@ impl AsyncWriteHandle {
             .into_iter()
             .map(|packet| packet.into())
             .collect::<Box<[_]>>();
-        self.try_send(WrappedClientBoundPacket::Multiple(packets))
-            .await;
+        self.try_send(WrappedClientBoundPacket::Multiple(packets));
     }
 
     /// Forcefully closes the connection.
-    pub async fn shutdown_connection(&self) {
-        self.try_send(WrappedClientBoundPacket::Disconnect).await;
+    pub fn shutdown_connection(&self) {
+        let _ = self.0.send(WrappedClientBoundPacket::Disconnect);
     }
 }
 
@@ -453,79 +478,30 @@ impl AsyncClientConnection {
         write_handle: &mut OwnedWriteHalf,
         io_handle: &Mutex<IoHandle>,
     ) -> bool {
-        async fn write_buffer(
-            buffer: &mut PacketBuffer,
-            aux_buffer: &mut PacketBuffer,
-            write_handle: &mut OwnedWriteHalf,
-            io_handle: &Mutex<IoHandle>,
-        ) {
-            let write_fut = io_handle
-                .lock()
-                .write_packet_data(buffer, aux_buffer, write_handle);
-            if let Ok(fut) = write_fut {
-                let _ = fut.await;
-            }
-        }
-
-        async fn write_raw_buffer(buffer: &PacketBuffer, write_handle: &mut OwnedWriteHalf) {
-            let _ = write_handle.write_all(&buffer[..]).await;
-        }
-
         match wrapped_packet {
             WrappedClientBoundPacket::Singleton(packet) => {
                 buffer.clear();
                 buffer.write(&packet);
-                write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
+                Self::write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
             }
 
             WrappedClientBoundPacket::Multiple(packets) => {
-                let mut disconnect_when_done = false;
-                let mut flush = false;
-
-                for packet in packets.iter() {
-                    buffer.clear();
-
-                    match packet {
-                        WrappedClientBoundPacket::Singleton(packet) => buffer.write(packet),
-                        WrappedClientBoundPacket::Custom(packet) => buffer.write(&**packet),
-                        WrappedClientBoundPacket::Buffer(buffer) => {
-                            write_raw_buffer(buffer, write_handle).await;
-                            continue;
-                        }
-                        WrappedClientBoundPacket::Flush => flush = true,
-                        WrappedClientBoundPacket::Disconnect => disconnect_when_done = true,
-                        WrappedClientBoundPacket::EnableCompression { .. } => warn!(
-                            "Attempted to send compression-enabling packet in multi-packet \
-                             payload. This packet will be dropped."
-                        ),
-                        WrappedClientBoundPacket::Multiple(..) => {
-                            warn!(
-                                "Attempted to write nested \
-                                 WrappedClientBoundPacket::Multiple(..), these packets will be \
-                                 dropped"
-                            )
-                        }
-                    }
-
-                    write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
+                match Self::write_multiple(packets, buffer, aux_buffer, write_handle, io_handle)
+                    .await
+                {
+                    Ok(disconnect) => return disconnect,
+                    Err(e) => error!("Failed to send packet: {}", e),
                 }
-
-                if flush {
-                    if let Err(e) = write_handle.flush().await {
-                        error!("Failed to flush connection socket: {}", e);
-                    }
-                }
-
-                return disconnect_when_done;
             }
 
-            WrappedClientBoundPacket::Buffer(buffer) =>
-                write_raw_buffer(&buffer, write_handle).await,
+            WrappedClientBoundPacket::Buffer(buffer) => {
+                let _ = write_handle.write_all(&buffer[..]).await;
+            }
 
             WrappedClientBoundPacket::Custom(packet) => {
                 buffer.clear();
                 buffer.write(&*packet);
-                write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
+                Self::write_buffer(buffer, aux_buffer, write_handle, io_handle).await;
             }
 
             WrappedClientBoundPacket::EnableCompression { threshold } => {
@@ -544,16 +520,85 @@ impl AsyncClientConnection {
                 }
             }
 
-            WrappedClientBoundPacket::Flush => {
+            WrappedClientBoundPacket::Flush =>
                 if let Err(e) = write_handle.flush().await {
                     error!("Failed to flush connection socket: {}", e);
-                }
-            },
+                },
 
             WrappedClientBoundPacket::Disconnect => return true,
         }
 
         false
+    }
+
+    async fn write_multiple(
+        packets: Box<[WrappedClientBoundPacket]>,
+        buffer: &mut PacketBuffer,
+        aux_buffer: &mut PacketBuffer,
+        write_handle: &mut OwnedWriteHalf,
+        io_handle: &Mutex<IoHandle>,
+    ) -> Result<bool> {
+        let compression_threshold = io_handle.lock().compression_threshold;
+        let mut disconnect_when_done = false;
+        let mut flush = false;
+        let mut multi_buffer = PacketBuffer::new(0);
+
+        for packet in packets.iter() {
+            buffer.clear();
+
+            match packet {
+                WrappedClientBoundPacket::Singleton(packet) => buffer.write(packet),
+                WrappedClientBoundPacket::Custom(packet) => buffer.write(&**packet),
+                WrappedClientBoundPacket::Flush => flush = true,
+                WrappedClientBoundPacket::Disconnect => disconnect_when_done = true,
+                WrappedClientBoundPacket::Buffer(buffer) => multi_buffer.write_bytes(&buffer[..]),
+                WrappedClientBoundPacket::EnableCompression { .. } => warn!(
+                    "Attempted to send compression-enabling packet in multi-packet payload. \
+                     This packet will be dropped."
+                ),
+                WrappedClientBoundPacket::Multiple(..) => {
+                    warn!(
+                        "Attempted to write nested WrappedClientBoundPacket::Multiple(..), \
+                         these packets will be dropped"
+                    )
+                }
+            }
+
+            let packet = IoHandle::preprocess_packet(buffer, aux_buffer, compression_threshold)?;
+            multi_buffer.write_bytes(packet.data);
+        }
+
+        let write_fut = io_handle.lock().write_bytes_encrypted(&multi_buffer[..], aux_buffer, write_handle)?;
+        let _ = write_fut.await;
+        aux_buffer.reset_cursor();
+        // Safety: cursor reset above
+        unsafe { aux_buffer.inner_mut().truncate(4096) };
+        aux_buffer.clear();
+
+        if flush {
+            if let Err(e) = write_handle.flush().await {
+                error!("Failed to flush connection socket: {}", e);
+            }
+        }
+
+        Ok(disconnect_when_done)
+    }
+
+    async fn write_buffer(
+        buffer: &mut PacketBuffer,
+        aux_buffer: &mut PacketBuffer,
+        write_handle: &mut OwnedWriteHalf,
+        io_handle: &Mutex<IoHandle>,
+    ) {
+        let write_fut = io_handle
+            .lock()
+            .write_packet_data(buffer, aux_buffer, write_handle);
+        match write_fut {
+            Ok(fut) => {
+                let _ = fut.await;
+            }
+            Err(e) => error!("Failed to write send packet: {}", e),
+        }
     }
 
     /// Forwards the given packet to the server thread for handling.
@@ -567,10 +612,10 @@ impl AsyncClientConnection {
     }
 
     /// Forwards an internal packet to the server thread for handling.
-    pub fn forward_internal_to_server(&mut self, packet: InternalPacket) {
+    pub fn forward_internal_to_server(&mut self, packet: WrappedServerBoundPacket) {
         if let Err(e) = self
             .sync_packet_sender
-            .send(WrappedServerBoundPacket::internal(self.id, packet))
+            .send(packet)
         {
             error!(
                 "Failed to forward synchronous internal packet to server: {}",

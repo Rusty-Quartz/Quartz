@@ -1,15 +1,10 @@
-use super::AsyncWriteHandle;
 use crate::{
-    command::{CommandContext, CommandSender},
-    command_executor,
     config,
-    display_to_console,
-    network::{AsyncClientConnection, InternalPacket, WrappedClientBoundPacket},
+    network::{*, packet_data::*},
     server::{self, QuartzServer},
     world::chunk::provider::ProviderRequest,
 };
 use qdat::world::location::{BlockPosition, Coordinate};
-use quartz_net::{packet_types::*, packets::*, ConnectionState, PacketBuffer, PROTOCOL_VERSION};
 
 use hex::ToHex;
 use log::{debug, error};
@@ -21,7 +16,6 @@ use openssl::{
 };
 use qdat::UnlocalizedName;
 use quartz_chat::{color::PredefinedColor, Component};
-use quartz_commands::CommandModule;
 use quartz_nbt::NbtCompound;
 use rand::{thread_rng, Rng};
 use regex::Regex;
@@ -29,8 +23,8 @@ use serde::Deserialize;
 use serde_json::json;
 use std::{
     str::FromStr,
-    sync::{mpsc::Sender, Arc},
-    time::{Duration, Instant, SystemTime},
+    sync::Arc,
+    time::Instant,
 };
 use uuid::Uuid;
 
@@ -40,8 +34,6 @@ pub(crate) struct AsyncPacketHandler {
     key_pair: Arc<Rsa<Private>>,
     username: String,
     verify_token: Vec<u8>,
-    keep_alive: i64,
-    last_keep_alive: SystemTime,
 }
 
 impl AsyncPacketHandler {
@@ -50,8 +42,6 @@ impl AsyncPacketHandler {
             key_pair,
             username: String::new(),
             verify_token: Vec::new(),
-            keep_alive: -1,
-            last_keep_alive: SystemTime::now(),
         }
     }
 }
@@ -77,8 +67,7 @@ impl AsyncPacketHandler {
 
     async fn handle_ping(&mut self, conn: &mut AsyncClientConnection, payload: i64) {
         conn.write_handle
-            .send_packet(ClientBoundPacket::Pong { payload })
-            .await;
+            .send_packet(ClientBoundPacket::Pong { payload });
     }
 
     async fn handle_login_start(&mut self, conn: &mut AsyncClientConnection, name: &String) {
@@ -88,12 +77,12 @@ impl AsyncPacketHandler {
                 .send_packet(ClientBoundPacket::LoginSuccess {
                     uuid: Uuid::from_u128(0),
                     username: name.clone(),
-                })
-                .await;
+                });
 
-            conn.forward_internal_to_server(InternalPacket::LoginSuccessServer {
+            conn.forward_internal_to_server(WrappedServerBoundPacket::LoginSuccess {
+                id: conn.id,
                 uuid: Uuid::from_u128(0),
-                username: name.clone(),
+                username: name.clone()
             });
 
             conn.connection_state = ConnectionState::Play;
@@ -115,7 +104,7 @@ impl AsyncPacketHandler {
             Ok(der) => pub_key_der = der,
             Err(e) => {
                 error!("Failed to convert public key to der: {}", e);
-                conn.write_handle.shutdown_connection().await;
+                conn.write_handle.shutdown_connection();
                 return;
             }
         }
@@ -126,7 +115,7 @@ impl AsyncPacketHandler {
                 public_key: pub_key_der.into_boxed_slice(),
                 verify_token: verify_token.to_vec().into_boxed_slice(),
             })
-            .await;
+            ;
     }
 
     async fn handle_encryption_response(
@@ -142,7 +131,7 @@ impl AsyncPacketHandler {
                 .private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1)
         {
             error!("Failed to decrypt verify token: {}", e);
-            conn.write_handle.shutdown_connection().await;
+            conn.write_handle.shutdown_connection();
             return;
         }
         decrypted_verify = decrypted_verify[.. self.verify_token.len()].to_vec();
@@ -160,7 +149,7 @@ impl AsyncPacketHandler {
                         PredefinedColor::Red,
                     )),
                 })
-                .await;
+                ;
         }
 
         // Decrypt shared secret
@@ -170,7 +159,7 @@ impl AsyncPacketHandler {
                 .private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1)
         {
             error!("Failed to decrypt secret key: {}", e);
-            conn.write_handle.shutdown_connection().await;
+            conn.write_handle.shutdown_connection();
             return;
         }
         decrypted_secret = decrypted_secret[.. 16].to_vec();
@@ -182,7 +171,7 @@ impl AsyncPacketHandler {
                 "Failed to initialize encryption for client connetion: {}",
                 e
             );
-            conn.write_handle.shutdown_connection().await;
+            conn.write_handle.shutdown_connection();
             return;
         }
 
@@ -194,7 +183,7 @@ impl AsyncPacketHandler {
             Ok(der) => hasher.update(&*der),
             Err(e) => {
                 error!("Failed to convert public key to der: {}", e);
-                conn.write_handle.shutdown_connection().await;
+                conn.write_handle.shutdown_connection();
                 return;
             }
         }
@@ -257,7 +246,7 @@ impl AsyncPacketHandler {
             .send_packet(WrappedClientBoundPacket::EnableCompression {
                 threshold: TEST_THRESHOLD,
             })
-            .await;
+            ;
 
         // Make a get request
         let mojang_req = ureq::get(&url).call();
@@ -280,14 +269,15 @@ impl AsyncPacketHandler {
                         uuid,
                         username: self.username.clone(),
                     })
-                    .await;
+                    ;
 
                 conn.connection_state = ConnectionState::Play;
 
-                conn.forward_internal_to_server(InternalPacket::LoginSuccessServer {
+                conn.forward_internal_to_server(WrappedServerBoundPacket::LoginSuccess {
+                    id: conn.id,
                     uuid,
-                    username: self.username.clone(),
-                })
+                    username: self.username.clone()
+                });
             }
             Err(e) => error!("Failed to parse malformed UUID: {}", e),
         }
@@ -301,36 +291,10 @@ impl AsyncPacketHandler {
     ) {
         // TODO: Implement login_plugin_response
     }
-
-    async fn handle_keep_alive(&mut self, conn: &mut AsyncClientConnection, keep_alive_id: i64) {
-        if (keep_alive_id != self.keep_alive && self.keep_alive != -1)
-            // If the SystemTimes don't line up correctly assume that we're within the time limit
-            || SystemTime::now()
-                .duration_since(self.last_keep_alive)
-                .unwrap_or(Duration::from_secs(1))
-                .as_secs()
-                > 30
-        {
-            conn.connection_state = ConnectionState::Disconnected;
-        } else {
-            let id = Uuid::new_v4();
-            self.keep_alive = id.as_u128() as i64;
-            // We sleep to avoid spamming the client with KeepAlive packets
-            // The client would disconnect if they didn't get a packet before 20 seconds
-            // So we wait 10 allowing 10 seconds of delay between packets
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            conn.write_handle
-                .send_packet(ClientBoundPacket::KeepAlive {
-                    keep_alive_id: self.keep_alive,
-                })
-                .await;
-            self.last_keep_alive = SystemTime::now();
-        }
-    }
 }
 
 impl QuartzServer {
-    async fn handle_login_success_server(&mut self, sender: usize, _uuid: Uuid, _username: &str) {
+    pub(crate) async fn handle_login_success_server(&mut self, sender: usize, _uuid: Uuid, _username: &str) {
         // let config = config().lock().await;
 
         /*
@@ -388,7 +352,7 @@ impl QuartzServer {
                 is_debug: false,
                 is_flat: false,
             })
-            .await;
+            ;
 
         let mut brand_buf = PacketBuffer::new(2048);
         brand_buf.write(&"Quartz");
@@ -398,33 +362,11 @@ impl QuartzServer {
                 channel: UnlocalizedName::minecraft("brand"),
                 data: brand_buf[..].to_vec().into_boxed_slice(),
             })
-            .await;
+            ;
 
         // Since at this point keep_alive on the AsyncPackeHandler is still -1 it won't check what this id is
         // So it doesn't matter if we hard code the id
-        self.client_list
-            .send_packet(sender, ClientBoundPacket::KeepAlive {
-                keep_alive_id: 124345,
-            })
-            .await;
-    }
-
-    async fn handle_console_command(&mut self, command: &str) {
-        let executor = command_executor();
-        let sender = CommandSender::Console;
-        let context = CommandContext::new(self, &*executor, sender);
-        if let Err(e) = executor.dispatch(command, context) {
-            display_to_console(&e);
-        }
-    }
-
-    async fn handle_console_completion(&mut self, command: &str, response: &Sender<Vec<String>>) {
-        let executor = command_executor();
-        let sender = CommandSender::Console;
-        let context = CommandContext::new(self, &*executor, sender);
-        let suggestions = executor.get_suggestions(command, &context);
-        // Error handling not useful here
-        drop(response.send(suggestions));
+        self.client_list.start_keep_alive(sender);
     }
 
     async fn handle_legacy_server_list_ping(&mut self, sender: usize, _payload: u8) {
@@ -471,7 +413,7 @@ impl QuartzServer {
             buffer.write(&bytes);
         }
 
-        self.client_list.send_buffer(sender, buffer).await;
+        self.client_list.send_buffer(sender, buffer);
     }
 
     async fn handle_status_request(&mut self, sender: usize) {
@@ -495,14 +437,12 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::StatusResponse {
                 json_response: json_response.to_string(),
             })
-            .await;
+            ;
     }
 
-    #[allow(unused_variables)]
-    async fn handle_client_disconnected(&mut self, id: usize) {}
-
-    #[allow(unused_variables)]
-    async fn handle_client_connected(&mut self, id: usize, write_handle: &AsyncWriteHandle) {}
+    async fn handle_keep_alive(&mut self, sender: usize, keep_alive_id: i64) {
+        self.client_list.handle_keep_alive(sender, keep_alive_id);
+    }
 
     #[allow(unused_variables)]
     async fn handle_use_item(&mut self, sender: usize, hand: i32) {}
@@ -833,13 +773,13 @@ impl QuartzServer {
     ) {
         self.client_list
             .send_packet(sender, ClientBoundPacket::HeldItemChange { slot: 0 })
-            .await;
+            ;
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::DeclareRecipes {
                 recipes: vec![].into_boxed_slice(),
             })
-            .await;
+            ;
 
         // self.client_list
         //     .send_packet(sender, ClientBoundPacket::Tags {
@@ -870,7 +810,7 @@ impl QuartzServer {
                 recipe_ids_1: vec![].into_boxed_slice(),
                 recipe_ids_2: Some(vec![].into_boxed_slice()),
             })
-            .await;
+            ;
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::PlayerInfo {
@@ -887,7 +827,7 @@ impl QuartzServer {
                 }]
                 .into_boxed_slice(),
             })
-            .await;
+            ;
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::PlayerInfo {
@@ -898,14 +838,14 @@ impl QuartzServer {
                 }]
                 .into_boxed_slice(),
             })
-            .await;
+            ;
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::UpdateViewPosition {
                 chunk_x: 0,
                 chunk_z: 0,
             })
-            .await;
+            ;
 
         let write_handle = self.client_list.create_write_handle(sender).unwrap();
         let start = Instant::now();
@@ -968,7 +908,7 @@ impl QuartzServer {
                 location: BlockPosition { x: 0, y: 60, z: 0 },
                 angle: 0.0,
             })
-            .await;
+            ;
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::PlayerPositionAndLook {
@@ -981,7 +921,7 @@ impl QuartzServer {
                 flags: 0,
                 teleport_id: 0,
             })
-            .await;
+            ;
     }
 
     #[allow(unused_variables)]
@@ -1028,19 +968,19 @@ pub async fn handle_async_connection(
                 else {
                     if let Err(e) = handle_packet(&mut conn, &mut async_handler, packet_len).await {
                         error!("Failed to handle packet: {}", e);
-                        conn.write_handle.shutdown_connection().await;
+                        conn.write_handle.shutdown_connection();
                         break;
                     }
                 }
             }
             Err(e) => {
                 error!("Error in connection handler: {}", e);
-                conn.write_handle.shutdown_connection().await;
+                conn.write_handle.shutdown_connection();
                 break;
             }
         }
     }
 
-    conn.forward_internal_to_server(InternalPacket::ClientDisconnected { id: conn.id });
+    conn.forward_internal_to_server(WrappedServerBoundPacket::ClientDisconnected { id: conn.id });
     debug!("Client disconnected");
 }

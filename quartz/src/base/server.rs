@@ -1,5 +1,8 @@
 use crate::{
+    command_executor,
     config,
+    display_to_console,
+    command::{CommandSender, CommandContext, CommandModule},
     item::init_items,
     network::*,
     raw_console,
@@ -17,20 +20,13 @@ use linefeed::{
 use log::*;
 use openssl::rsa::Rsa;
 use parking_lot::Mutex;
-use quartz_net::{packets::*, PacketBuffer};
-use std::{
-    collections::HashMap,
-    error::Error,
-    net::TcpStream as StdTcpStream,
-    process::abort,
-    sync::{
+use quartz_net::*;
+use rand::{Rng, thread_rng};
+use std::{collections::HashMap, error::Error, net::TcpStream as StdTcpStream, process::abort, sync::{
         atomic::Ordering,
         mpsc::{self, Receiver, Sender},
         Arc,
-    },
-    thread::{self, JoinHandle},
-    time::Duration,
-};
+    }, thread::{self, JoinHandle}, time::{Duration, Instant}};
 use tokio::{
     net::TcpListener,
     runtime::{Builder, Runtime},
@@ -45,15 +41,15 @@ pub const VERSION: &str = "1.17";
 pub struct QuartzServer {
     /// The list of connected clients.
     pub(crate) client_list: ClientList,
-    /// A cloneable channel to send packets to the main server thread.
-    sync_packet_sender: Sender<WrappedServerBoundPacket>,
-    /// The receiver for packets that need to be handled on the server thread.
-    sync_packet_receiver: Receiver<WrappedServerBoundPacket>,
     /// The join handle for the console command handler thread.
     console_command_handler: Option<JoinHandle<()>>,
     /// The ChunckProvider
     pub chunk_provider: ChunkProvider,
     tcp_server_runtime: Runtime,
+    /// A cloneable channel to send packets to the main server thread.
+    sync_packet_sender: Sender<WrappedServerBoundPacket>,
+    /// The receiver for packets that need to be handled on the server thread.
+    sync_packet_receiver: Receiver<WrappedServerBoundPacket>,
 }
 
 impl QuartzServer {
@@ -136,14 +132,10 @@ impl QuartzServer {
                 let (sender, receiver) = mpsc::channel::<Vec<String>>();
 
                 // Send the completion request
-                pipe.send(WrappedServerBoundPacket::internal(
-                    0,
-                    InternalPacket::ConsoleCompletion {
-                        // Take the slice of the command up to the cursor
-                        command: prompter.buffer()[.. prompter.cursor()].to_owned(),
-                        response: sender,
-                    },
-                ))
+                pipe.send(WrappedServerBoundPacket::ConsoleCompletion {
+                    command: prompter.buffer()[.. prompter.cursor()].to_owned(),
+                    response: sender
+                })
                 .ok()?;
 
                 // Get the completion response
@@ -191,23 +183,17 @@ impl QuartzServer {
                             interface.add_history_unique(command.clone());
 
                             // Forward the command to the server thread
-                            let packet = WrappedServerBoundPacket::internal(
-                                0,
-                                InternalPacket::ConsoleCommand {
-                                    command: command.trim().to_owned(),
-                                },
-                            );
+                            let packet = WrappedServerBoundPacket::ConsoleCommand {
+                                command: command.trim().to_owned()
+                            };
                             if let Err(e) = packet_pipe.send(packet) {
                                 error!("Failed to forward console command to server thread: {}", e);
                             }
                         }
                         Some(ReadResult::Signal(Signal::Interrupt | Signal::Quit)) => {
-                            let _ = packet_pipe.send(WrappedServerBoundPacket::internal(
-                                0,
-                                InternalPacket::ConsoleCommand {
-                                    command: "stop".to_owned(),
-                                },
-                            ));
+                            let _ = packet_pipe.send(WrappedServerBoundPacket::ConsoleCommand {
+                                command: "stop".to_owned(),
+                            });
                         }
                         _ => {}
                     },
@@ -264,13 +250,10 @@ impl QuartzServer {
                     );
 
                     // Register the client
-                    let result = sync_packet_sender.send(WrappedServerBoundPacket::internal(
-                        0,
-                        InternalPacket::ClientConnected {
-                            id: next_connection_id,
-                            write_handle: conn.write_handle.clone(),
-                        },
-                    ));
+                    let result = sync_packet_sender.send(WrappedServerBoundPacket::ClientConnected {
+                        id: next_connection_id,
+                        write_handle: conn.write_handle.clone(),
+                    });
                     if let Err(e) = result {
                         error!("Fatal error: failed to register new client: {}", e);
                         return;
@@ -293,26 +276,34 @@ impl QuartzServer {
 
     pub(crate) async fn tick(&mut self) {
         self.handle_packets().await;
+        self.client_list.update_keep_alive();
         self.chunk_provider.flush_ready().await;
     }
 
     async fn handle_packets(&mut self) {
         while let Ok(wrapped_packet) = self.sync_packet_receiver.try_recv() {
             match wrapped_packet {
-                WrappedServerBoundPacket::External { sender, packet } =>
-                    dispatch_sync_packet(&WrappedServerBoundPacket::external(sender, packet), self)
-                        .await,
-                WrappedServerBoundPacket::Internal { sender, packet } => match packet {
-                    InternalPacket::ClientConnected { id, write_handle } =>
-                        self.client_list.add_client(id, write_handle),
-                    InternalPacket::ClientDisconnected { id } => self.client_list.remove_client(id),
-                    _ =>
-                        dispatch_sync_packet(
-                            &WrappedServerBoundPacket::internal(sender, packet),
-                            self,
-                        )
-                        .await,
+                WrappedServerBoundPacket::External { sender, ref packet } =>
+                    dispatch_sync_packet(sender, packet, self).await,
+                WrappedServerBoundPacket::LoginSuccess { id, uuid, username } => self.handle_login_success_server(id, uuid, &username).await,
+                WrappedServerBoundPacket::ClientConnected { id, write_handle } => self.client_list.add_client(id, write_handle),
+                WrappedServerBoundPacket::ClientDisconnected { id } => self.client_list.remove_client(id),
+                WrappedServerBoundPacket::ConsoleCommand { command } => {
+                    let executor = command_executor();
+                    let sender = CommandSender::Console;
+                    let context = CommandContext::new(self, &*executor, sender);
+                    if let Err(e) = executor.dispatch(&command, context) {
+                        display_to_console(&e);
+                    }
                 },
+                WrappedServerBoundPacket::ConsoleCompletion { command, response } => {
+                    let executor = command_executor();
+                    let sender = CommandSender::Console;
+                    let context = CommandContext::new(self, executor, sender);
+                    let suggestions = executor.get_suggestions(&command, &context);
+                    // Error handling not useful here
+                    drop(response.send(suggestions));
+                }
             }
         }
     }
@@ -380,26 +371,57 @@ impl ClientList {
             .map(|client| client.connection.clone())
     }
 
-    /// Sends a packet to the client with the given ID.
-    pub async fn send_packet(&mut self, client_id: usize, packet: ClientBoundPacket) {
+    pub fn start_keep_alive(&mut self, client_id: usize) {
         match self.0.get_mut(&client_id) {
-            Some(client) => client.connection.send_packet(packet).await,
+            Some(client) => {
+                let keep_alive_id = thread_rng().gen();
+                client.keep_alive_id = Some(keep_alive_id);
+                client.last_keep_alive_exchange = Instant::now();
+                client.connection.send_packet(ClientBoundPacket::KeepAlive {
+                    keep_alive_id
+                });
+            },
+            None => warn!("Attempted to start keep-alive chain on a disconnected client.")
+        }
+    }
+
+    pub fn handle_keep_alive(&mut self, client_id: usize, keep_alive_id: i64) {
+        match self.0.get_mut(&client_id) {
+            Some(client) => {
+                if client.keep_alive_id == Some(keep_alive_id) {
+                    client.keep_alive_id = None;
+                } else {
+                    self.0.remove(&client_id);
+                }
+            },
+            None => warn!("Attempted to handle a keep-alive packet on a disconnected client.")
+        }
+    }
+
+    pub fn update_keep_alive(&mut self) {
+        self.0.retain(|_, client| client.should_keep_alive());
+    }
+
+    /// Sends a packet to the client with the given ID.
+    pub fn send_packet(&self, client_id: usize, packet: ClientBoundPacket) {
+        match self.0.get(&client_id) {
+            Some(client) => client.connection.send_packet(packet),
             None => warn!("Attempted to send packet to disconnected client."),
         }
     }
 
-    pub async fn send_all<I>(&mut self, client_id: usize, packets: I)
+    pub fn send_all<I>(&self, client_id: usize, packets: I)
     where I: IntoIterator<Item = ClientBoundPacket> {
-        match self.0.get_mut(&client_id) {
-            Some(client) => client.connection.send_all(packets).await,
+        match self.0.get(&client_id) {
+            Some(client) => client.connection.send_all(packets),
             None => warn!("Attempted to send packet to disconnected client."),
         }
     }
 
     /// Sends a raw byte buffer to the client with the given ID.
-    pub async fn send_buffer(&mut self, client_id: usize, buffer: PacketBuffer) {
-        match self.0.get_mut(&client_id) {
-            Some(client) => client.connection.send_packet(buffer).await,
+    pub fn send_buffer(&self, client_id: usize, buffer: PacketBuffer) {
+        match self.0.get(&client_id) {
+            Some(client) => client.connection.send_packet(buffer),
             None => warn!("Attempted to send buffer to disconnected client."),
         }
     }
@@ -409,6 +431,8 @@ impl ClientList {
 struct Client {
     pub connection: AsyncWriteHandle,
     pub player_id: Option<usize>,
+    keep_alive_id: Option<i64>,
+    last_keep_alive_exchange: Instant
 }
 
 impl Client {
@@ -416,6 +440,38 @@ impl Client {
         Client {
             connection,
             player_id: None,
+            keep_alive_id: None,
+            last_keep_alive_exchange: Instant::now()
         }
+    }
+
+    fn should_keep_alive(&mut self) -> bool {
+        let elapsed = self.last_keep_alive_exchange.elapsed();
+
+        // Do an exchange at a maximum rate of once every five seconds
+        if elapsed > Duration::from_secs(5) {
+            match self.keep_alive_id {
+                // Kick the client if it's been more than 30 seconds since we've heard back
+                Some(..) => if elapsed > Duration::from_secs(30) {
+                    return false;
+                },
+
+                // Send another keep-alive packet
+                None => {
+                    let keep_alive_id = thread_rng().gen();
+                    self.keep_alive_id = Some(keep_alive_id);
+                    self.connection.send_packet(ClientBoundPacket::KeepAlive { keep_alive_id });
+                    self.last_keep_alive_exchange = Instant::now();
+                }
+            }
+        }
+
+        true
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        self.connection.shutdown_connection();
     }
 }

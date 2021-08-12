@@ -20,7 +20,9 @@ impl CompactStateBuffer {
             data: Vec::new(),
             long_index: 0,
             bit_index: 0,
-            meta: BufferMetadata::new(unsafe { NonZeroU8::new_unchecked(MIN_BITS_PER_BLOCK) }),
+            meta: BufferMetadata::new(
+                NonZeroU8::new(MIN_BITS_PER_BLOCK).expect("MIN_BITS_PER_BLOCK should not be zero"),
+            ),
         }
     }
 
@@ -143,8 +145,7 @@ impl CompactStateBuffer {
     pub fn to_direct_palette(&mut self, palette: &Palette) -> Result<(), PaletteConversionError> {
         let mut direct = CompactStateBuffer::new(
             vec![0; Self::required_capacity(MAX_BITS_PER_BLOCK)],
-            // Safety: MAX_BITS_PER_BLOCK is not zero
-            unsafe { NonZeroU8::new_unchecked(MAX_BITS_PER_BLOCK) },
+            NonZeroU8::new(MAX_BITS_PER_BLOCK).expect("MAX_BITS_PER_BLOCK should not be zero"),
         );
 
         let mut long_index = 0;
@@ -477,6 +478,7 @@ impl BufferMetadata {
         BufferMetadata {
             mask: (1u64 << bits_per_entry.get()) - 1,
             bits_per_entry,
+            // Safety: guaranteed by the assertion above
             data_bits_per_long: unsafe { NonZeroU8::new_unchecked(64 - (64 % bits_per_entry)) },
             entries_per_long: unsafe { NonZeroU8::new_unchecked(64 / bits_per_entry) },
         }

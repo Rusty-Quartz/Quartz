@@ -10,7 +10,7 @@ use qdat::{
     UlnStr,
 };
 use quartz_net::{
-    packet_types::{ClientSection, SectionAndLightData, SectionData},
+    packet_data::{ClientSection, SectionAndLightData, SectionData},
     BitMask,
     PacketBuffer,
     WriteToPacket,
