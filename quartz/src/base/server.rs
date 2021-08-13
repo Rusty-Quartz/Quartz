@@ -1,8 +1,8 @@
 use crate::{
+    command::{CommandContext, CommandModule, CommandSender},
     command_executor,
     config,
     display_to_console,
-    command::{CommandSender, CommandContext, CommandModule},
     item::init_items,
     network::*,
     raw_console,
@@ -21,12 +21,20 @@ use log::*;
 use openssl::rsa::Rsa;
 use parking_lot::Mutex;
 use quartz_net::*;
-use rand::{Rng, thread_rng};
-use std::{collections::HashMap, error::Error, net::TcpStream as StdTcpStream, process::abort, sync::{
+use rand::{thread_rng, Rng};
+use std::{
+    collections::HashMap,
+    error::Error,
+    net::TcpStream as StdTcpStream,
+    process::abort,
+    sync::{
         atomic::Ordering,
         mpsc::{self, Receiver, Sender},
         Arc,
-    }, thread::{self, JoinHandle}, time::{Duration, Instant}};
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, Instant},
+};
 use tokio::{
     net::TcpListener,
     runtime::{Builder, Runtime},
@@ -45,7 +53,7 @@ pub struct QuartzServer {
     console_command_handler: Option<JoinHandle<()>>,
     /// The ChunckProvider
     pub chunk_provider: ChunkProvider,
-    tcp_server_runtime: Runtime,
+    tcp_server_runtime: Option<Runtime>,
     /// A cloneable channel to send packets to the main server thread.
     sync_packet_sender: Sender<WrappedServerBoundPacket>,
     /// The receiver for packets that need to be handled on the server thread.
@@ -62,6 +70,12 @@ impl QuartzServer {
         }
 
         let (sender, receiver) = mpsc::channel::<WrappedServerBoundPacket>();
+        let tcp_server_runtime = Builder::new_multi_thread()
+            .enable_io()
+            .thread_name("tcp-worker")
+            .build()
+            .map(Some)
+            .expect("Failed to construct TCP server runtime");
 
         QuartzServer {
             client_list: ClientList::new(),
@@ -70,13 +84,7 @@ impl QuartzServer {
             console_command_handler: None,
             chunk_provider: ChunkProvider::new("world", "./world/region")
                 .expect("Error making chunk provider"),
-            tcp_server_runtime: Builder::new_multi_thread()
-                .enable_io()
-                // TODO: remove after keep alive is implemented on the tick
-                .enable_time()
-                .thread_name("tcp-worker")
-                .build()
-                .expect("Failed to construct TCP server runtime"),
+            tcp_server_runtime,
         }
     }
 
@@ -134,7 +142,7 @@ impl QuartzServer {
                 // Send the completion request
                 pipe.send(WrappedServerBoundPacket::ConsoleCompletion {
                     command: prompter.buffer()[.. prompter.cursor()].to_owned(),
-                    response: sender
+                    response: sender,
                 })
                 .ok()?;
 
@@ -184,7 +192,7 @@ impl QuartzServer {
 
                             // Forward the command to the server thread
                             let packet = WrappedServerBoundPacket::ConsoleCommand {
-                                command: command.trim().to_owned()
+                                command: command.trim().to_owned(),
                             };
                             if let Err(e) = packet_pipe.send(packet) {
                                 error!("Failed to forward console command to server thread: {}", e);
@@ -213,9 +221,12 @@ impl QuartzServer {
 
         let sync_packet_sender = self.sync_packet_sender.clone();
 
-        let listener = self.tcp_server_runtime.block_on(TcpListener::bind(addr))?;
-        self.tcp_server_runtime
-            .spawn(Self::tcp_server(listener, sync_packet_sender));
+        let rt = self
+            .tcp_server_runtime
+            .as_ref()
+            .expect("TCP server runtime not initialized");
+        let listener = rt.block_on(TcpListener::bind(addr))?;
+        rt.spawn(Self::tcp_server(listener, sync_packet_sender));
 
         Ok(())
     }
@@ -250,10 +261,11 @@ impl QuartzServer {
                     );
 
                     // Register the client
-                    let result = sync_packet_sender.send(WrappedServerBoundPacket::ClientConnected {
-                        id: next_connection_id,
-                        write_handle: conn.write_handle.clone(),
-                    });
+                    let result =
+                        sync_packet_sender.send(WrappedServerBoundPacket::ClientConnected {
+                            id: next_connection_id,
+                            write_handle: conn.write_handle.clone(),
+                        });
                     if let Err(e) = result {
                         error!("Fatal error: failed to register new client: {}", e);
                         return;
@@ -285,9 +297,12 @@ impl QuartzServer {
             match wrapped_packet {
                 WrappedServerBoundPacket::External { sender, ref packet } =>
                     dispatch_sync_packet(sender, packet, self).await,
-                WrappedServerBoundPacket::LoginSuccess { id, uuid, username } => self.handle_login_success_server(id, uuid, &username).await,
-                WrappedServerBoundPacket::ClientConnected { id, write_handle } => self.client_list.add_client(id, write_handle),
-                WrappedServerBoundPacket::ClientDisconnected { id } => self.client_list.remove_client(id),
+                WrappedServerBoundPacket::LoginSuccess { id, uuid, username } =>
+                    self.handle_login_success_server(id, uuid, &username).await,
+                WrappedServerBoundPacket::ClientConnected { id, write_handle } =>
+                    self.client_list.add_client(id, write_handle),
+                WrappedServerBoundPacket::ClientDisconnected { id } =>
+                    self.client_list.remove_client(id),
                 WrappedServerBoundPacket::ConsoleCommand { command } => {
                     let executor = command_executor();
                     let sender = CommandSender::Console;
@@ -295,7 +310,7 @@ impl QuartzServer {
                     if let Err(e) = executor.dispatch(&command, context) {
                         display_to_console(&e);
                     }
-                },
+                }
                 WrappedServerBoundPacket::ConsoleCompletion { command, response } => {
                     let executor = command_executor();
                     let sender = CommandSender::Console;
@@ -331,8 +346,10 @@ impl Drop for QuartzServer {
             None => warn!("Failed to shutdown TCP thread."),
         }
 
-        // Dropping tcp_server_runtime performs the cleanup for us
-        // TODO: consider manually shutting down the runtime with a timeout
+        // Shutdown the server runtime, forcibly stopping it after five seconds
+        if let Some(rt) = self.tcp_server_runtime.take() {
+            rt.shutdown_timeout(Duration::from_secs(5));
+        }
     }
 }
 
@@ -377,24 +394,23 @@ impl ClientList {
                 let keep_alive_id = thread_rng().gen();
                 client.keep_alive_id = Some(keep_alive_id);
                 client.last_keep_alive_exchange = Instant::now();
-                client.connection.send_packet(ClientBoundPacket::KeepAlive {
-                    keep_alive_id
-                });
-            },
-            None => warn!("Attempted to start keep-alive chain on a disconnected client.")
+                client
+                    .connection
+                    .send_packet(ClientBoundPacket::KeepAlive { keep_alive_id });
+            }
+            None => warn!("Attempted to start keep-alive chain on a disconnected client."),
         }
     }
 
     pub fn handle_keep_alive(&mut self, client_id: usize, keep_alive_id: i64) {
         match self.0.get_mut(&client_id) {
-            Some(client) => {
+            Some(client) =>
                 if client.keep_alive_id == Some(keep_alive_id) {
                     client.keep_alive_id = None;
                 } else {
                     self.0.remove(&client_id);
-                }
-            },
-            None => warn!("Attempted to handle a keep-alive packet on a disconnected client.")
+                },
+            None => warn!("Attempted to handle a keep-alive packet on a disconnected client."),
         }
     }
 
@@ -432,7 +448,7 @@ struct Client {
     pub connection: AsyncWriteHandle,
     pub player_id: Option<usize>,
     keep_alive_id: Option<i64>,
-    last_keep_alive_exchange: Instant
+    last_keep_alive_exchange: Instant,
 }
 
 impl Client {
@@ -441,7 +457,7 @@ impl Client {
             connection,
             player_id: None,
             keep_alive_id: None,
-            last_keep_alive_exchange: Instant::now()
+            last_keep_alive_exchange: Instant::now(),
         }
     }
 
@@ -452,15 +468,17 @@ impl Client {
         if elapsed > Duration::from_secs(5) {
             match self.keep_alive_id {
                 // Kick the client if it's been more than 30 seconds since we've heard back
-                Some(..) => if elapsed > Duration::from_secs(30) {
-                    return false;
-                },
+                Some(..) =>
+                    if elapsed > Duration::from_secs(30) {
+                        return false;
+                    },
 
                 // Send another keep-alive packet
                 None => {
                     let keep_alive_id = thread_rng().gen();
                     self.keep_alive_id = Some(keep_alive_id);
-                    self.connection.send_packet(ClientBoundPacket::KeepAlive { keep_alive_id });
+                    self.connection
+                        .send_packet(ClientBoundPacket::KeepAlive { keep_alive_id });
                     self.last_keep_alive_exchange = Instant::now();
                 }
             }
@@ -472,6 +490,6 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        self.connection.shutdown_connection();
+        self.connection.shutdown();
     }
 }

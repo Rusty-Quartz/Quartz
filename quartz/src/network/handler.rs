@@ -1,6 +1,6 @@
 use crate::{
     config,
-    network::{*, packet_data::*},
+    network::{packet_data::*, *},
     server::{self, QuartzServer},
     world::chunk::provider::ProviderRequest,
 };
@@ -21,11 +21,7 @@ use rand::{thread_rng, Rng};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
-use std::{
-    str::FromStr,
-    sync::Arc,
-    time::Instant,
-};
+use std::{str::FromStr, sync::Arc, time::Instant};
 use uuid::Uuid;
 
 include!(concat!(env!("OUT_DIR"), "/packet_handler_output.rs"));
@@ -82,7 +78,7 @@ impl AsyncPacketHandler {
             conn.forward_internal_to_server(WrappedServerBoundPacket::LoginSuccess {
                 id: conn.id,
                 uuid: Uuid::from_u128(0),
-                username: name.clone()
+                username: name.clone(),
             });
 
             conn.connection_state = ConnectionState::Play;
@@ -104,7 +100,7 @@ impl AsyncPacketHandler {
             Ok(der) => pub_key_der = der,
             Err(e) => {
                 error!("Failed to convert public key to der: {}", e);
-                conn.write_handle.shutdown_connection();
+                conn.write_handle.shutdown();
                 return;
             }
         }
@@ -114,8 +110,7 @@ impl AsyncPacketHandler {
                 server_id: "".to_owned(),
                 public_key: pub_key_der.into_boxed_slice(),
                 verify_token: verify_token.to_vec().into_boxed_slice(),
-            })
-            ;
+            });
     }
 
     async fn handle_encryption_response(
@@ -131,7 +126,7 @@ impl AsyncPacketHandler {
                 .private_decrypt(verify_token, &mut decrypted_verify, Padding::PKCS1)
         {
             error!("Failed to decrypt verify token: {}", e);
-            conn.write_handle.shutdown_connection();
+            conn.write_handle.shutdown();
             return;
         }
         decrypted_verify = decrypted_verify[.. self.verify_token.len()].to_vec();
@@ -148,8 +143,7 @@ impl AsyncPacketHandler {
                         "Error verifying encryption".to_owned(),
                         PredefinedColor::Red,
                     )),
-                })
-                ;
+                });
         }
 
         // Decrypt shared secret
@@ -159,7 +153,7 @@ impl AsyncPacketHandler {
                 .private_decrypt(shared_secret, &mut decrypted_secret, Padding::PKCS1)
         {
             error!("Failed to decrypt secret key: {}", e);
-            conn.write_handle.shutdown_connection();
+            conn.write_handle.shutdown();
             return;
         }
         decrypted_secret = decrypted_secret[.. 16].to_vec();
@@ -171,7 +165,7 @@ impl AsyncPacketHandler {
                 "Failed to initialize encryption for client connetion: {}",
                 e
             );
-            conn.write_handle.shutdown_connection();
+            conn.write_handle.shutdown();
             return;
         }
 
@@ -183,7 +177,7 @@ impl AsyncPacketHandler {
             Ok(der) => hasher.update(&*der),
             Err(e) => {
                 error!("Failed to convert public key to der: {}", e);
-                conn.write_handle.shutdown_connection();
+                conn.write_handle.shutdown();
                 return;
             }
         }
@@ -245,8 +239,7 @@ impl AsyncPacketHandler {
         conn.write_handle
             .send_packet(WrappedClientBoundPacket::EnableCompression {
                 threshold: TEST_THRESHOLD,
-            })
-            ;
+            });
 
         // Make a get request
         let mojang_req = ureq::get(&url).call();
@@ -268,15 +261,14 @@ impl AsyncPacketHandler {
                     .send_packet(ClientBoundPacket::LoginSuccess {
                         uuid,
                         username: self.username.clone(),
-                    })
-                    ;
+                    });
 
                 conn.connection_state = ConnectionState::Play;
 
                 conn.forward_internal_to_server(WrappedServerBoundPacket::LoginSuccess {
                     id: conn.id,
                     uuid,
-                    username: self.username.clone()
+                    username: self.username.clone(),
                 });
             }
             Err(e) => error!("Failed to parse malformed UUID: {}", e),
@@ -294,7 +286,12 @@ impl AsyncPacketHandler {
 }
 
 impl QuartzServer {
-    pub(crate) async fn handle_login_success_server(&mut self, sender: usize, _uuid: Uuid, _username: &str) {
+    pub(crate) async fn handle_login_success_server(
+        &mut self,
+        sender: usize,
+        _uuid: Uuid,
+        _username: &str,
+    ) {
         // let config = config().lock().await;
 
         /*
@@ -351,8 +348,7 @@ impl QuartzServer {
                 enable_respawn_screen: true,
                 is_debug: false,
                 is_flat: false,
-            })
-            ;
+            });
 
         let mut brand_buf = PacketBuffer::new(2048);
         brand_buf.write(&"Quartz");
@@ -361,8 +357,7 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::PluginMessage {
                 channel: UnlocalizedName::minecraft("brand"),
                 data: brand_buf[..].to_vec().into_boxed_slice(),
-            })
-            ;
+            });
 
         // Since at this point keep_alive on the AsyncPackeHandler is still -1 it won't check what this id is
         // So it doesn't matter if we hard code the id
@@ -436,8 +431,7 @@ impl QuartzServer {
         self.client_list
             .send_packet(sender, ClientBoundPacket::StatusResponse {
                 json_response: json_response.to_string(),
-            })
-            ;
+            });
     }
 
     async fn handle_keep_alive(&mut self, sender: usize, keep_alive_id: i64) {
@@ -772,14 +766,12 @@ impl QuartzServer {
         disable_text_filtering: bool,
     ) {
         self.client_list
-            .send_packet(sender, ClientBoundPacket::HeldItemChange { slot: 0 })
-            ;
+            .send_packet(sender, ClientBoundPacket::HeldItemChange { slot: 0 });
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::DeclareRecipes {
                 recipes: vec![].into_boxed_slice(),
-            })
-            ;
+            });
 
         // self.client_list
         //     .send_packet(sender, ClientBoundPacket::Tags {
@@ -809,8 +801,7 @@ impl QuartzServer {
                 blast_furnace_recipe_book_filter_active: false,
                 recipe_ids_1: vec![].into_boxed_slice(),
                 recipe_ids_2: Some(vec![].into_boxed_slice()),
-            })
-            ;
+            });
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::PlayerInfo {
@@ -826,8 +817,7 @@ impl QuartzServer {
                     },
                 }]
                 .into_boxed_slice(),
-            })
-            ;
+            });
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::PlayerInfo {
@@ -837,15 +827,13 @@ impl QuartzServer {
                     action: PlayerInfoAction::UpdateLatency { ping: 12 },
                 }]
                 .into_boxed_slice(),
-            })
-            ;
+            });
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::UpdateViewPosition {
                 chunk_x: 0,
                 chunk_z: 0,
-            })
-            ;
+            });
 
         let write_handle = self.client_list.create_write_handle(sender).unwrap();
         let start = Instant::now();
@@ -907,8 +895,7 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::SpawnPosition {
                 location: BlockPosition { x: 0, y: 60, z: 0 },
                 angle: 0.0,
-            })
-            ;
+            });
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::PlayerPositionAndLook {
@@ -920,8 +907,7 @@ impl QuartzServer {
                 pitch: 0.0,
                 flags: 0,
                 teleport_id: 0,
-            })
-            ;
+            });
     }
 
     #[allow(unused_variables)]
@@ -968,14 +954,14 @@ pub async fn handle_async_connection(
                 else {
                     if let Err(e) = handle_packet(&mut conn, &mut async_handler, packet_len).await {
                         error!("Failed to handle packet: {}", e);
-                        conn.write_handle.shutdown_connection();
+                        conn.write_handle.shutdown();
                         break;
                     }
                 }
             }
             Err(e) => {
                 error!("Error in connection handler: {}", e);
-                conn.write_handle.shutdown_connection();
+                conn.write_handle.shutdown();
                 break;
             }
         }

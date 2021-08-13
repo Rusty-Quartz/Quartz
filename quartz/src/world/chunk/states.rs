@@ -1,10 +1,12 @@
 use super::{Palette, MAX_BITS_PER_BLOCK, MIN_BITS_PER_BLOCK};
-use crate::StateID;
+use crate::{StateID};
+use qdat::block::states::{is_air, AIR, VOID_AIR, CAVE_AIR};
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
     num::{NonZeroU8, NonZeroUsize},
 };
+use static_assertions::const_assert;
 
 #[derive(Clone)]
 pub struct CompactStateBuffer {
@@ -140,6 +142,138 @@ impl CompactStateBuffer {
             entry,
             self.meta.bits_per_entry,
         )
+    }
+
+    pub fn block_count(&self, palette: Option<&Palette>) -> usize {
+        match palette {
+            Some(palette) => self.block_count_indirect(palette),
+            None => self.block_count_direct()
+        }
+    }
+
+    fn block_count_indirect(&self, palette: &Palette) -> usize {
+        let air = palette.index_of(AIR);
+        let void_air = palette.index_of(VOID_AIR);
+        let cave_air = palette.index_of(CAVE_AIR);
+        let bpb = self.meta.bits_per_entry.get() as u32;
+
+        let index = match (air, void_air, cave_air) {
+            (None, None, None) => return 4096,
+            (Some(index), None, None) => index,
+            (None, Some(index), None) => index,
+            (None, None, Some(index)) => index,
+            // There is no quick check, so we do it the long way
+            _ => {
+                return self
+                    .iter()
+                    .flat_map(|index| palette.state_for(index))
+                    .filter(|&state| !is_air(state))
+                    .count();
+            }
+        };
+
+        let index = index as u64;
+
+        let all_air = if index == 0 {
+            0
+        } else {
+            let mut long = 0;
+
+            for shift in 0 .. 1 << MIN_BITS_PER_BLOCK {
+                long |= index.overflowing_shl(shift * bpb).0;
+            }
+
+            long
+        };
+
+        let mut long_index = 0;
+        let mut total_count = 0u32;
+        let mut block_count = 0;
+
+        let entries_per_long = self.meta.entries_per_long.get() as u32;
+        let mask = self.meta.mask;
+
+        loop {
+            let mut long = match self.data.get(long_index) {
+                Some(long) => *long,
+                None => break
+            };
+
+            // Quick check
+            if long == all_air {
+                long_index += 1;
+                total_count += entries_per_long;
+                continue;
+            }
+
+            // Individually check each entry
+            for _ in 0 .. entries_per_long.min(4096 - total_count) {
+                let entry = long & mask;
+                if entry != index {
+                    block_count += 1;
+                }
+                total_count += 1;
+                long >>= bpb;
+            }
+
+            long_index += 1;
+        }
+
+        block_count
+    }
+
+    fn block_count_direct(&self) -> usize {
+        let mut long_index = 0;
+        let mut block_count = 0;
+
+        const ENTRIES_PER_LONG: u32 = 64 / MAX_BITS_PER_BLOCK as u32;
+        const MASK: u64 = (1u64 << MAX_BITS_PER_BLOCK) - 1;
+
+        // If this fails then a `total_count` variable must be added like in the indirect block
+        // count function
+        const_assert!(4096 % ENTRIES_PER_LONG == 0);
+
+        // FIXME: make this depend on ENTRIES_PER_LONG so that it's not hard coded
+        const fn gen_niche(id: StateID) -> u64 {
+            let mut long = 0;
+            let id = id as u64;
+            long |= id << (0 * MAX_BITS_PER_BLOCK);
+            long |= id << (1 * MAX_BITS_PER_BLOCK);
+            long |= id << (2 * MAX_BITS_PER_BLOCK);
+            long |= id << (3 * MAX_BITS_PER_BLOCK);
+            long
+        }
+
+        const ALL_AIR: u64 = gen_niche(AIR);
+        const ALL_VOID_AIR: u64 = gen_niche(VOID_AIR);
+        const ALL_CAVE_AIR: u64 = gen_niche(CAVE_AIR);
+
+        loop {
+            let mut long = match self.data.get(long_index) {
+                Some(long) => *long,
+                None => break
+            };
+
+            // Quick check
+            if long == ALL_AIR || long == ALL_VOID_AIR || long == ALL_CAVE_AIR {
+                long_index += 1;
+                continue;
+            }
+
+            // Individually check each entry. We can get away with excluding a `total_count`
+            // because ENTRIES_PER_LONG is divisible by 
+            for _ in 0 .. ENTRIES_PER_LONG {
+                let entry = long & MASK;
+                if !is_air(entry as StateID) {
+                    block_count += 1;
+                }
+                long >>= MAX_BITS_PER_BLOCK;
+            }
+
+            long_index += 1;
+        }
+
+        block_count
     }
 
     pub fn to_direct_palette(&mut self, palette: &Palette) -> Result<(), PaletteConversionError> {
@@ -343,6 +477,7 @@ struct CompactStateBufferIter<'a> {
     buffer: &'a CompactStateBuffer,
     long_index: usize,
     bit_index: u8,
+    count: u32
 }
 
 impl<'a> CompactStateBufferIter<'a> {
@@ -351,6 +486,7 @@ impl<'a> CompactStateBufferIter<'a> {
             buffer,
             long_index: 0,
             bit_index: 0,
+            count: 0
         }
     }
 }
@@ -363,6 +499,11 @@ impl Iterator for CompactStateBufferIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         let entry = self.buffer.entry_at(self.long_index, self.bit_index);
         if entry.is_some() {
+            if self.count >= 4096 {
+                return None;
+            }
+            self.count += 1;
+
             advance_one_internal(
                 &mut self.long_index,
                 &mut self.bit_index,

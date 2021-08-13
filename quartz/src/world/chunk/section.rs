@@ -117,15 +117,13 @@ impl Section {
     }
 
     pub fn block_count(&self) -> usize {
-        if self.palette.states().all(|state| !is_air(state)) {
-            return 4096;
-        }
+        let palette = if !self.is_pal_direct {
+            Some(&self.palette)
+        } else {
+            None
+        };
 
-        self.states
-            .iter()
-            .flat_map(|entry| self.map_state_entry(entry))
-            .filter(|&state| !is_air(state))
-            .count()
+        self.states.block_count(palette)
     }
 
     pub fn lighting(&self) -> &Lighting {

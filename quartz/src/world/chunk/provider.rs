@@ -1,5 +1,10 @@
 use crate::{
-    network::{AsyncWriteHandle, WrappedClientBoundPacket, packet_data::SectionAndLightData, ClientBoundPacket},
+    network::{
+        packet_data::SectionAndLightData,
+        AsyncWriteHandle,
+        ClientBoundPacket,
+        WrappedClientBoundPacket,
+    },
     world::chunk::{chunk::RawChunk, Chunk, ChunkDecodeError, RawClientChunk},
 };
 use byteorder::{BigEndian, ByteOrder};

@@ -8,10 +8,11 @@ use openssl::{
 };
 use parking_lot::Mutex;
 use quartz_net::{
-    ClientBoundPacket, ServerBoundPacket,
+    ClientBoundPacket,
     ConnectionState,
     PacketBuffer,
     PacketSerdeError,
+    ServerBoundPacket,
     LEGACY_PING_PACKET_ID,
 };
 use std::{
@@ -115,7 +116,7 @@ impl IoHandle {
     fn preprocess_packet<'a>(
         packet_data: &'a mut PacketBuffer,
         aux_buffer: &'a mut PacketBuffer,
-        compression_threshold: i32
+        compression_threshold: i32,
     ) -> Result<PreprocessedPacket<'a>> {
         // Prepare the operation buffer
         aux_buffer.clear();
@@ -387,7 +388,7 @@ impl AsyncWriteHandle {
     }
 
     /// Forcefully closes the connection.
-    pub fn shutdown_connection(&self) {
+    pub fn shutdown(&self) {
         let _ = self.0.send(WrappedClientBoundPacket::Disconnect);
     }
 }
@@ -553,13 +554,13 @@ impl AsyncClientConnection {
                 WrappedClientBoundPacket::Disconnect => disconnect_when_done = true,
                 WrappedClientBoundPacket::Buffer(buffer) => multi_buffer.write_bytes(&buffer[..]),
                 WrappedClientBoundPacket::EnableCompression { .. } => warn!(
-                    "Attempted to send compression-enabling packet in multi-packet payload. \
-                     This packet will be dropped."
+                    "Attempted to send compression-enabling packet in multi-packet payload. This \
+                     packet will be dropped."
                 ),
                 WrappedClientBoundPacket::Multiple(..) => {
                     warn!(
-                        "Attempted to write nested WrappedClientBoundPacket::Multiple(..), \
-                         these packets will be dropped"
+                        "Attempted to write nested WrappedClientBoundPacket::Multiple(..), these \
+                         packets will be dropped"
                     )
                 }
             }
@@ -568,7 +569,10 @@ impl AsyncClientConnection {
             multi_buffer.write_bytes(packet.data);
         }
 
-        let write_fut = io_handle.lock().write_bytes_encrypted(&multi_buffer[..], aux_buffer, write_handle)?;
+        let write_fut =
+            io_handle
+                .lock()
+                .write_bytes_encrypted(&multi_buffer[..], aux_buffer, write_handle)?;
         let _ = write_fut.await;
         aux_buffer.reset_cursor();
         // Safety: cursor reset above
@@ -613,10 +617,7 @@ impl AsyncClientConnection {
 
     /// Forwards an internal packet to the server thread for handling.
     pub fn forward_internal_to_server(&mut self, packet: WrappedServerBoundPacket) {
-        if let Err(e) = self
-            .sync_packet_sender
-            .send(packet)
-        {
+        if let Err(e) = self.sync_packet_sender.send(packet) {
             error!(
                 "Failed to forward synchronous internal packet to server: {}",
                 e

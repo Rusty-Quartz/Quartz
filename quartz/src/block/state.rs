@@ -2,7 +2,7 @@ use qdat::{
     block::{states::BlockStateData, Block, StateID},
     UlnStr,
 };
-use std::fmt::Debug;
+use std::{fmt::Debug, hint::unreachable_unchecked};
 
 use crate::StaticRegistry;
 
@@ -142,10 +142,11 @@ pub trait StateBuilder<S>: Sized {
 
     fn with_property(self, name: &str, value: &str) -> Result<Self, (Self, String)>;
 
-    fn with_property_unchecked(self, name: &str, value: &str) -> Self {
-        self.with_property(name, value)
-            .map_err(|(_, message)| message)
-            .unwrap()
+    unsafe fn with_property_unchecked(self, name: &str, value: &str) -> Self {
+        match self.with_property(name, value) {
+            Ok(builder) => builder,
+            Err(_) => unreachable_unchecked(),
+        }
     }
 
     fn build(self) -> S;
@@ -189,15 +190,6 @@ impl StateBuilder<StaticBlockState> for StaticStateBuilder {
                 Err((self, msg))
             }
         }
-    }
-
-    fn with_property_unchecked(mut self, name: &str, value: &str) -> Self {
-        match self.state.data.with_property(name, value) {
-            Some(data) => self.state.data = data,
-            None => panic!("Unknown property {}", name),
-        }
-
-        self
     }
 
     fn build(self) -> StaticBlockState {

@@ -181,10 +181,7 @@ fn gen_handle_packet(states: &[StatePacketInfo], mappings: &Mappings) -> TokenSt
     }
 }
 
-fn gen_sync_dispatch(
-    server_bound: &[Packet],
-    mappings: &Mappings,
-) -> TokenStream {
+fn gen_sync_dispatch(server_bound: &[Packet], mappings: &Mappings) -> TokenStream {
     let match_arms = server_bound
         .iter()
         .filter(|packet| !packet.asynchronous)

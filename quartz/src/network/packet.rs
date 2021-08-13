@@ -1,12 +1,8 @@
 use std::sync::mpsc::Sender;
 
-use quartz_net::{
-    ClientBoundPacket, ServerBoundPacket,
-    PacketBuffer,
-    WriteToPacket,
-};
-use uuid::Uuid;
 use super::AsyncWriteHandle;
+use quartz_net::{ClientBoundPacket, PacketBuffer, ServerBoundPacket, WriteToPacket};
+use uuid::Uuid;
 
 pub enum WrappedServerBoundPacket {
     External {
@@ -15,7 +11,7 @@ pub enum WrappedServerBoundPacket {
     },
     ClientConnected {
         id: usize,
-        write_handle: AsyncWriteHandle
+        write_handle: AsyncWriteHandle,
     },
     ClientDisconnected {
         id: usize,
@@ -30,8 +26,8 @@ pub enum WrappedServerBoundPacket {
     },
     ConsoleCompletion {
         command: String,
-        response: Sender<Vec<String>>
-    }
+        response: Sender<Vec<String>>,
+    },
 }
 
 impl WrappedServerBoundPacket {

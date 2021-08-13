@@ -87,6 +87,13 @@ impl Palette {
         }
     }
 
+    #[inline]
+    pub fn contains(&self, state: StateID) -> bool {
+        self.state_to_index
+            .binary_search_by_key(&state, |&(s, _)| s)
+            .is_ok()
+    }
+
     // TODO: consider adding state_for_unchecked depending on how this API shakes out
     #[inline]
     pub fn state_for(&self, index: usize) -> Option<StateID> {
