@@ -193,12 +193,10 @@ fn write_fn_for_field(field: &Field) -> Ident {
         FieldType::Array { .. } => Ident::new(
             if field.is_array_u8 {
                 "write_bytes"
+            } else if field.varying {
+                "write_array_varying"
             } else {
-                if field.varying {
-                    "write_array_varying"
-                } else {
-                    "write_array"
-                }
+                "write_array"
             },
             Span::call_site(),
         ),
@@ -223,12 +221,10 @@ pub fn gen_deserialize_field(
                     #buffer_ident.set_cursor(cursor.position() as usize);
                     res?
                 }}
+            } else if field.varying {
+                quote! { #buffer_ident.read_varying()? }
             } else {
-                if field.varying {
-                    quote! { #buffer_ident.read_varying()? }
-                } else {
-                    quote! { #buffer_ident.read()? }
-                }
+                quote! { #buffer_ident.read()? }
             },
         FieldType::Array { len } => {
             let len = len.gen_read_length(buffer_ident);
@@ -241,39 +237,35 @@ pub fn gen_deserialize_field(
                     }
                     __array
                 }}
-            } else {
-                if field.is_nbt {
-                    quote! {{
-                        #len
-                        let mut dest = Vec::with_capacity(__len);
-                        let mut position = #buffer_ident.cursor();
-                        let mut cursor = ::std::io::Cursor::new(&#buffer_ident[..]);
-                        cursor.set_position(position as u64);
-                        for _ in 0..__len {
-                            match ::quartz_nbt::serde::deserialize_from(&mut cursor) {
-                                Ok(nbt) => dest.push(nbt),
-                                Err(e) => {
-                                    #buffer_ident.set_cursor(cursor.position() as usize);
-                                    return e;
-                                }
+            } else if field.is_nbt {
+                quote! {{
+                    #len
+                    let mut dest = Vec::with_capacity(__len);
+                    let mut position = #buffer_ident.cursor();
+                    let mut cursor = ::std::io::Cursor::new(&#buffer_ident[..]);
+                    cursor.set_position(position as u64);
+                    for _ in 0..__len {
+                        match ::quartz_nbt::serde::deserialize_from(&mut cursor) {
+                            Ok(nbt) => dest.push(nbt),
+                            Err(e) => {
+                                #buffer_ident.set_cursor(cursor.position() as usize);
+                                return e;
                             }
                         }
-                        #buffer_ident.set_cursor(cursor.position() as usize);
-                        dest
-                    }}
-                } else {
-                    if field.varying {
-                        quote! {{
-                            #len
-                            #buffer_ident.read_array_varying(__len)?
-                        }}
-                    } else {
-                        quote! {{
-                            #len
-                            #buffer_ident.read_array(__len)?
-                        }}
                     }
-                }
+                    #buffer_ident.set_cursor(cursor.position() as usize);
+                    dest
+                }}
+            } else if field.varying {
+                quote! {{
+                    #len
+                    #buffer_ident.read_array_varying(__len)?
+                }}
+            } else {
+                quote! {{
+                    #len
+                    #buffer_ident.read_array(__len)?
+                }}
             }
         }
     };

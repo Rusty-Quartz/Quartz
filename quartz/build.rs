@@ -8,7 +8,6 @@ use quartz_macros_impl::packet::{
 };
 use quote::{format_ident, quote};
 use serde::Deserialize;
-use serde_json;
 use std::{collections::HashMap, env, ffi::OsStr, fs, path::Path, process::Command};
 use syn::Type;
 
@@ -16,7 +15,7 @@ fn format_in_place(file: &OsStr) {
     Command::new("rustfmt")
         .arg(file)
         .output()
-        .expect(&format!("Failed to format file: {:?}", file));
+        .unwrap_or_else(|_| panic!("Failed to format file: {:?}", file));
 }
 
 
@@ -224,7 +223,7 @@ fn gen_packet_dispatch(packet: &Packet, mappings: &Mappings) -> TokenStream {
 }
 
 fn parse_type<'a>(field: &'a str, mappings: &'a Mappings) -> &'a str {
-    let split = field.split("(").next().unwrap();
+    let split = field.split('(').next().unwrap();
 
     if mappings.types.contains_key(split) {
         mappings.types.get(split).unwrap()
@@ -233,7 +232,7 @@ fn parse_type<'a>(field: &'a str, mappings: &'a Mappings) -> &'a str {
     }
 }
 
-fn parse_type_meta<'a>(field: &'a str) -> Option<&'a str> {
+fn parse_type_meta(field: &'_ str) -> Option<&'_ str> {
     let start = field
         .char_indices()
         .find(|&(_, ch)| ch == '(')
@@ -242,7 +241,7 @@ fn parse_type_meta<'a>(field: &'a str) -> Option<&'a str> {
 }
 
 fn snake_to_pascal(str: &str) -> String {
-    str.split("_").fold(String::new(), |mut i, s| {
+    str.split('_').fold(String::new(), |mut i, s| {
         i.push_str(&(s[.. 1].to_ascii_uppercase() + &s[1 ..].to_owned()));
         i
     })
@@ -291,10 +290,13 @@ impl Packet {
             let ty = field.rust_type(mappings).clone();
             let condition = if field.option {
                 Some(match &field.condition {
-                    Some(expr) => OptionCondition::Expr(syn::parse_str(expr).expect(&format!(
-                        "Failed to parse condition expression for field {} in packet {}",
-                        &field.name, &self.name
-                    ))),
+                    Some(expr) =>
+                        OptionCondition::Expr(syn::parse_str(expr).unwrap_or_else(|_| {
+                            panic!(
+                                "Failed to parse condition expression for field {} in packet {}",
+                                &field.name, &self.name
+                            )
+                        })),
                     None => OptionCondition::Prefixed,
                 })
             } else {
@@ -304,11 +306,13 @@ impl Packet {
             let varying = mappings.is_varying(&field.var_type);
             if field.array {
                 let len = match parse_type_meta(&field.var_type) {
-                    Some(meta) => ArrayLength::Expr(syn::parse_str(meta).expect(&format!(
-                        "Failed to parse length expression for array type for field {} in packet \
-                         {}",
-                        &field.name, &self.name
-                    ))),
+                    Some(meta) => ArrayLength::Expr(syn::parse_str(meta).unwrap_or_else(|_| {
+                        panic!(
+                            "Failed to parse length expression for array type for field {} in \
+                             packet {}",
+                            &field.name, &self.name
+                        )
+                    })),
                     None => ArrayLength::Prefixed,
                 };
                 (

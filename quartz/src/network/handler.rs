@@ -66,19 +66,19 @@ impl AsyncPacketHandler {
             .send_packet(ClientBoundPacket::Pong { payload });
     }
 
-    async fn handle_login_start(&mut self, conn: &mut AsyncClientConnection, name: &String) {
+    async fn handle_login_start(&mut self, conn: &mut AsyncClientConnection, name: &str) {
         // If we are not running in online mode we just send LoginSuccess and skip encryption
         if !config().read().online_mode {
             conn.write_handle
                 .send_packet(ClientBoundPacket::LoginSuccess {
                     uuid: Uuid::from_u128(0),
-                    username: name.clone(),
+                    username: name.to_owned(),
                 });
 
             conn.forward_internal_to_server(WrappedServerBoundPacket::LoginSuccess {
                 id: conn.id,
                 uuid: Uuid::from_u128(0),
-                username: name.clone(),
+                username: name.to_owned(),
             });
 
             conn.connection_state = ConnectionState::Play;
@@ -193,10 +193,10 @@ impl AsyncPacketHandler {
         if negative {
             let mut carry = true;
             for i in (0 .. hash.len()).rev() {
-                hash[i] = !hash[i] & 0xff;
+                hash[i] = !hash[i];
                 if carry {
                     carry = hash[i] == 0xff;
-                    hash[i] = hash[i] + 1;
+                    hash[i] += 1;
                 }
             }
 
@@ -442,6 +442,7 @@ impl QuartzServer {
     async fn handle_use_item(&mut self, sender: usize, hand: i32) {}
 
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     async fn handle_player_block_placement(
         &mut self,
         sender: usize,
@@ -469,18 +470,19 @@ impl QuartzServer {
         line_1: &str,
         line_2: &str,
         line_3: &str,
-        line_4: &String,
+        line_4: &str,
     ) {
     }
 
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     async fn handle_update_structure_block(
         &mut self,
         sender: usize,
         location: &BlockPosition,
         action: i32,
         mode: i32,
-        name: &String,
+        name: &str,
         offset_x: i8,
         offset_y: i8,
         offset_z: i8,
@@ -673,6 +675,7 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     async fn handle_player_position_and_rotation(
         &mut self,
         sender: usize,
@@ -699,6 +702,7 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     async fn handle_interact_entity(
         &mut self,
         sender: usize,
@@ -735,6 +739,7 @@ impl QuartzServer {
     async fn handle_close_window(&mut self, sender: usize, window_id: u8) {}
 
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     async fn handle_click_window(
         &mut self,
         sender: usize,
@@ -754,6 +759,7 @@ impl QuartzServer {
     async fn handle_tab_complete(&mut self, sender: usize, trasaction_id: i32, text: &str) {}
 
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     async fn handle_client_settings(
         &mut self,
         sender: usize,
@@ -951,14 +957,15 @@ pub async fn handle_async_connection(
                     break;
                 }
                 // Handle the packet
-                else {
-                    if let Err(e) = handle_packet(&mut conn, &mut async_handler, packet_len).await {
-                        error!("Failed to handle packet: {}", e);
-                        conn.write_handle.shutdown();
-                        break;
-                    }
+                else if let Err(e) =
+                    handle_packet(&mut conn, &mut async_handler, packet_len).await
+                {
+                    error!("Failed to handle packet: {}", e);
+                    conn.write_handle.shutdown();
+                    break;
                 }
             }
+
             Err(e) => {
                 error!("Error in connection handler: {}", e);
                 conn.write_handle.shutdown();

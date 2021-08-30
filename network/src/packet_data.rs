@@ -12,6 +12,7 @@ use quartz_nbt::NbtCompound;
 use uuid::Uuid;
 
 #[derive(Debug, WriteToPacket)]
+#[allow(clippy::large_enum_variant)]
 pub enum EntityMetadata {
     Byte(i8),
     VarInt(#[packet_serde(varying)] i32),
@@ -120,7 +121,7 @@ impl ReadFromPacket for Box<[EntityMetadataWrapper]> {
                 ),
                 17 => EntityMetadata::OptVarInt(buffer.read_varying()?),
                 18 => EntityMetadata::Pose(buffer.read_varying()?),
-                id @ _ => return Err(PacketSerdeError::InvalidEnum("EntityMetadata", id as i32)),
+                id => return Err(PacketSerdeError::InvalidEnum("EntityMetadata", id as i32)),
             };
             result.push(EntityMetadataWrapper { index, data });
         }
@@ -357,7 +358,7 @@ impl ParticleData {
             86 => ParticleData::WaxOff,
             87 => ParticleData::ElectricSpark,
             88 => ParticleData::Scrape,
-            id @ _ => return Err(PacketSerdeError::InvalidEnum("ParticleData", id)),
+            id => return Err(PacketSerdeError::InvalidEnum("ParticleData", id)),
         };
 
         Ok(data)
@@ -436,7 +437,7 @@ impl PlayerInfoAction {
 
                 Ok(PlayerInfoAction::UpdateDisplayName { display_name })
             }
-            id @ _ => Err(PacketSerdeError::InvalidEnum("PlayerInfoAction", id)),
+            id => Err(PacketSerdeError::InvalidEnum("PlayerInfoAction", id)),
         }
     }
 }
@@ -940,7 +941,7 @@ impl ReadFromPacket for ClientSection {
         let block_count = buffer.read()?;
         let bits_per_block = match buffer.read()? {
             0 ..= 4 => 4,
-            b @ _ => b,
+            b => b,
         };
         let palette = if bits_per_block < 9 {
             let palette_len: i32 = buffer.read_varying()?;

@@ -98,3 +98,9 @@ impl<T: Identify> IndexMut<usize> for IdList<T> {
         self.inner[index].as_mut().unwrap()
     }
 }
+
+impl<T: Identify> Default for IdList<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

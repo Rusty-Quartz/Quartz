@@ -29,10 +29,10 @@ pub const fn fast_log2_64(mut value: u64) -> u64 {
     value |= value >> 16;
     value |= value >> 32;
 
-    return LOG2_TABLE_64[((value - (value >> 1))
+    LOG2_TABLE_64[((value - (value >> 1))
         .overflowing_mul(0x07EDD5E59A4E28C2u64)
         .0
-        >> 58) as usize];
+        >> 58) as usize]
 }
 
 /// Computes the base-2 logarithm of a 64-bit value using a DeBruijn-like algorithm, ceiling the result.

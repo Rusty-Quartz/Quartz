@@ -1,12 +1,12 @@
 use super::{Palette, MAX_BITS_PER_BLOCK, MIN_BITS_PER_BLOCK};
-use crate::{StateID};
-use qdat::block::states::{is_air, AIR, VOID_AIR, CAVE_AIR};
+use crate::StateID;
+use qdat::block::states::{is_air, AIR, CAVE_AIR, VOID_AIR};
+use static_assertions::const_assert;
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
     num::{NonZeroU8, NonZeroUsize},
 };
-use static_assertions::const_assert;
 
 #[derive(Clone)]
 pub struct CompactStateBuffer {
@@ -147,7 +147,7 @@ impl CompactStateBuffer {
     pub fn block_count(&self, palette: Option<&Palette>) -> usize {
         match palette {
             Some(palette) => self.block_count_indirect(palette),
-            None => self.block_count_direct()
+            None => self.block_count_direct(),
         }
     }
 
@@ -193,12 +193,7 @@ impl CompactStateBuffer {
         let entries_per_long = self.meta.entries_per_long.get() as u32;
         let mask = self.meta.mask;
 
-        loop {
-            let mut long = match self.data.get(long_index) {
-                Some(long) => *long,
-                None => break
-            };
-
+        while let Some(mut long) = self.data.get(long_index).copied() {
             // Quick check
             if long == all_air {
                 long_index += 1;
@@ -237,8 +232,8 @@ impl CompactStateBuffer {
         const fn gen_niche(id: StateID) -> u64 {
             let mut long = 0;
             let id = id as u64;
-            long |= id << (0 * MAX_BITS_PER_BLOCK);
-            long |= id << (1 * MAX_BITS_PER_BLOCK);
+            long |= id;
+            long |= id << MAX_BITS_PER_BLOCK;
             long |= id << (2 * MAX_BITS_PER_BLOCK);
             long |= id << (3 * MAX_BITS_PER_BLOCK);
             long
@@ -248,12 +243,7 @@ impl CompactStateBuffer {
         const ALL_VOID_AIR: u64 = gen_niche(VOID_AIR);
         const ALL_CAVE_AIR: u64 = gen_niche(CAVE_AIR);
 
-        loop {
-            let mut long = match self.data.get(long_index) {
-                Some(long) => *long,
-                None => break
-            };
-
+        while let Some(mut long) = self.data.get(long_index).copied() {
             // Quick check
             if long == ALL_AIR || long == ALL_VOID_AIR || long == ALL_CAVE_AIR {
                 long_index += 1;
@@ -261,7 +251,7 @@ impl CompactStateBuffer {
             }
 
             // Individually check each entry. We can get away with excluding a `total_count`
-            // because ENTRIES_PER_LONG is divisible by 
+            // because ENTRIES_PER_LONG is divisible by
             for _ in 0 .. ENTRIES_PER_LONG {
                 let entry = long & MASK;
                 if !is_air(entry as StateID) {
@@ -285,12 +275,7 @@ impl CompactStateBuffer {
         let mut long_index = 0;
         let mut bit_index = 0;
 
-        loop {
-            let entry = match self.entry_at(long_index, bit_index) {
-                Some(entry) => entry,
-                None => break,
-            };
-
+        while let Some(entry) = self.entry_at(long_index, bit_index) {
             advance_one_internal(
                 &mut long_index,
                 &mut bit_index,
@@ -330,24 +315,17 @@ impl CompactStateBuffer {
 
         // This closure allows us to optimize runs of states of the same type
         let mut map_state = |state: StateID| {
-            if last_read_state == state {
-                last_mapped_state
-            } else {
+            if last_read_state != state {
                 last_read_state = state;
                 last_mapped_state = palette.index_of(state);
-                last_mapped_state
             }
+            last_mapped_state
         };
 
         // We know that the following loop won't have any data races because the new bits_per_entry
         // value is less than the old value
 
-        loop {
-            let mut long = match self.data.get(read_long_index) {
-                Some(&long) => long,
-                None => break,
-            };
-
+        while let Some(mut long) = self.data.get(read_long_index).copied() {
             read_long_index += 1;
 
             for _ in 0 .. old_entries_per_long {
@@ -393,10 +371,10 @@ impl CompactStateBuffer {
 
     #[inline]
     pub fn modify_bits_per_entry(&mut self, new_bits_per_entry: NonZeroU8) {
-        if self.meta.bits_per_entry < new_bits_per_entry {
-            self.modify_bpe_allocating(new_bits_per_entry);
-        } else if self.meta.bits_per_entry > new_bits_per_entry {
-            self.modify_bpe_in_place(new_bits_per_entry);
+        match self.meta.bits_per_entry.cmp(&new_bits_per_entry) {
+            std::cmp::Ordering::Greater => self.modify_bpe_in_place(new_bits_per_entry),
+            std::cmp::Ordering::Less => self.modify_bpe_allocating(new_bits_per_entry),
+            _ => {}
         }
 
         // If the new value is equal to the current value, do nothing
@@ -438,12 +416,7 @@ impl CompactStateBuffer {
 
         let mut read_long_index = 0;
 
-        loop {
-            let mut long = match self.data.get(read_long_index) {
-                Some(&long) => long,
-                None => break,
-            };
-
+        while let Some(mut long) = self.data.get(read_long_index).copied() {
             read_long_index += 1;
 
             for _ in 0 .. old_entries_per_long {
@@ -477,7 +450,7 @@ struct CompactStateBufferIter<'a> {
     buffer: &'a CompactStateBuffer,
     long_index: usize,
     bit_index: u8,
-    count: u32
+    count: u32,
 }
 
 impl<'a> CompactStateBufferIter<'a> {
@@ -486,7 +459,7 @@ impl<'a> CompactStateBufferIter<'a> {
             buffer,
             long_index: 0,
             bit_index: 0,
-            count: 0
+            count: 0,
         }
     }
 }

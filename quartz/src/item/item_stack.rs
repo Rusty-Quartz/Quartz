@@ -73,7 +73,7 @@ impl ItemStack {
     pub fn from_nbt(tag: NbtCompound) -> Self {
         let tag = match tag.contains_key("tag") {
             true => match tag.get::<_, &NbtCompound>("tag") {
-                Ok(tag) => tag.clone().to_owned(),
+                Ok(tag) => tag.clone(),
                 _ => NbtCompound::new(),
             },
             _ => NbtCompound::new(),
@@ -97,7 +97,7 @@ impl ItemStack {
     /// Returns if the current stack is empty or not
     /// Any empty stack is any stack that has a count of 0 or is air
     pub fn is_empty(&self) -> bool {
-        self.count <= 0 || self.item.id == UlnStr::minecraft("air")
+        self.count == 0 || self.item.id == UlnStr::minecraft("air")
     }
 }
 
@@ -123,7 +123,7 @@ impl OptionalItemStack {
     /// Writes the stack to an nbt tag
     // TODO: make sure this works when reading / writing the world files
     pub fn write_nbt(&self, tag: &mut NbtCompound) {
-        if !self.0.is_none() {
+        if self.0.is_some() {
             self.0.clone().unwrap().write_nbt(tag)
         }
     }

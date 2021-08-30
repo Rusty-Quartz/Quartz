@@ -53,9 +53,8 @@ pub fn init_items() {
         });
     }
 
-    match ITEM_LIST.set(item_list) {
-        Err(_) => panic!("ITEM_LIST already initialized."),
-        _ => {}
+    if ITEM_LIST.set(item_list).is_err() {
+        panic!("ITEM_LIST already initialized.")
     }
 }
 

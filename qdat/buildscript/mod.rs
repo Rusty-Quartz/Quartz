@@ -7,5 +7,5 @@ pub(crate) fn format_in_place(file: &OsStr) {
     Command::new("rustfmt")
         .arg(file)
         .output()
-        .expect(&format!("Failed to format file: {:?}", file));
+        .unwrap_or_else(|_| panic!("Failed to format file: {:?}", file));
 }

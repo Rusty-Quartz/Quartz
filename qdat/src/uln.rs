@@ -104,7 +104,7 @@ impl UnlocalizedName {
             panic!("{}", ParseUnlocalizedNameError::StringTooLarge(repr.len()));
         }
 
-        if repr.len() == 0 {
+        if repr.is_empty() {
             panic!("{}", ParseUnlocalizedNameError::EmptyInput);
         }
 
@@ -146,7 +146,7 @@ impl UnlocalizedName {
             return Err(ParseUnlocalizedNameError::StringTooLarge(s.len()));
         }
 
-        if s.len() == 0 {
+        if s.is_empty() {
             return Err(ParseUnlocalizedNameError::EmptyInput);
         }
 
@@ -196,6 +196,7 @@ impl UnlocalizedName {
     /// `UlnStr::`[`from_str`].
     ///
     /// [`from_str`]: crate::uln::UlnStr::from_str
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, ParseUnlocalizedNameError> {
         UlnStr::from_str(s).map(ToOwned::to_owned)
     }
@@ -364,7 +365,7 @@ impl Hash for UnlocalizedName {
 impl PartialEq for UnlocalizedName {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        &**self == &**other
+        **self == **other
     }
 }
 
@@ -389,7 +390,7 @@ impl PartialEq<Cow<'_, UlnStr>> for UnlocalizedName {
     fn eq(&self, other: &Cow<'_, UlnStr>) -> bool {
         match other {
             &Cow::Borrowed(uln_str) => &**self == uln_str,
-            Cow::Owned(uln) => &**self == &**uln,
+            Cow::Owned(uln) => **self == **uln,
         }
     }
 }
@@ -397,42 +398,42 @@ impl PartialEq<Cow<'_, UlnStr>> for UnlocalizedName {
 impl PartialEq<String> for UnlocalizedName {
     #[inline]
     fn eq(&self, other: &String) -> bool {
-        &**self == &**other
+        **self == **other
     }
 }
 
 impl PartialEq<UnlocalizedName> for String {
     #[inline]
     fn eq(&self, other: &UnlocalizedName) -> bool {
-        &**other == &**self
+        **other == **self
     }
 }
 
 impl PartialEq<str> for UnlocalizedName {
     #[inline]
     fn eq(&self, other: &str) -> bool {
-        &**self == other
+        **self == other
     }
 }
 
 impl PartialEq<UnlocalizedName> for str {
     #[inline]
     fn eq(&self, other: &UnlocalizedName) -> bool {
-        &**other == self
+        **other == self
     }
 }
 
 impl PartialEq<&str> for UnlocalizedName {
     #[inline]
     fn eq(&self, other: &&str) -> bool {
-        &**self == *other
+        **self == *other
     }
 }
 
 impl PartialEq<UnlocalizedName> for &str {
     #[inline]
     fn eq(&self, other: &UnlocalizedName) -> bool {
-        &**other == *self
+        **other == *self
     }
 }
 
@@ -532,7 +533,7 @@ impl UlnStr {
             panic!("{}", ParseUnlocalizedNameError::StringTooLarge(ident.len()));
         }
 
-        if ident.len() == 0 {
+        if ident.is_empty() {
             panic!("{}", ParseUnlocalizedNameError::EmptyInput);
         }
 
@@ -566,12 +567,13 @@ impl UlnStr {
     /// assert!(UlnStr::from_str(":").is_err());
     /// assert!(UlnStr::from_str("").is_err());
     /// ```
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<&Self, ParseUnlocalizedNameError> {
         if s.len() > MAX_ULN_LENGTH {
             return Err(ParseUnlocalizedNameError::StringTooLarge(s.len()));
         }
 
-        if s.len() == 0 {
+        if s.is_empty() {
             return Err(ParseUnlocalizedNameError::EmptyInput);
         }
 
@@ -771,10 +773,10 @@ impl PartialEq<str> for UlnStr {
                 let other_colon = other.find(':');
                 match other_colon {
                     None => other == repr,
-                    Some(colon) => &other[.. colon] == "minecraft" && &other[colon + 1 ..] == repr
+                    Some(colon) => &other[.. colon] == "minecraft" && &other[colon + 1 ..] == repr,
                 }
-            },
-            Some(..) => other == repr
+            }
+            Some(..) => other == repr,
         }
     }
 }

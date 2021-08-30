@@ -47,6 +47,11 @@ impl Palette {
         self.state_to_index.len()
     }
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn states(&self) -> impl Iterator<Item = StateID> + '_ {
         self.index_to_state.iter().copied()
     }

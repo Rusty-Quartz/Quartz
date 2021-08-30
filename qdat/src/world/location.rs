@@ -137,8 +137,34 @@ impl From<Coordinate> for CoordinatePair {
     }
 }
 
+// We allow this because we make sure that hash and partialeq are both satisfied
+#[allow(clippy::derive_hash_xor_eq)]
 impl Hash for CoordinatePair {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64((self.x as u32 as u64) << 32 | self.z as u32 as u64);
     }
+}
+
+#[test]
+// A test to make sure that we can allow clippy::derive_hash_xor_eq above
+// We need to make sure that a == b && hash(a) == hash(b) is always true
+fn hash_partial_eq_test() {
+    use std::{collections::hash_map::RandomState, hash::BuildHasher};
+    let coord_1 = CoordinatePair::new(12, 15);
+    let coord_2 = CoordinatePair::new(162, 32);
+    let coord_3 = CoordinatePair::new(12, 15);
+    assert_eq!(coord_1, coord_3);
+    assert_ne!(coord_1, coord_2);
+    let state = RandomState::new();
+    let mut hasher = state.build_hasher();
+    coord_1.hash(&mut hasher);
+    let coord_1_hash = hasher.finish();
+    let mut hasher = state.build_hasher();
+    coord_2.hash(&mut hasher);
+    let coord_2_hash = hasher.finish();
+    let mut hasher = state.build_hasher();
+    coord_3.hash(&mut hasher);
+    let coord_3_hash = hasher.finish();
+    assert_ne!(coord_1_hash, coord_2_hash);
+    assert_eq!(coord_1_hash, coord_3_hash);
 }

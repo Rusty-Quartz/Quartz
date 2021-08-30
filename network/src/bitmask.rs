@@ -22,6 +22,12 @@ impl BitMask {
     }
 }
 
+impl Default for BitMask {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ReadFromPacket for BitMask {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         let len = buffer.read_varying::<i32>()? as usize;

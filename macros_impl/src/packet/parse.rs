@@ -25,7 +25,7 @@ pub(crate) fn parse_fields(input: &DeriveInput, side: Side) -> Result<Vec<Field>
 
     let named_fields = match &data_struct.fields {
         Fields::Named(named_fields) => named_fields,
-        tokens @ _ => return Err(Error::new_spanned(tokens, "Struct fields must be named")),
+        tokens => return Err(Error::new_spanned(tokens, "Struct fields must be named")),
     };
 
     parse_fields_impl(&named_fields.named, true, side)
@@ -431,6 +431,7 @@ impl Field {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn array(
         name: Ident,
         ty: Type,
@@ -459,6 +460,7 @@ impl Field {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum FieldType {
     Regular,
     Array { len: ArrayLength },

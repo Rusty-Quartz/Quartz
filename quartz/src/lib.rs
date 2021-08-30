@@ -1,6 +1,10 @@
 #![deny(rust_2018_idioms)]
+// We allow this because if we have modules with the same name, we don't publicly expose the inner one
+#![allow(clippy::module_inception)]
 // TODO: enable when ready
 // #![warn(missing_docs)]
+// when we enable warn missing_docs we will disable this
+#![allow(clippy::missing_safety_doc)]
 #![feature(new_uninit)]
 
 //! This crate contains virtually all of the code, APIs, and other malarkey that makes quartz run. The server

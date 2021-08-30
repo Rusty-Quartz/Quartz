@@ -133,7 +133,7 @@ fn find_shared_properties(data: &mut IndexMap<String, RawBlockInfo>) -> Vec<Prop
                                     differences.iter().map(|v| v[.. 1].to_owned()).collect();
                                 ending.make_ascii_uppercase();
 
-                                if ending.len() == 0 {
+                                if ending.is_empty() {
                                     let differences =
                                         get_differences(block_properties, &property_values);
                                     let mut ending: String =
@@ -161,7 +161,7 @@ fn find_shared_properties(data: &mut IndexMap<String, RawBlockInfo>) -> Vec<Prop
                 format!(
                     "{}_{}",
                     property_name,
-                    snake_to_camel(&get_block_name(&blocks.get(0).unwrap()))
+                    snake_to_camel(&get_block_name(blocks.get(0).unwrap()))
                 )
             } else if values.get(0).unwrap().parse::<u8>().is_ok() {
                 format!(
@@ -304,7 +304,7 @@ fn update_block_property_names(
 
     block_data
         .into_iter()
-        .filter(|(_name, data)| data.properties.len() == 0)
+        .filter(|(_name, data)| data.properties.is_empty())
         .for_each(|(name, data)| {
             output.insert(name.to_owned(), BlockInfo {
                 properties: data.properties.clone(),
@@ -377,7 +377,7 @@ fn gen_structs(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
     let structs = block_data
         .iter()
         .filter(|(_uln_name, block_info)| {
-            block_info.properties.len() != 0
+            !block_info.properties.is_empty()
         })
         .map(|(uln_name, block_info)| {
             let block_name = snake_to_camel(&get_block_name(uln_name));
@@ -398,10 +398,10 @@ fn gen_structs(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
                     property_name.replace('_', "")
                 })));
 
-                if snake_to_camel(&field_name).contains(&block_name) {
-                    type_aliases.push(format_ident!("{}", snake_to_camel(&field_name)))
+                if snake_to_camel(field_name).contains(&block_name) {
+                    type_aliases.push(format_ident!("{}", snake_to_camel(field_name)))
                 } else {
-                    type_aliases.push(format_ident!("{}{}", block_name, snake_to_camel(&field_name)));
+                    type_aliases.push(format_ident!("{}{}", block_name, snake_to_camel(field_name)));
                 }
 
                 vecs
@@ -484,7 +484,7 @@ fn gen_struct_enum(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
             let block = format_ident!("{}", block_str);
             let block_state = format_ident!("{}State", block_str);
 
-            if block_data.properties.len() == 0 {
+            if block_data.properties.is_empty() {
                 (
                     quote! {
                         Self::#block => None
@@ -513,7 +513,7 @@ fn gen_struct_enum(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
         .iter()
         .map(|(uln_name, block_data)| {
             let name = format_ident!("{}", snake_to_camel(&get_block_name(uln_name)));
-            if block_data.properties.len() == 0 {
+            if block_data.properties.is_empty() {
                 let id = block_data.states[0].id;
                 quote! {
                     Self::#name => #id
@@ -565,7 +565,7 @@ fn gen_name_lookup(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
         let block_state = format_ident!("{}State", block_str);
         let internal_id = block_data.intrem_id;
 
-        if block_data.properties.len() == 0 {
+        if block_data.properties.is_empty() {
             quote! {
                 #identifier => BlockStateMetadata::new(BlockStateData::#block, #internal_id)
             }
@@ -595,7 +595,7 @@ fn snake_to_camel(str: &str) -> String {
     for part in split {
         let mut word = part.to_owned();
 
-        if part == "" {
+        if part.is_empty() {
             continue;
         }
         word[.. 1].make_ascii_uppercase();

@@ -1,3 +1,4 @@
+#![allow(clippy::ptr_arg)]
 mod buildscript;
 
 fn main() {

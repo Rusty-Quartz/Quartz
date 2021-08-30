@@ -74,15 +74,13 @@ impl BlockEntity for FurnaceBlockEntity {
                     ItemStack::new(get_item(UlnStr::minecraft("stone")).unwrap()),
                 );
             }
+        } else if self.items.get(2).is_empty() {
+            self.items.insert(
+                2,
+                ItemStack::new(get_item(UlnStr::minecraft("stone")).unwrap()),
+            );
         } else {
-            if self.items.get(2).is_empty() {
-                self.items.insert(
-                    2,
-                    ItemStack::new(get_item(UlnStr::minecraft("stone")).unwrap()),
-                );
-            } else {
-                self.items.increment(2);
-            }
+            self.items.increment(2);
         }
     }
 }

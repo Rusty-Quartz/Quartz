@@ -59,10 +59,10 @@ impl IoHandle {
     ) -> Result<impl Future<Output = Result<()>> + 'a> {
         let bytes = if let Some(encrypter) = encrypter {
             temp.resize(data.len());
-            encrypter.update(&data[..], &mut temp[..])?;
+            encrypter.update(data, &mut temp[..])?;
             &temp[..]
         } else {
-            &data[..]
+            data
         };
 
         Ok(async move { stream.write_all(bytes).await })
@@ -319,12 +319,12 @@ impl IoHandle {
             match decoder.read(&mut packet_buffer[..]) {
                 Ok(read) =>
                     if read != data_len {
-                        return Err(PacketSerdeError::Network(
-                            IoError::new(IoErrorKind::InvalidData, "Failed to decompress packet")
-                                .into(),
-                        ));
+                        return Err(PacketSerdeError::Network(IoError::new(
+                            IoErrorKind::InvalidData,
+                            "Failed to decompress packet",
+                        )));
                     },
-                Err(e) => return Err(PacketSerdeError::Network(e.into())),
+                Err(e) => return Err(PacketSerdeError::Network(e)),
             };
 
             // Copy any bytes at the end of the buffer that were not part of this packet
@@ -336,6 +336,12 @@ impl IoHandle {
         }
 
         Ok(data_len)
+    }
+}
+
+impl Default for IoHandle {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -670,7 +676,7 @@ impl AsyncClientConnection {
             .read_handle
             .read(&mut self.read_buffer[..])
             .await
-            .map_err(|error| PacketSerdeError::Network(error))?;
+            .map_err(PacketSerdeError::Network)?;
 
         // A read of zero bytes means the stream has closed
         if read == 0 {

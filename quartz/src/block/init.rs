@@ -12,7 +12,7 @@ use crate::{
     block::{BlockStateImpl, StateBuilder, StaticBlockState, StaticStateBuilder},
 };
 
-pub(crate) fn load_raw_block_data<'de>() -> HashMap<String, RawBlockInfo> {
+pub(crate) fn load_raw_block_data() -> HashMap<String, RawBlockInfo> {
     serde_json::from_str::<HashMap<String, RawBlockInfo>>(assets::BLOCK_INFO)
         .expect("assets/blocks.json is corrupted.")
 }
@@ -34,11 +34,11 @@ pub(crate) fn attach_behavior(raw: &mut HashMap<String, RawBlockInfo>) {
 pub(crate) fn make_block_list(raw: &HashMap<String, RawBlockInfo>) -> Vec<Block> {
     let mut block_list = Vec::new();
 
-    let mut raw = raw.into_iter().collect::<Vec<_>>();
+    let mut raw = raw.iter().collect::<Vec<_>>();
     raw.sort_by_key(|(_, info)| info.interm_id);
 
     for (name, block_info) in raw {
-        let uln = UnlocalizedName::from_str(&name)
+        let uln = UnlocalizedName::from_str(name)
             .expect("Invalid block name encountered during registration.");
 
         // This should never happen if the data integrity is not compromised
@@ -58,7 +58,7 @@ pub(crate) fn make_block_list(raw: &HashMap<String, RawBlockInfo>) -> Vec<Block>
             behavior: block_info
                 .behavior
                 .clone()
-                .unwrap_or(BlockBehaviorSMT::new()),
+                .unwrap_or_else(BlockBehaviorSMT::new),
         });
     }
 
@@ -72,7 +72,7 @@ pub(crate) fn make_static_global_palette(
 ) -> Vec<StaticBlockState> {
     let mut global_palette = Vec::new();
 
-    for (_, block) in raw {
+    for block in raw.values() {
         let handle: &'static Block = &blocks[block.interm_id];
 
         for state_info in block.states.iter() {

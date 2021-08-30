@@ -68,7 +68,7 @@ impl Section {
                 for (name, value) in palette_entry.properties {
                     state
                         .add_property(name, value)
-                        .map_err(|msg| ChunkDecodeError::UnknownStateProperty(msg))?;
+                        .map_err(ChunkDecodeError::UnknownStateProperty)?;
                 }
 
                 palette.insert(state.build().id());
@@ -417,12 +417,7 @@ impl<'de> Visitor<'de> for SectionStoreVisitor {
             sections: Vec::with_capacity(seq.size_hint().unwrap_or(0)),
         };
 
-        loop {
-            let raw: RawSection<'de> = match seq.next_element()? {
-                Some(section) => section,
-                None => break,
-            };
-
+        while let Some(raw) = seq.next_element::<RawSection<'de>>()? {
             let section = Section::from_raw(raw).map_err(de::Error::custom)?;
             store.insert(section).map_err(de::Error::custom)?;
         }

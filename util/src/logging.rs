@@ -250,8 +250,8 @@ impl CustomLogRoller {
     }
 
     fn index_from_path(path: &str) -> Option<u32> {
-        let dash_index = path.rfind("-")?;
-        let dot_index = path.find(".")?;
+        let dash_index = path.rfind('-')?;
+        let dot_index = path.find('.')?;
         if dash_index + 1 < dot_index {
             path[dash_index + 1 .. dot_index].parse::<u32>().ok()
         } else {
@@ -299,7 +299,7 @@ impl CustomLogRoller {
 
     // Attempts compress_log and prints an error if it fails
     fn try_compress_log(input_path: &str, output_path: &str) {
-        if let Err(_) = Self::compress_log(Path::new(input_path), Path::new(output_path)) {
+        if Self::compress_log(Path::new(input_path), Path::new(output_path)).is_err() {
             error!("Failed to compress log file");
         }
     }

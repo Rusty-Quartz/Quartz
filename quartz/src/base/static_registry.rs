@@ -68,7 +68,7 @@ impl StaticRegistry {
             .get(block_name.identifier())
             .map(|meta| StaticBlockState {
                 // Safety: internal block IDs are guaranteed to be consistent and in-bounds
-                handle: unsafe { &Self::get().blocks.get_unchecked(meta.internal_block_id) },
+                handle: unsafe { Self::get().blocks.get_unchecked(meta.internal_block_id) },
                 data: meta.default_state_data,
             })
     }

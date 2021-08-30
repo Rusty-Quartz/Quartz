@@ -175,7 +175,7 @@ impl StateBuilder<StaticBlockState> for StaticStateBuilder {
             .state
             .data
             .with_property(name, value)
-            .ok_or(self.property_error(name, value))?;
+            .ok_or_else(|| self.property_error(name, value))?;
         Ok(())
     }
 

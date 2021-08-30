@@ -330,12 +330,9 @@ impl Drop for QuartzServer {
         RUNNING.store(false, Ordering::Release);
 
         // Shutdown the command handler
-        match self.console_command_handler.take() {
-            Some(handle) => {
-                info!("Shutting down command handler thread");
-                let _ = handle.join();
-            }
-            None => {}
+        if let Some(handle) = self.console_command_handler.take() {
+            info!("Shutting down command handler thread");
+            let _ = handle.join();
         }
 
         // Send a connection to the server daemon to shut it down
@@ -440,6 +437,12 @@ impl ClientList {
             Some(client) => client.connection.send_packet(buffer),
             None => warn!("Attempted to send buffer to disconnected client."),
         }
+    }
+}
+
+impl Default for ClientList {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

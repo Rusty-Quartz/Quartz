@@ -58,14 +58,14 @@ pub fn extract_type_from_container(ty: &Type) -> Result<Type> {
 
             let generic_arg = match type_params {
                 PathArguments::AngleBracketed(params) => params.args.first().unwrap(),
-                tokens @ _ => return Err(Error::new_spanned(tokens, "Expected type parameter")),
+                tokens => return Err(Error::new_spanned(tokens, "Expected type parameter")),
             };
 
             match generic_arg {
                 GenericArgument::Type(ty) => Ok(ty.clone()),
-                arg @ _ => Err(Error::new_spanned(arg, "Expected type parameter")),
+                arg => Err(Error::new_spanned(arg, "Expected type parameter")),
             }
         }
-        ty @ _ => Err(Error::new_spanned(ty, "Expected path type")),
+        ty => Err(Error::new_spanned(ty, "Expected path type")),
     }
 }

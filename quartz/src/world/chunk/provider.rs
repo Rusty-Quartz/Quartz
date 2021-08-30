@@ -123,7 +123,7 @@ impl ChunkProvider {
         match request {
             ProviderRequest::LoadFull(coords) => Self::handle_load_full(coords, store)
                 .await
-                .map(|chunk| ProviderResponse::LoadedChunk(chunk))
+                .map(ProviderResponse::LoadedChunk)
                 .map_err(|error| ProviderError::new(request, error)),
 
             ProviderRequest::MinLoadSend { coords, ref handle } =>
@@ -161,9 +161,9 @@ impl ChunkProvider {
         match chunk_nbt {
             Some(chunk_nbt) => {
                 let chunk_nbt = chunk_nbt.await?;
-                return Self::decode_chunk(chunk_nbt, |raw_chunk: RawChunk| Chunk::from(raw_chunk))
+                return Self::decode_chunk::<RawChunk, _, _>(chunk_nbt, Chunk::from)
                     .await
-                    .map(|chunk| Some(chunk));
+                    .map(Some);
             }
             None => {
                 log::warn!("Chunk generation not supported yet.");

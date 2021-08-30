@@ -148,3 +148,9 @@ impl ServerClock {
         1000.0 / FULL_TICK_LENGTH as f64
     }
 }
+
+impl Default for ServerClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}

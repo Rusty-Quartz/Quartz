@@ -66,6 +66,7 @@ impl ComponentBuilder {
     }
 
     /// Finish the current component and prepare a new component which can have a different color, formatting, etc.
+    #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, component_type: ComponentType) -> Self {
         self.current().component_type = component_type;
         self.add_empty()

@@ -90,7 +90,7 @@ impl Component {
         match &self.component_type {
             ComponentType::Text { text } => text.clone(),
             // TODO: Implement this for other component types
-            _ => serde_json::to_string(self).unwrap_or("{}".to_owned()),
+            _ => serde_json::to_string(self).unwrap_or_else(|_| "{}".to_owned()),
         }
     }
 
@@ -117,7 +117,7 @@ impl Component {
             _ => write!(
                 f,
                 "{}",
-                serde_json::to_string(self).unwrap_or("{}".to_owned())
+                serde_json::to_string(self).unwrap_or_else(|_| "{}".to_owned())
             ),
         }
     }
@@ -438,6 +438,7 @@ impl HoverEvent {
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(clippy::enum_variant_names)]
 enum HoverEventType {
     ShowText,
     ShowItem,
@@ -545,7 +546,7 @@ impl ToComponent for NbtTag {
             NbtTag::String(value) => {
                 // Determine the best option for the surrounding quotes to minimize escape sequences
                 let surrounding: char;
-                if value.contains("\"") {
+                if value.contains('\"') {
                     surrounding = '\'';
                 } else {
                     surrounding = '"';

@@ -10,6 +10,8 @@ pub struct BlockBehaviorSMT {
 }
 
 impl BlockBehaviorSMT {
+    // Allow new_without_default because we plan on yeeting this (or rewriting it) later anyway
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         BlockBehaviorSMT {
             // on_break: T::on_break,

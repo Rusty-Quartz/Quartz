@@ -46,6 +46,11 @@ impl PacketBuffer {
         self.inner.len()
     }
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// Increases the length of this buffer to its capacity.
     #[inline]
     pub fn inflate(&mut self) {
@@ -112,6 +117,9 @@ impl PacketBuffer {
     }
 
     #[inline]
+    /// Sets the length of the internal Vec
+    /// # Safety
+    /// The length must not go above our capacity and all elements should be initialized
     pub unsafe fn set_len(&mut self, new_len: usize) {
         self.inner.set_len(new_len);
     }
@@ -140,7 +148,7 @@ impl PacketBuffer {
     /// Returns the number of bytes remaining in this buffer.
     #[inline]
     pub fn remaining(&self) -> usize {
-        self.inner.len().checked_sub(self.cursor).unwrap_or(0)
+        self.inner.len().saturating_sub(self.cursor)
     }
 
     /// Clears the contents of this buffer and resets the cursor to the beginning of the buffer.
@@ -153,6 +161,8 @@ impl PacketBuffer {
     /// Returns a mutable reference to the inner vec of this buffer. Even though this operation is not
     /// inherently unsafe, incorrectly modifying the returned reference can lead to undefined behavior
     /// down the line if the cursor position is not handled correctly.
+    /// # Safety
+    /// Cursor position must match after any modifications to the contents
     #[inline]
     pub unsafe fn inner_mut(&mut self) -> &mut Vec<u8> {
         &mut self.inner
@@ -570,7 +580,7 @@ impl ReadFromPacket for Uuid {
 impl ReadFromPacket for UnlocalizedName {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
         match UnlocalizedName::from_str(buffer.read_mc_str()?) {
-            Ok(string) => Ok(string.to_owned()),
+            Ok(string) => Ok(string),
             Err(error) => Err(PacketSerdeError::InvalidUnlocalizedName(error)),
         }
     }
@@ -761,7 +771,7 @@ impl WriteToPacket for UnlocalizedName {
         let len = namespace.len() + identifier.len() + 1;
         buffer.write_varying(&(len as i32));
         buffer.write_bytes(namespace.as_bytes());
-        buffer.write_one(':' as u8);
+        buffer.write_one(b':');
         buffer.write_bytes(identifier.as_bytes());
     }
 }
@@ -779,7 +789,7 @@ impl WriteToPacket for NbtCompound {
 
 impl WriteToPacket for Component {
     fn write_to(&self, buffer: &mut PacketBuffer) {
-        buffer.write(&serde_json::to_string(self).unwrap_or(String::new()));
+        buffer.write(&serde_json::to_string(self).unwrap_or_default());
     }
 }
 
