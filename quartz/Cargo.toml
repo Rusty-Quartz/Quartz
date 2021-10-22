@@ -2,7 +2,7 @@
 name = "quartz"
 version = "0.1.0"
 authors = ["maddymakesgames", "Cassy343"]
-edition = "2018"
+edition = "2021"
 
 [[bin]]
 name = "quartz_launcher"
