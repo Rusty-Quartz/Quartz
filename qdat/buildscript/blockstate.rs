@@ -50,7 +50,7 @@ pub fn gen_blockstates() {
     .unwrap();
     super::format_in_place(dest_path.as_os_str());
 
-    println!("cargo:rerun-if-changed=../../assets/blocks.json");
+    println!("cargo:rerun-if-changed=../assets/blocks.json");
     println!("cargo:rerun-if-changes=buildscript/blockstate.rs");
 }
 
@@ -420,7 +420,7 @@ fn gen_structs(block_data: &IndexMap<String, BlockInfo>) -> TokenStream {
                 }
 
                 impl #block_state_name {
-                    const fn const_default() -> Self {
+                    pub const fn const_default() -> Self {
                         #block_state_name {
                             #(#default_fields: #default_vals),*
                         }
