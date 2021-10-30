@@ -1,6 +1,13 @@
 use crate::{
     block::{BlockStateImpl, StateBuilder},
-    world::chunk::{ChunkDecodeError, CompactStateBuffer, Palette, DIRECT_PALETTE_THRESHOLD},
+    world::chunk::{
+        ChunkDecodeError,
+        CompactStateBuffer,
+        InsertionResult,
+        Palette,
+        RemovalResult,
+        DIRECT_PALETTE_THRESHOLD,
+    },
     BlockState,
     StateID,
 };
@@ -22,9 +29,10 @@ use serde::{
 };
 use std::{
     borrow::ToOwned,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     error::Error,
     fmt::{self, Debug, Display, Formatter},
+    num::NonZeroU8,
 };
 
 pub const MAX_SECTION_COUNT: usize = 32;
@@ -124,6 +132,144 @@ impl Section {
         };
 
         self.states.block_count(palette)
+    }
+
+    /// Returns the block state id at `index`
+    ///
+    /// Returns `None` if `index` is out of bounds
+    pub fn block_state_at(&self, index: usize) -> Option<StateID> {
+        if self.is_pal_direct {
+            self.states.nth_entry(index).map(|s| s as StateID)
+        } else {
+            // Unwrap is safe because a palette entry from the buffer has to be in the palette
+            let state = self.states.nth_entry(index);
+            state.map(|s| self.palette.state_for(s).unwrap())
+        }
+    }
+
+    /// Sets the block state at `index` to `state`
+    ///
+    /// Returns the state id that was there
+    /// Returns `None` when `index` is out of bounds or if `state` was already at `index`
+    pub fn set_block_state_at(&mut self, index: usize, state: StateID) -> Option<StateID> {
+        // Theres no guarrentee the state will still be there after we alter the palette
+        // So we have to map the last state before modifying the palette
+        let last_state_id = self.block_state_at(index);
+
+        // If the state is already at `index` exit early
+        if Some(state) == last_state_id {
+            return None;
+        }
+
+        self.add_state_to_palette(state);
+
+        self.set_state_internal(index, state);
+        last_state_id
+    }
+
+    /// Removes all unused states from the palette
+    ///
+    /// If in indirect mode, adjusts the indexes in the [CompactStateBuffer] to compensate
+    pub fn clean_palette(&mut self) {
+        let states = if self.is_pal_direct {
+            let mut states = self.palette.states().collect::<HashSet<_>>();
+            self.states.iter().for_each(|u| {
+                if states.contains(&(u as u16)) {
+                    states.remove(&(u as u16));
+                }
+            });
+            states
+        } else {
+            let mut states = HashSet::new();
+            self.states.iter().for_each(|u| {
+                if let Some(i) = self.palette.state_for(u) {
+                    if !states.contains(&i) {
+                        states.insert(i);
+                    }
+                }
+            });
+            states
+        };
+
+        for state in states {
+            self.remove_state_from_palette(state);
+        }
+    }
+
+    /// Sets the state at `index` to `state`
+    ///
+    /// Takes into account whether the palette is direct or indirect
+    ///
+    /// # Panics
+    /// Panics if `state` is not already in the palette
+    fn set_state_internal(&mut self, index: usize, state: StateID) {
+        if self.is_pal_direct {
+            self.states.set_nth_entry(index, state as usize);
+        } else {
+            self.states
+                .set_nth_entry(index, self.palette.index_of(state).unwrap());
+        }
+    }
+
+    /// Adds a state to the palette
+    ///
+    /// If we are in indirect mode we also update the indecies in the [CompactStateBuffer] to compensate
+    fn add_state_to_palette(&mut self, state: StateID) {
+        let index = match self.palette.insert(state) {
+            InsertionResult::InsertedAndAltered {
+                new_bits_per_block,
+                index,
+                ..
+            } => {
+                self.update_bits_per_block(new_bits_per_block);
+                index
+            }
+            InsertionResult::Inserted { index } => index,
+            _ => return,
+        };
+
+        if !self.is_pal_direct {
+            self.states
+                .alter(|u| if u >= index { Some(u + 1) } else { None });
+        }
+    }
+
+    /// Removes a state from the palette
+    ///
+    /// If we are in indirect mode we also adjust indexes in the [CompactStateBuffer] to compensate
+    fn remove_state_from_palette(&mut self, state: StateID) {
+        let index = match self.palette.remove(state) {
+            RemovalResult::RemovedAndAltered {
+                index,
+                new_bits_per_block,
+                ..
+            } => {
+                self.update_bits_per_block(new_bits_per_block);
+                index
+            }
+            RemovalResult::Removed { index } => index,
+            RemovalResult::NotInPalette => return,
+        };
+
+        if !self.is_pal_direct {
+            self.states
+                .alter(|u| if u > index { Some(u - 1) } else { None })
+        }
+    }
+
+    /// Updates the bits per block to the new value
+    ///
+    /// This involves updating the `is_pal_direct` variable and converting the [CompactStateBuffer] to be either direct or indircet
+    fn update_bits_per_block(&mut self, bits_per_block: NonZeroU8) {
+        self.states.modify_bits_per_entry(bits_per_block);
+        // TODO: handle errors
+        if bits_per_block.get() >= DIRECT_PALETTE_THRESHOLD && self.is_pal_direct {
+            self.is_pal_direct = false;
+            self.states.to_indirect_palette(&self.palette).unwrap();
+        } else if bits_per_block.get() < DIRECT_PALETTE_THRESHOLD && !self.is_pal_direct {
+            self.is_pal_direct = true;
+            self.states.to_direct_palette(&self.palette).unwrap();
+        }
     }
 
     pub fn lighting(&self) -> &Lighting {
@@ -318,6 +464,14 @@ impl SectionStore {
             .map(OptionalSectionIndex::as_option)
             .flatten()
             .map(|index| &self.sections[index])
+    }
+
+    pub fn get_mut(&mut self, y: i8) -> Option<&mut Section> {
+        self.section_mapping
+            .get(SectionY::from(y).as_index())
+            .map(OptionalSectionIndex::as_option)
+            .flatten()
+            .map(|index| &mut self.sections[index])
     }
 
     pub fn gen_bit_mask<F>(&self, include_boundary_sections: bool, mut f: F) -> BitMask
