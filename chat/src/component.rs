@@ -478,6 +478,7 @@ pub struct HoverEntity {
 // The generalized event argument
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 enum EventArgument {
     Component(Component),
     Text(String),
