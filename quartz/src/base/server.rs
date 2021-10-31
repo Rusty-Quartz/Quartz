@@ -350,9 +350,11 @@ impl Drop for QuartzServer {
     }
 }
 
+pub type ClientId = usize;
+
 /// A thread-safe wrapper around a map of clients and their connection IDs.
 #[repr(transparent)]
-pub struct ClientList(HashMap<usize, Client>);
+pub struct ClientList(HashMap<ClientId, Client>);
 
 impl ClientList {
     /// Creates a new, empty client list.
@@ -361,12 +363,12 @@ impl ClientList {
     }
 
     /// Adds a new client with the given ID and write handle.
-    pub fn add_client(&mut self, client_id: usize, connection: AsyncWriteHandle) {
+    pub fn add_client(&mut self, client_id: ClientId, connection: AsyncWriteHandle) {
         self.0.insert(client_id, Client::new(connection));
     }
 
     /// Removes the client with the given ID.
-    pub fn remove_client(&mut self, client_id: usize) {
+    pub fn remove_client(&mut self, client_id: ClientId) {
         self.0.remove(&client_id);
     }
 
@@ -379,13 +381,13 @@ impl ClientList {
             .count()
     }
 
-    pub fn create_write_handle(&self, client_id: usize) -> Option<AsyncWriteHandle> {
+    pub fn create_write_handle(&self, client_id: ClientId) -> Option<AsyncWriteHandle> {
         self.0
             .get(&client_id)
             .map(|client| client.connection.clone())
     }
 
-    pub fn start_keep_alive(&mut self, client_id: usize) {
+    pub fn start_keep_alive(&mut self, client_id: ClientId) {
         match self.0.get_mut(&client_id) {
             Some(client) => {
                 let keep_alive_id = thread_rng().gen();
@@ -399,7 +401,7 @@ impl ClientList {
         }
     }
 
-    pub fn handle_keep_alive(&mut self, client_id: usize, keep_alive_id: i64) {
+    pub fn handle_keep_alive(&mut self, client_id: ClientId, keep_alive_id: i64) {
         match self.0.get_mut(&client_id) {
             Some(client) =>
                 if client.keep_alive_id == Some(keep_alive_id) {
@@ -416,14 +418,14 @@ impl ClientList {
     }
 
     /// Sends a packet to the client with the given ID.
-    pub fn send_packet(&self, client_id: usize, packet: ClientBoundPacket) {
+    pub fn send_packet(&self, client_id: ClientId, packet: ClientBoundPacket) {
         match self.0.get(&client_id) {
             Some(client) => client.connection.send_packet(packet),
             None => warn!("Attempted to send packet to disconnected client."),
         }
     }
 
-    pub fn send_all<I>(&self, client_id: usize, packets: I)
+    pub fn send_all<I>(&self, client_id: ClientId, packets: I)
     where I: IntoIterator<Item = ClientBoundPacket> {
         match self.0.get(&client_id) {
             Some(client) => client.connection.send_all(packets),
@@ -432,7 +434,7 @@ impl ClientList {
     }
 
     /// Sends a raw byte buffer to the client with the given ID.
-    pub fn send_buffer(&self, client_id: usize, buffer: PacketBuffer) {
+    pub fn send_buffer(&self, client_id: ClientId, buffer: PacketBuffer) {
         match self.0.get(&client_id) {
             Some(client) => client.connection.send_packet(buffer),
             None => warn!("Attempted to send buffer to disconnected client."),
@@ -441,7 +443,7 @@ impl ClientList {
 
     /// Sends a packet to every client connected
     pub fn send_to_all<P>(&self, packet: P)
-    where P: Fn(&usize) -> ClientBoundPacket {
+    where P: Fn(&ClientId) -> ClientBoundPacket {
         self.iter()
             .for_each(|(id, client)| client.connection.send_packet(packet(id)));
     }
@@ -449,8 +451,8 @@ impl ClientList {
     /// Sends a packet to every client that passes the provided filter
     pub fn send_to_filtered<F, P>(&self, packet: P, filter: F)
     where
-        F: Fn(&&usize) -> bool,
-        P: Fn(&usize) -> ClientBoundPacket,
+        F: Fn(&&ClientId) -> bool,
+        P: Fn(&ClientId) -> ClientBoundPacket,
     {
         self.iter()
             .filter(|(id, _client)| filter(id))
@@ -462,10 +464,10 @@ impl ClientList {
     }
 }
 
-struct ClientListIter<'a>(std::collections::hash_map::Iter<'a, usize, Client>);
+struct ClientListIter<'a>(std::collections::hash_map::Iter<'a, ClientId, Client>);
 
 impl<'a> Iterator for ClientListIter<'a> {
-    type Item = (&'a usize, &'a Client);
+    type Item = (&'a ClientId, &'a Client);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next()

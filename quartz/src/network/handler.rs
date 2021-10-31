@@ -1,7 +1,7 @@
 use crate::{
     config,
     network::{packet_data::*, *},
-    server::{self, QuartzServer},
+    server::{self, ClientId, QuartzServer},
     world::chunk::provider::ProviderRequest,
 };
 use qdat::world::location::{BlockPosition, Coordinate};
@@ -288,7 +288,7 @@ impl AsyncPacketHandler {
 impl QuartzServer {
     pub(crate) async fn handle_login_success_server(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         _uuid: Uuid,
         _username: &str,
     ) {
@@ -364,7 +364,7 @@ impl QuartzServer {
         self.client_list.start_keep_alive(sender);
     }
 
-    async fn handle_legacy_server_list_ping(&mut self, sender: usize, _payload: u8) {
+    async fn handle_legacy_server_list_ping(&mut self, sender: ClientId, _payload: u8) {
         // Load in all needed values from server object
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
@@ -411,7 +411,7 @@ impl QuartzServer {
         self.client_list.send_buffer(sender, buffer);
     }
 
-    async fn handle_status_request(&mut self, sender: usize) {
+    async fn handle_status_request(&mut self, sender: ClientId) {
         let config = config().read();
         let json_response = json!({
             "version": {
@@ -434,18 +434,18 @@ impl QuartzServer {
             });
     }
 
-    async fn handle_keep_alive(&mut self, sender: usize, keep_alive_id: i64) {
+    async fn handle_keep_alive(&mut self, sender: ClientId, keep_alive_id: i64) {
         self.client_list.handle_keep_alive(sender, keep_alive_id);
     }
 
     #[allow(unused_variables)]
-    async fn handle_use_item(&mut self, sender: usize, hand: i32) {}
+    async fn handle_use_item(&mut self, sender: ClientId, hand: i32) {}
 
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     async fn handle_player_block_placement(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         hand: i32,
         location: &BlockPosition,
         face: i32,
@@ -457,15 +457,15 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_spectate(&mut self, sender: usize, target_player: Uuid) {}
+    async fn handle_spectate(&mut self, sender: ClientId, target_player: Uuid) {}
 
     #[allow(unused_variables)]
-    async fn handle_animation(&mut self, sender: usize, hand: i32) {}
+    async fn handle_animation(&mut self, sender: ClientId, hand: i32) {}
 
     #[allow(unused_variables)]
     async fn handle_update_sign(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         line_1: &str,
         line_2: &str,
@@ -478,7 +478,7 @@ impl QuartzServer {
     #[allow(clippy::too_many_arguments)]
     async fn handle_update_structure_block(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         action: i32,
         mode: i32,
@@ -501,7 +501,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_creative_inventory_action(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         slot: i16,
         clicked_item: &Slot,
     ) {
@@ -510,7 +510,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_update_jigsaw_block(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         data: &JigsawUpdateData,
     ) {
@@ -519,7 +519,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_update_command_block_minecart(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         entity_id: i32,
         command: &str,
         track_output: bool,
@@ -529,7 +529,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_update_command_block(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         command: &str,
         mode: i32,
@@ -538,39 +538,39 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_held_item_change(&mut self, sender: usize, slot: i16) {}
+    async fn handle_held_item_change(&mut self, sender: ClientId, slot: i16) {}
 
     #[allow(unused_variables)]
     async fn handle_set_beacon_effect(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         primary_effect: i32,
         secondary_effect: i32,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_select_trade(&mut self, sender: usize, selected_slod: i32) {}
+    async fn handle_select_trade(&mut self, sender: ClientId, selected_slod: i32) {}
 
     #[allow(unused_variables)]
     async fn handle_advancement_tab(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         action: i32,
         tab_id: &Option<UnlocalizedName>,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_resource_pack_status(&mut self, sender: usize, result: i32) {}
+    async fn handle_resource_pack_status(&mut self, sender: ClientId, result: i32) {}
 
     #[allow(unused_variables)]
-    async fn handle_name_item(&mut self, sender: usize, item_name: &str) {}
+    async fn handle_name_item(&mut self, sender: ClientId, item_name: &str) {}
 
     #[allow(unused_variables)]
     async fn handle_set_recipe_book_state(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         book_id: i32,
         book_open: bool,
         filter_active: bool,
@@ -578,12 +578,13 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_set_displayed_recipe(&mut self, sender: usize, recipe_id: &UnlocalizedName) {}
+    async fn handle_set_displayed_recipe(&mut self, sender: ClientId, recipe_id: &UnlocalizedName) {
+    }
 
     #[allow(unused_variables)]
     async fn handle_steer_vehicle(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         sideways: f32,
         forward: f32,
         flags: u8,
@@ -591,12 +592,12 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_pong(&mut self, sender: usize, id: i32) {}
+    async fn handle_pong(&mut self, sender: ClientId, id: i32) {}
 
     #[allow(unused_variables)]
     async fn handle_entity_action(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         entity_id: i32,
         action_id: i32,
         jump_boost: i32,
@@ -606,7 +607,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_player_digging(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         status: i32,
         location: &BlockPosition,
         face: i8,
@@ -614,12 +615,12 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_player_abilities(&mut self, sender: usize, flags: i8) {}
+    async fn handle_player_abilities(&mut self, sender: ClientId, flags: i8) {}
 
     #[allow(unused_variables)]
     async fn handle_craft_recipe_request(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         window_id: i8,
         recipe: &UnlocalizedName,
         make_all: bool,
@@ -627,24 +628,24 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_pick_item(&mut self, sender: usize, slot_to_use: i32) {}
+    async fn handle_pick_item(&mut self, sender: ClientId, slot_to_use: i32) {}
 
     #[allow(unused_variables)]
     async fn handle_steer_boat(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         left_paddle_turning: bool,
         right_paddle_turning: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_player_movement(&mut self, sender: usize, on_ground: bool) {}
+    async fn handle_player_movement(&mut self, sender: ClientId, on_ground: bool) {}
 
     #[allow(unused_variables)]
     async fn handle_player_rotation(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         yaw: f32,
         pitch: f32,
         on_ground: bool,
@@ -654,7 +655,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_vehicle_move(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         x: f64,
         y: f64,
         z: f64,
@@ -666,7 +667,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_player_position(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         x: f64,
         feet_y: f64,
         z: f64,
@@ -678,7 +679,7 @@ impl QuartzServer {
     #[allow(clippy::too_many_arguments)]
     async fn handle_player_position_and_rotation(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         x: f64,
         feet_y: f64,
         z: f64,
@@ -689,12 +690,12 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_lock_difficulty(&mut self, sender: usize, locked: bool) {}
+    async fn handle_lock_difficulty(&mut self, sender: ClientId, locked: bool) {}
 
     #[allow(unused_variables)]
     async fn handle_generate_structure(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         levels: i32,
         keep_jigsaws: bool,
@@ -705,7 +706,7 @@ impl QuartzServer {
     #[allow(clippy::too_many_arguments)]
     async fn handle_interact_entity(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         entity_id: i32,
         r#type: i32,
         target_x: Option<f32>,
@@ -719,7 +720,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_edit_book(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         new_book: &Slot,
         is_signing: bool,
         hand: i32,
@@ -729,20 +730,20 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_plugin_message(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         channel: &UnlocalizedName,
         data: &[u8],
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_close_window(&mut self, sender: usize, window_id: u8) {}
+    async fn handle_close_window(&mut self, sender: ClientId, window_id: u8) {}
 
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     async fn handle_click_window(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         window_id: u8,
         slot: i16,
         button: i8,
@@ -753,16 +754,17 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_click_window_button(&mut self, sender: usize, window_id: i8, button_id: i8) {}
+    async fn handle_click_window_button(&mut self, sender: ClientId, window_id: i8, button_id: i8) {
+    }
 
     #[allow(unused_variables)]
-    async fn handle_tab_complete(&mut self, sender: usize, trasaction_id: i32, text: &str) {}
+    async fn handle_tab_complete(&mut self, sender: ClientId, trasaction_id: i32, text: &str) {}
 
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     async fn handle_client_settings(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         locale: &str,
         view_distance: i8,
         chat_mode: i32,
@@ -917,29 +919,34 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_client_status(&mut self, sender: usize, action_id: i32) {}
+    async fn handle_client_status(&mut self, sender: ClientId, action_id: i32) {}
 
     #[allow(unused_variables)]
-    async fn handle_chat_message(&mut self, sender: usize, messag: &str) {}
+    async fn handle_chat_message(&mut self, sender: ClientId, messag: &str) {}
 
     #[allow(unused_variables)]
-    async fn handle_set_difficulty(&mut self, sender: usize, new_difficulty: i8) {}
+    async fn handle_set_difficulty(&mut self, sender: ClientId, new_difficulty: i8) {}
 
     #[allow(unused_variables)]
-    async fn handle_query_entity_nbt(&mut self, sender: usize, trasaction_id: i32, entity_id: i32) {
+    async fn handle_query_entity_nbt(
+        &mut self,
+        sender: ClientId,
+        trasaction_id: i32,
+        entity_id: i32,
+    ) {
     }
 
     #[allow(unused_variables)]
     async fn handle_query_block_nbt(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         trasaction_id: i32,
         location: &BlockPosition,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_teleport_confirm(&mut self, sender: usize, teleport_id: i32) {}
+    async fn handle_teleport_confirm(&mut self, sender: ClientId, teleport_id: i32) {}
 }
 
 /// Handles the given asynchronos connecting using blocking I/O opperations.
