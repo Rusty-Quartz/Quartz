@@ -438,6 +438,38 @@ impl ClientList {
             None => warn!("Attempted to send buffer to disconnected client."),
         }
     }
+
+    /// Sends a packet to every client connected
+    pub fn send_to_all<P>(&self, packet: P)
+    where P: Fn(&usize) -> ClientBoundPacket {
+        self.iter()
+            .for_each(|(id, client)| client.connection.send_packet(packet(id)));
+    }
+
+    /// Sends a packet to every client that passes the provided filter
+    pub fn send_to_filtered<F, P>(&self, packet: P, filter: F)
+    where
+        F: Fn(&&usize) -> bool,
+        P: Fn(&usize) -> ClientBoundPacket,
+    {
+        self.iter()
+            .filter(|(id, _client)| filter(id))
+            .for_each(|(id, client)| client.connection.send_packet(packet(id)));
+    }
+
+    fn iter(&self) -> ClientListIter<'_> {
+        ClientListIter(self.0.iter())
+    }
+}
+
+struct ClientListIter<'a>(std::collections::hash_map::Iter<'a, usize, Client>);
+
+impl<'a> Iterator for ClientListIter<'a> {
+    type Item = (&'a usize, &'a Client);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
 }
 
 impl Default for ClientList {
