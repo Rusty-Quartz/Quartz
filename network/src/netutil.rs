@@ -78,6 +78,8 @@ impl PacketBuffer {
         }
     }
 
+    // Not UB as long as the caller ensures the new memory is initialized before using it
+    #[allow(clippy::uninit_vec)]
     pub fn ensure_remaining(&mut self, n: usize) {
         if n <= self.remaining() {
             return;
