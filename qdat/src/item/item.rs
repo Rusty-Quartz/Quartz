@@ -5,6 +5,7 @@ use crate::{item::ItemInfo, UnlocalizedName};
 pub struct Item {
     /// The item id
     pub id: UnlocalizedName,
+    pub num_id: u16,
     /// The max size a stack can be
     pub stack_size: u8,
     /// The rarity of the item

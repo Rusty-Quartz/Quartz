@@ -7,15 +7,15 @@ use qdat::{
 };
 use serde::Deserialize;
 use serde_json::from_str;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::assets;
 
-static ITEM_LIST: OnceCell<HashMap<UnlocalizedName, Item>> = OnceCell::new();
+static ITEM_LIST: OnceCell<BTreeMap<UnlocalizedName, Item>> = OnceCell::new();
 
 /// Gets the whole item list
 #[inline(always)]
-pub fn get_item_list() -> &'static HashMap<UnlocalizedName, Item> {
+pub fn get_item_list() -> &'static BTreeMap<UnlocalizedName, Item> {
     ITEM_LIST.get().expect("Item list not initialized.")
 }
 
@@ -30,12 +30,12 @@ pub fn init_items() {
     info!("Loading item data");
 
     // Load in assets/items.json generated from data-generator
-    let raw_list =
-        from_str::<HashMap<String, RawItemData>>(assets::ITEM_INFO).expect("items.json is corrupt");
+    let raw_list = from_str::<BTreeMap<String, RawItemData>>(assets::ITEM_INFO)
+        .expect("items.json is corrupt");
 
-    let mut item_list: HashMap<UnlocalizedName, Item> = HashMap::with_capacity(raw_list.len());
+    let mut item_list: BTreeMap<UnlocalizedName, Item> = BTreeMap::new();
 
-    for (name, raw_data) in raw_list {
+    for (i, (name, raw_data)) in raw_list.into_iter().enumerate() {
         let uln = UnlocalizedName::from_str(&name).expect("Invalid item name in items.json");
 
         // This should never happen if the data integrity is not compromised
@@ -47,6 +47,7 @@ pub fn init_items() {
 
         item_list.insert(uln.clone(), Item {
             id: uln,
+            num_id: i as u16,
             stack_size: raw_data.stack_size,
             rarity: raw_data.rarity,
             item_info: raw_data.info,
