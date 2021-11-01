@@ -485,7 +485,8 @@
           },
           {
             "name": "face",
-            "type": "i8"
+            "type": "facing",
+            "deserialize_with": "buffer.read_varying::<qdat::world::location::Facing>()?"
           }
         ]
       },
@@ -851,7 +852,7 @@
           },
           {
             "name": "face",
-            "type": "varint"
+            "type": "facing"
           },
           {
             "name": "cursor_position_x",

@@ -2,7 +2,7 @@ use crate::{BitMask, PacketBuffer, PacketSerdeError, ReadFromPacket, WriteToPack
 use qdat::{
     world::{
         lighting::{LightBuffer, LIGHTING_LENGTH},
-        location::BlockPosition,
+        location::{BlockFace, BlockPosition},
     },
     Gamemode,
     UnlocalizedName,
@@ -443,12 +443,12 @@ impl PlayerInfoAction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Slot {
-    present: bool,
-    item_id: Option<i32>,
-    item_count: Option<i8>,
-    nbt: Option<NbtCompound>,
+    pub present: bool,
+    pub item_id: Option<i32>,
+    pub item_count: Option<i8>,
+    pub nbt: Option<NbtCompound>,
 }
 
 impl WriteToPacket for Slot {
@@ -1070,5 +1070,49 @@ impl ReadFromPacket for Gamemode {
             3 => Self::Specator,
             _ => Self::None,
         })
+    }
+}
+
+impl ReadFromPacket for BlockFace {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let val: i32 = buffer.read_varying()?;
+        match val {
+            0 => Ok(Self::Bottom),
+            1 => Ok(Self::Top),
+            2 => Ok(Self::North),
+            3 => Ok(Self::South),
+            4 => Ok(Self::West),
+            5 => Ok(Self::East),
+            _ => Err(PacketSerdeError::InvalidEnum("Invalid 'facing' enum", val)),
+        }
+    }
+
+    fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        let val: i8 = buffer.read()?;
+        match val {
+            0 => Ok(Self::Bottom),
+            1 => Ok(Self::Top),
+            2 => Ok(Self::North),
+            3 => Ok(Self::South),
+            4 => Ok(Self::West),
+            5 => Ok(Self::East),
+            _ => Err(PacketSerdeError::InvalidEnum(
+                "Invalid 'facing' enum",
+                val as i32,
+            )),
+        }
+    }
+}
+
+impl WriteToPacket for BlockFace {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        match self {
+            Self::Bottom => buffer.write_varying(&0_i32),
+            Self::Top => buffer.write_varying(&1_i32),
+            Self::North => buffer.write_varying(&2_i32),
+            Self::South => buffer.write_varying(&3_i32),
+            Self::West => buffer.write_varying(&4_i32),
+            Self::East => buffer.write_varying(&5_i32),
+        }
     }
 }

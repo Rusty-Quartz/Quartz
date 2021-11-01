@@ -28,6 +28,18 @@ impl BlockPosition {
             | ((self.z as i64 & 0x3FFFFFF) << 12)
             | (self.y as i64 & 0xFFF)
     }
+
+    pub const fn face_offset(mut self, facing: &BlockFace) -> BlockPosition {
+        match facing {
+            BlockFace::Bottom => self.y -= 1,
+            BlockFace::Top => self.y += 1,
+            BlockFace::North => self.z -= 1,
+            BlockFace::South => self.z += 1,
+            BlockFace::West => self.x -= 1,
+            BlockFace::East => self.x += 1,
+        }
+        self
+    }
 }
 
 impl Display for BlockPosition {
@@ -208,4 +220,14 @@ fn hash_partial_eq_test() {
     let coord_3_hash = hasher.finish();
     assert_ne!(coord_1_hash, coord_2_hash);
     assert_eq!(coord_1_hash, coord_3_hash);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BlockFace {
+    Bottom,
+    Top,
+    North,
+    South,
+    West,
+    East,
 }
