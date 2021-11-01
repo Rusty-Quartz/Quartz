@@ -20,6 +20,9 @@ mod base;
 pub mod block;
 /// Defines a brigadier-like command system for rust.
 pub mod command;
+
+
+pub mod entities;
 /// Contains all relevant code to items and their implementations.
 pub mod item;
 
@@ -28,5 +31,6 @@ pub mod network;
 pub mod scheduler;
 /// Contains world and chunk implementations, including chunk I/O utilities.
 pub mod world;
+
 
 pub use base::*;

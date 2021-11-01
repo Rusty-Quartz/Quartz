@@ -26,7 +26,7 @@ dashmap = "4.0.2"
 enum_dispatch = "0.3.7"
 flate2 = "1.0.20"
 futures-util = "0.3.16"
-hecs = {git = "https://github.com/Rusty-Quartz/checs"}
+hecs = {git = "https://github.com/Rusty-Quartz/checs", features = ["macros"]}
 hex = "0.4.3"
 linefeed = "0.6.0"
 log = "0.4.14"
