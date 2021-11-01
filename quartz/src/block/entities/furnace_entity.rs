@@ -71,13 +71,13 @@ impl BlockEntity for FurnaceBlockEntity {
             if self.cook_time > self.cook_time_total {
                 self.items.insert(
                     2,
-                    ItemStack::new(get_item(UlnStr::minecraft("stone")).unwrap()),
+                    ItemStack::new(get_item(UlnStr::minecraft("stone")).unwrap()).into(),
                 );
             }
         } else if self.items.get(2).is_empty() {
             self.items.insert(
                 2,
-                ItemStack::new(get_item(UlnStr::minecraft("stone")).unwrap()),
+                ItemStack::new(get_item(UlnStr::minecraft("stone")).unwrap()).into(),
             );
         } else {
             self.items.increment(2);
