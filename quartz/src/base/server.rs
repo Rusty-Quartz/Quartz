@@ -6,7 +6,7 @@ use crate::{
     item::init_items,
     network::*,
     raw_console,
-    world::chunk::ChunkProvider,
+    world::world::WorldStore,
     Registry,
     RUNNING,
 };
@@ -51,8 +51,10 @@ pub struct QuartzServer {
     pub(crate) client_list: ClientList,
     /// The join handle for the console command handler thread.
     console_command_handler: Option<JoinHandle<()>>,
-    /// The ChunckProvider
-    pub chunk_provider: ChunkProvider,
+    // / The ChunckProvider
+    // pub chunk_provider: ChunkProvider,
+    ///The World manager
+    pub world_store: WorldStore,
     tcp_server_runtime: Option<Runtime>,
     /// A cloneable channel to send packets to the main server thread.
     sync_packet_sender: Sender<WrappedServerBoundPacket>,
@@ -82,8 +84,7 @@ impl QuartzServer {
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
             console_command_handler: None,
-            chunk_provider: ChunkProvider::new("world", "./world/region")
-                .expect("Error making chunk provider"),
+            world_store: WorldStore::new("./world").expect("Error making world store"),
             tcp_server_runtime,
         }
     }
@@ -289,7 +290,7 @@ impl QuartzServer {
     pub(crate) async fn tick(&mut self) {
         self.handle_packets().await;
         self.client_list.update_keep_alive();
-        self.chunk_provider.flush_ready().await;
+        self.world_store.flush_ready().await;
     }
 
     async fn handle_packets(&mut self) {

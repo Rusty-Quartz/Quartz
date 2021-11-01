@@ -1,11 +1,18 @@
 use crate::{
+    block::{BlockStateImpl, StaticBlockState},
     config,
+    entities::{
+        player::{Player, PlayerInventory},
+        Position,
+    },
+    item::{get_item, get_item_list, Inventory, ItemStack, EMPTY_ITEM_STACK},
     network::{packet_data::*, *},
     server::{self, ClientId, QuartzServer},
-    world::chunk::provider::ProviderRequest,
+    world::{chunk::provider::ProviderRequest, world::Dimension},
+    StaticRegistry,
 };
 use qdat::{
-    world::location::{BlockPosition, Coordinate},
+    world::location::{BlockFace, BlockPosition, Coordinate},
     Gamemode,
 };
 
@@ -452,12 +459,33 @@ impl QuartzServer {
         sender: ClientId,
         hand: i32,
         location: &BlockPosition,
-        face: i32,
+        face: &BlockFace,
         cursor_position_x: f32,
         cursor_position_y: f32,
         cursor_position_z: f32,
         inside_block: bool,
     ) {
+        let world = self.world_store.get_player_world_mut(sender).unwrap();
+        let curr_item = {
+            let player_entity = *world.get_player_entity(sender).unwrap();
+            let entities = world.get_entities().await;
+            let player_inv = entities.get::<PlayerInventory>(player_entity).unwrap();
+            player_inv.current_slot()
+        };
+
+        if let Some(i) = curr_item.item() {
+            let mut chunk = world.get_loaded_chunk_mut((*location).into()).unwrap();
+            // TODO: change this over to using block items to allow conversions between items and blocks
+            if let Some(s) = StaticRegistry::default_state(&i.item.id) {
+                let offset_pos = (*location).face_offset(face);
+                let last_state = chunk.set_block_state_at(offset_pos, s.id());
+                self.client_list
+                    .send_to_all(|_| ClientBoundPacket::BlockChange {
+                        location: offset_pos,
+                        block_id: s.id() as i32,
+                    });
+            };
+        }
     }
 
     #[allow(unused_variables)]
@@ -509,6 +537,35 @@ impl QuartzServer {
         slot: i16,
         clicked_item: &Slot,
     ) {
+        if slot != -1 {
+            let world = self.world_store.get_player_world_mut(sender).unwrap();
+            let player_entity = *world.get_player_entity(sender).unwrap();
+            let entities = world.get_entities_mut().await;
+            let mut player_inv = entities.get_mut::<PlayerInventory>(player_entity).unwrap();
+
+            if clicked_item.present {
+                player_inv.set_slot(
+                    slot as usize,
+                    ItemStack::new(
+                        get_item_list()
+                            .iter()
+                            .nth(clicked_item.item_id.unwrap() as usize)
+                            .unwrap()
+                            .1,
+                    )
+                    .into(),
+                );
+            } else {
+                player_inv.set_slot(slot as usize, EMPTY_ITEM_STACK);
+            }
+
+            self.client_list
+                .send_packet(sender, ClientBoundPacket::SetSlot {
+                    window_id: 0,
+                    slot: slot as i16,
+                    slot_data: clicked_item.clone(),
+                });
+        }
     }
 
     #[allow(unused_variables)]
@@ -542,7 +599,20 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_held_item_change(&mut self, sender: ClientId, slot: i16) {}
+    async fn handle_held_item_change(&mut self, sender: ClientId, slot: i16) {
+        let world = self.world_store.get_player_world_mut(sender).unwrap();
+        let player_entity = *world.get_player_entity(sender).unwrap();
+        world
+            .get_entities_mut()
+            .await
+            .get_mut::<PlayerInventory>(player_entity)
+            .unwrap()
+            .set_curr_slot(slot as u8 + 36);
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::HeldItemChange {
+                slot: slot as i8,
+            })
+    }
 
     #[allow(unused_variables)]
     async fn handle_set_beacon_effect(
@@ -614,7 +684,7 @@ impl QuartzServer {
         sender: ClientId,
         status: i32,
         location: &BlockPosition,
-        face: i8,
+        face: &BlockFace,
     ) {
     }
 
@@ -847,61 +917,76 @@ impl QuartzServer {
                 chunk_z: 0,
             });
 
+        self.world_store
+            .spawn_player(
+                Dimension::Overworld,
+                sender,
+                Player::new(
+                    Gamemode::Creative,
+                    Position {
+                        x: 0.,
+                        y: 60.,
+                        z: 0.,
+                    },
+                    self.client_list.create_write_handle(sender).unwrap(),
+                ),
+            )
+            .await;
+
         let write_handle = self.client_list.create_write_handle(sender).unwrap();
+        let player_world = self.world_store.get_player_world_mut(sender).unwrap();
         let start = Instant::now();
         for x in -view_distance .. view_distance {
             for z in -view_distance .. view_distance {
                 let coords = Coordinate::chunk(x as i32, z as i32);
-                self.chunk_provider.request(ProviderRequest::MinLoadSend {
-                    coords,
-                    handle: write_handle.clone(),
-                });
-                // self.chunk_provider
-                //     .request(ProviderRequest::LoadFull(coords));
+                player_world.load_chunk(coords);
             }
         }
-        // self.chunk_provider.join_pending().await;
+        player_world.join_pending().await;
         let elapsed = start.elapsed();
         log::info!("Chunk load time: {:?}", elapsed);
 
-        // let start = Instant::now();
-        // let vd = view_distance as u8 as usize;
-        // let mut packets = Vec::with_capacity(vd * vd);
-        // for chunk in self.chunk_provider.store.loaded_chunks() {
-        //     let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
+        let start = Instant::now();
+        let vd = view_distance as u8 as usize;
+        let mut packets = Vec::with_capacity(vd * vd);
+        for x in -view_distance .. view_distance {
+            for z in -view_distance .. view_distance {
+                let chunk_coords = Coordinate::chunk(x as i32, z as i32);
+                let chunk = player_world.get_loaded_chunk(chunk_coords).unwrap();
+                let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
 
-        //     let chunk_coords: CoordinatePair = chunk.coordinates().as_chunk().into();
+                packets.push(ClientBoundPacket::ChunkData {
+                    chunk_x: chunk_coords.x(),
+                    chunk_z: chunk_coords.z(),
+                    primary_bit_mask,
+                    heightmaps: chunk.get_heightmaps(),
+                    biomes: Box::from(chunk.biomes()),
+                    // TODO: send block entities for chunk when we support them
+                    block_entities: vec![].into_boxed_slice(),
+                    data: section_data,
+                });
 
-        //     packets.push(ClientBoundPacket::ChunkData {
-        //         chunk_x: chunk_coords.x,
-        //         chunk_z: chunk_coords.z,
-        //         primary_bit_mask: primary_bit_mask,
-        //         heightmaps: chunk.get_heightmaps(),
-        //         biomes: Box::from(chunk.biomes()),
-        //         // TODO: send block entities for chunk when we support them
-        //         block_entities: vec![].into_boxed_slice(),
-        //         data: section_data,
-        //     });
+                let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) =
+                    chunk.gen_sky_lights();
+                let (block_light_mask, empty_block_light_mask, block_light_arrays) =
+                    chunk.gen_block_lights();
 
-        //     let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) = chunk.gen_sky_lights();
-        //     let (block_light_mask, empty_block_light_mask, block_light_arrays) =
-        //         chunk.gen_block_lights();
-
-        //     packets.push(ClientBoundPacket::UpdateLight {
-        //         chunk_x: chunk_coords.x,
-        //         chunk_z: chunk_coords.z,
-        //         trust_edges: true,
-        //         sky_light_mask,
-        //         block_light_mask,
-        //         empty_sky_light_mask,
-        //         empty_block_light_mask,
-        //         sky_light_arrays,
-        //         block_light_arrays,
-        //     });
-        // }
-        // self.client_list.send_all(sender, packets).await;
-        // let elapsed = start.elapsed();
-        // log::info!("Chunk and light send time: {:?}", elapsed);
+                packets.push(ClientBoundPacket::UpdateLight {
+                    chunk_x: chunk_coords.x(),
+                    chunk_z: chunk_coords.z(),
+                    trust_edges: true,
+                    sky_light_mask,
+                    block_light_mask,
+                    empty_sky_light_mask,
+                    empty_block_light_mask,
+                    sky_light_arrays,
+                    block_light_arrays,
+                });
+            }
+        }
+        self.client_list.send_all(sender, packets);
+        let elapsed = start.elapsed();
+        log::info!("Chunk and light send time: {:?}", elapsed);
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::SpawnPosition {
