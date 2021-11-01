@@ -4,6 +4,7 @@ use qdat::{
         lighting::{LightBuffer, LIGHTING_LENGTH},
         location::BlockPosition,
     },
+    Gamemode,
     UnlocalizedName,
 };
 use quartz_chat::Component;
@@ -372,7 +373,7 @@ pub enum PlayerInfoAction {
         #[packet_serde(len_prefixed)]
         properties: Box<[PlayerProperty]>,
         #[packet_serde(varying)]
-        gamemode: i32,
+        gamemode: Gamemode,
         #[packet_serde(varying)]
         ping: i32,
         #[packet_serde(bool_prefixed)]
@@ -380,7 +381,7 @@ pub enum PlayerInfoAction {
     },
     UpdateGamemode {
         #[packet_serde(varying)]
-        gamemode: i32,
+        gamemode: Gamemode,
     },
     UpdateLatency {
         #[packet_serde(varying)]
@@ -1035,5 +1036,39 @@ impl WriteToPacket for LightBuffer {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         buffer.write_varying(&(LIGHTING_LENGTH as i32));
         buffer.write_bytes(self.data.as_ref())
+    }
+}
+
+impl WriteToPacket for Gamemode {
+    fn write_to(&self, buffer: &mut PacketBuffer) {
+        match self {
+            Self::Survival => buffer.write_one(0_u8),
+            Self::Creative => buffer.write_one(1_u8),
+            Self::Adventure => buffer.write_one(2_u8),
+            Self::Specator => buffer.write_one(3_u8),
+            Self::None => buffer.write_one(-1_i8 as u8),
+        }
+    }
+}
+
+impl ReadFromPacket for Gamemode {
+    fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        Ok(match buffer.read::<u8>()? {
+            0 => Self::Survival,
+            1 => Self::Creative,
+            2 => Self::Adventure,
+            3 => Self::Specator,
+            _ => Self::None,
+        })
+    }
+
+    fn varying_read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
+        Ok(match buffer.read_varying::<i32>()? {
+            0 => Self::Survival,
+            1 => Self::Creative,
+            2 => Self::Adventure,
+            3 => Self::Specator,
+            _ => Self::None,
+        })
     }
 }

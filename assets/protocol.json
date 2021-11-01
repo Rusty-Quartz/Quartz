@@ -1846,11 +1846,11 @@
           },
           {
             "name": "gamemode",
-            "type": "u8"
+            "type": "gamemode"
           },
           {
             "name": "previous_gamemode",
-            "type": "i8"
+            "type": "gamemode"
           },
           {
             "name": "world_names",
@@ -2450,11 +2450,11 @@
           },
           {
             "name": "gamemode",
-            "type": "u8"
+            "type": "gamemode"
           },
           {
             "name": "previous_gamemode",
-            "type": "u8"
+            "type": "gamemode"
           },
           {
             "name": "is_debug",

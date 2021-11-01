@@ -4,7 +4,10 @@ use crate::{
     server::{self, ClientId, QuartzServer},
     world::chunk::provider::ProviderRequest,
 };
-use qdat::world::location::{BlockPosition, Coordinate};
+use qdat::{
+    world::location::{BlockPosition, Coordinate},
+    Gamemode,
+};
 
 use hex::ToHex;
 use log::{debug, error};
@@ -335,8 +338,8 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::JoinGame {
                 entity_id: 0,
                 is_hardcore: false,
-                gamemode: 1,
-                previous_gamemode: -1,
+                gamemode: Gamemode::Creative,
+                previous_gamemode: Gamemode::None,
                 world_names: vec![UnlocalizedName::minecraft("overworld")].into_boxed_slice(),
                 dimension_codec,
                 dimension,
@@ -812,14 +815,14 @@ impl QuartzServer {
             });
 
         self.client_list
-            .send_packet(sender, ClientBoundPacket::PlayerInfo {
+            .send_to_all(|_| ClientBoundPacket::PlayerInfo {
                 action: 0,
                 player: vec![WrappedPlayerInfoAction {
                     uuid: Uuid::new_v4(),
                     action: PlayerInfoAction::AddPlayer {
-                        name: "Test".to_owned(),
+                        name: self.client_list.username(sender).unwrap().to_string(),
                         properties: vec![].into_boxed_slice(),
-                        gamemode: 0,
+                        gamemode: Gamemode::Creative,
                         ping: 120,
                         display_name: None,
                     },
