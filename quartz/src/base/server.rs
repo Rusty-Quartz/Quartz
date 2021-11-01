@@ -462,6 +462,15 @@ impl ClientList {
     fn iter(&self) -> ClientListIter<'_> {
         ClientListIter(self.0.iter())
     }
+
+    pub fn set_username(&mut self, client_id: ClientId, username: &str) -> Option<()> {
+        self.0.get_mut(&client_id)?.username = username.to_string();
+        Some(())
+    }
+
+    pub fn username(&self, client_id: ClientId) -> Option<&str> {
+        Some(self.0.get(&client_id)?.username())
+    }
 }
 
 struct ClientListIter<'a>(std::collections::hash_map::Iter<'a, ClientId, Client>);
@@ -486,6 +495,7 @@ struct Client {
     pub player_id: Option<usize>,
     keep_alive_id: Option<i64>,
     last_keep_alive_exchange: Instant,
+    username: String,
 }
 
 impl Client {
@@ -495,6 +505,7 @@ impl Client {
             player_id: None,
             keep_alive_id: None,
             last_keep_alive_exchange: Instant::now(),
+            username: Default::default(),
         }
     }
 
@@ -522,6 +533,10 @@ impl Client {
         }
 
         true
+    }
+
+    fn username(&self) -> &str {
+        &self.username
     }
 }
 

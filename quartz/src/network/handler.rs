@@ -293,8 +293,9 @@ impl QuartzServer {
         &mut self,
         sender: ClientId,
         _uuid: Uuid,
-        _username: &str,
+        username: &str,
     ) {
+        self.client_list.set_username(sender, username);
         // let config = config().lock().await;
 
         /*
