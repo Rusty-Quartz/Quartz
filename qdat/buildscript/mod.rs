@@ -1,5 +1,8 @@
 mod blockstate;
 pub use blockstate::gen_blockstates;
+mod item_info;
+mod items;
+pub use items::gen_items;
 
 use std::{ffi::OsStr, process::Command};
 

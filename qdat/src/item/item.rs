@@ -1,10 +1,12 @@
-use crate::{item::ItemInfo, UnlocalizedName};
+use crate::item::*;
+
+include!(concat!(env!("OUT_DIR"), "/items_output.rs"));
 
 /// Represents a minecraft item
 #[derive(Debug)]
 pub struct Item {
     /// The item id
-    pub id: UnlocalizedName,
+    pub id: &'static str,
     pub num_id: u16,
     /// The max size a stack can be
     pub stack_size: u8,

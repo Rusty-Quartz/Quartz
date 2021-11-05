@@ -45,13 +45,14 @@ pub fn init_items() {
             name
         );
 
-        item_list.insert(uln.clone(), Item {
-            id: uln,
-            num_id: i as u16,
-            stack_size: raw_data.stack_size,
-            rarity: raw_data.rarity,
-            item_info: raw_data.info,
-        });
+        // NOTE: this is disabled because I don't feel like trying to make the id an &'static str
+        // item_list.insert(uln.clone(), Item {
+        //     id: uln.identifier(),
+        //     num_id: i as u16,
+        //     stack_size: raw_data.stack_size,
+        //     rarity: raw_data.rarity,
+        //     item_info: raw_data.info,
+        // });
     }
 
     if ITEM_LIST.set(item_list).is_err() {
