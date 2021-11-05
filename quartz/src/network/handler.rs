@@ -1,15 +1,14 @@
 use crate::{
-    block::{BlockStateImpl, StaticBlockState},
+    block::{BlockStateImpl},
     config,
     entities::{
         player::{Player, PlayerInventory},
         Position,
     },
-    item::{get_item, get_item_list, Inventory, ItemStack, EMPTY_ITEM_STACK},
+    item::{ItemStack, EMPTY_ITEM_STACK},
     network::{packet_data::*, *},
     server::{self, ClientId, QuartzServer},
-    world::{chunk::provider::ProviderRequest, world::Dimension},
-    StaticRegistry,
+    world::world::Dimension,
 };
 use qdat::{
     world::location::{BlockFace, BlockPosition, Coordinate},
@@ -476,7 +475,7 @@ impl QuartzServer {
         if let Some(i) = curr_item.item() {
             let mut chunk = world.get_loaded_chunk_mut((*location).into()).unwrap();
             // TODO: change this over to using block items to allow conversions between items and blocks
-            if let Some(s) = StaticRegistry::default_state(&i.item.id) {
+            if let Some(s) = qdat::item::item_to_block(i.item) {
                 let offset_pos = (*location).face_offset(face);
                 let last_state = chunk.set_block_state_at(offset_pos, s.id());
                 self.client_list
@@ -547,11 +546,9 @@ impl QuartzServer {
                 player_inv.set_slot(
                     slot as usize,
                     ItemStack::new(
-                        get_item_list()
-                            .iter()
-                            .nth(clicked_item.item_id.unwrap() as usize)
-                            .unwrap()
-                            .1,
+                        qdat::item::ITEM_LOOKUP_BY_NUMERIC_ID
+                            .get(&clicked_item.item_id.unwrap())
+                            .unwrap(),
                     )
                     .into(),
                 );
