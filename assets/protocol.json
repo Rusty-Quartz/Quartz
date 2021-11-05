@@ -486,7 +486,7 @@
           {
             "name": "face",
             "type": "facing",
-            "deserialize_with": "buffer.read_varying::<qdat::world::location::Facing>()?"
+            "deserialize_with": "buffer.read_varying::<qdat::world::location::BlockFace>()?"
           }
         ]
       },
