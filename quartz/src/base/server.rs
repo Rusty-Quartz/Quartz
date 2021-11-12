@@ -51,8 +51,6 @@ pub struct QuartzServer {
     pub(crate) client_list: ClientList,
     /// The join handle for the console command handler thread.
     console_command_handler: Option<JoinHandle<()>>,
-    // / The ChunckProvider
-    // pub chunk_provider: ChunkProvider,
     ///The World manager
     pub world_store: WorldStore,
     tcp_server_runtime: Option<Runtime>,
