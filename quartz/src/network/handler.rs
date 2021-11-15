@@ -1,5 +1,6 @@
 use crate::{
-    block::{BlockStateImpl},
+    command::{CommandContext, CommandSender},
+    command_executor,
     config,
     entities::{
         player::{Player, PlayerInventory},
@@ -25,6 +26,7 @@ use openssl::{
 };
 use qdat::UnlocalizedName;
 use quartz_chat::{color::PredefinedColor, Component};
+use quartz_commands::CommandModule;
 use quartz_nbt::NbtCompound;
 use rand::{thread_rng, Rng};
 use regex::Regex;
@@ -298,10 +300,12 @@ impl QuartzServer {
     pub(crate) async fn handle_login_success_server(
         &mut self,
         sender: ClientId,
-        _uuid: Uuid,
+        uuid: Uuid,
         username: &str,
     ) {
         self.client_list.set_username(sender, username);
+        log::debug!("{}", uuid);
+        self.client_list.set_uuid(sender, uuid);
         // let config = config().lock().await;
 
         /*
@@ -844,6 +848,9 @@ impl QuartzServer {
         main_hand: i32,
         disable_text_filtering: bool,
     ) {
+        // Unwrap is safe because we're guarrenteed to have a uuid at this point
+        let uuid = *self.client_list.uuid(sender).unwrap();
+
         self.client_list
             .send_packet(sender, ClientBoundPacket::HeldItemChange { slot: 0 });
 
@@ -886,7 +893,7 @@ impl QuartzServer {
             .send_to_all(|_| ClientBoundPacket::PlayerInfo {
                 action: 0,
                 player: vec![WrappedPlayerInfoAction {
-                    uuid: Uuid::new_v4(),
+                    uuid,
                     action: PlayerInfoAction::AddPlayer {
                         name: self.client_list.username(sender).unwrap().to_string(),
                         properties: vec![].into_boxed_slice(),
@@ -902,7 +909,7 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::PlayerInfo {
                 action: 2,
                 player: vec![WrappedPlayerInfoAction {
-                    uuid: Uuid::new_v4(),
+                    uuid,
                     action: PlayerInfoAction::UpdateLatency { ping: 12 },
                 }]
                 .into_boxed_slice(),
@@ -1008,7 +1015,22 @@ impl QuartzServer {
     async fn handle_client_status(&mut self, sender: ClientId, action_id: i32) {}
 
     #[allow(unused_variables)]
-    async fn handle_chat_message(&mut self, sender: ClientId, messag: &str) {}
+    async fn handle_chat_message(&mut self, sender: ClientId, message: &str) {
+        if let Some(command) = message.strip_prefix('/') {
+            let write_handle = self.client_list.create_write_handle(sender).unwrap();
+            let executor = command_executor();
+            let ctx = CommandContext::new(self, &*executor, CommandSender::Client(write_handle));
+
+            match executor.dispatch(command, ctx) {
+                Ok(_) => {}
+                // This technically should send a text component colored red for the error
+                // but that would require reworking the api to send messages so im just not going to yet
+                Err(e) => self.client_list.send_system_message(sender, &e).unwrap(),
+            };
+        } else {
+            self.client_list.send_chat(sender, message);
+        }
+    }
 
     #[allow(unused_variables)]
     async fn handle_set_difficulty(&mut self, sender: ClientId, new_difficulty: i8) {}

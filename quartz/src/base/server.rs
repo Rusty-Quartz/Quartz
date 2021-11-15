@@ -20,6 +20,11 @@ use linefeed::{
 use log::*;
 use openssl::rsa::Rsa;
 use parking_lot::Mutex;
+use quartz_chat::{
+    component::{ClickEvent, ComponentType, HoverEntity, HoverEvent},
+    Component,
+    ComponentBuilder,
+};
 use quartz_net::*;
 use rand::{thread_rng, Rng};
 use std::{
@@ -40,6 +45,7 @@ use tokio::{
     runtime::{Builder, Runtime},
     task,
 };
+use uuid::Uuid;
 
 /// The string form of the minecraft version quartz currently supports.
 pub const VERSION: &str = "1.17";
@@ -467,8 +473,31 @@ impl ClientList {
         Some(())
     }
 
+    pub fn set_uuid(&mut self, client_id: ClientId, uuid: Uuid) -> Option<()> {
+        self.0.get_mut(&client_id)?.uuid = uuid;
+        Some(())
+    }
+
     pub fn username(&self, client_id: ClientId) -> Option<&str> {
         Some(self.0.get(&client_id)?.username())
+    }
+
+    pub fn uuid(&self, client_id: ClientId) -> Option<&Uuid> {
+        Some(self.0.get(&client_id)?.uuid())
+    }
+
+    pub fn send_chat(&self, client_id: ClientId, message: &str) -> Option<()> {
+        let uuid = *self.uuid(client_id)?;
+        let username = self.username(client_id)?;
+
+        self.iter()
+            .for_each(|(_, c)| c.send_message(message, Some((uuid, username))));
+        Some(())
+    }
+
+    pub fn send_system_message(&self, client_id: ClientId, message: &str) -> Option<()> {
+        self.0.get(&client_id)?.send_message(message, None);
+        Some(())
     }
 }
 
@@ -495,6 +524,8 @@ struct Client {
     keep_alive_id: Option<i64>,
     last_keep_alive_exchange: Instant,
     username: String,
+    // The minecraft uuid of the client
+    uuid: Uuid,
 }
 
 impl Client {
@@ -505,6 +536,7 @@ impl Client {
             keep_alive_id: None,
             last_keep_alive_exchange: Instant::now(),
             username: Default::default(),
+            uuid: Uuid::default(),
         }
     }
 
@@ -536,6 +568,46 @@ impl Client {
 
     fn username(&self) -> &str {
         &self.username
+    }
+
+    fn uuid(&self) -> &Uuid {
+        &self.uuid
+    }
+
+    fn send_message(&self, message: &str, user_info: Option<(Uuid, &str)>) {
+        match user_info {
+            Some((uuid, username)) => self.connection.send_packet(ClientBoundPacket::ChatMessage {
+                sender: uuid,
+                position: 0,
+                json_data: Box::new(Component {
+                    component_type: ComponentType::translate(
+                        "chat.type.text".to_owned(),
+                        Some(vec![
+                            ComponentBuilder::empty()
+                                .click_event(ClickEvent::suggest_command(format!(
+                                    "/tell {} ",
+                                    username
+                                )))
+                                .hover_event(HoverEvent::show_entity(HoverEntity {
+                                    id: uuid.to_string(),
+                                    name: Some(Component::text(username)),
+                                    entity_type: Some("minecraft:player".to_owned()),
+                                }))
+                                .insertion(username.to_owned())
+                                .add_text(username)
+                                .build(),
+                            Component::text(message),
+                        ]),
+                    ),
+                    ..Default::default()
+                }),
+            }),
+            None => self.connection.send_packet(ClientBoundPacket::ChatMessage {
+                sender: Uuid::from_u128(0),
+                position: 1,
+                json_data: Box::new(Component::text(message)),
+            }),
+        }
     }
 }
 
