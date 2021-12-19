@@ -23,9 +23,9 @@ impl Inventory {
     /// Inserts an ItemStack into the given slot
     /// # Panics
     /// Panics if the index is out of range for the inventory, all calls should be prefixed with a can_insert call
-    pub fn insert(&mut self, index: usize, item: ItemStack) -> OptionalItemStack {
+    pub fn insert(&mut self, index: usize, item: OptionalItemStack) -> OptionalItemStack {
         let current_item = self.items[index].clone();
-        self.items[index] = OptionalItemStack::new(Some(item));
+        self.items[index] = item;
         current_item
     }
 
@@ -44,8 +44,13 @@ impl Inventory {
     }
 
     /// Tests if a slot can be inserted into
-    pub fn can_insert(&self, index: usize) -> bool {
+    pub const fn can_insert(&self, index: usize) -> bool {
         self.size > index && index > 0
+    }
+
+    /// Swaps the items in indecies `a` and `b`
+    pub fn swap(&mut self, a: usize, b: usize) {
+        self.items.swap(a, b);
     }
 
     /// Creates a new Inventory from a NbtCompound

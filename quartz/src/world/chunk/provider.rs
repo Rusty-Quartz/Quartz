@@ -693,12 +693,20 @@ impl Region {
             file_lock.read_exact(&mut buf).await?;
             let length = BigEndian::read_u32(&buf) as usize;
 
-            let mut buf: Vec<u8> = Vec::with_capacity(length);
-            unsafe {
-                buf.set_len(length);
-            }
+            // Safety:
+            // This is not UB because while the memory is uninitalized, u8s are still valid
+            // We are only ever reading from the file which does not depend on the memory in the Vec
+            // This allows us to avoid UB as the read will initialize the memory with valid data
+            #[allow(clippy::uninit_vec)]
+            let buf = {
+                let mut buf: Vec<u8> = Vec::with_capacity(length);
+                unsafe {
+                    buf.set_len(length);
+                }
 
-            file_lock.read_exact(&mut buf).await?;
+                file_lock.read_exact(&mut buf).await?;
+                buf
+            };
             drop(file_lock);
 
             Ok(buf)

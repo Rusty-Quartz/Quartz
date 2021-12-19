@@ -1,6 +1,7 @@
 use crate::{
     base::{BlockState, StateID},
     world::chunk::SectionStore,
+    Registry,
 };
 use qdat::world::{
     lighting::LightBuffer,
@@ -39,28 +40,20 @@ impl Chunk {
     }
 
     #[inline]
-    fn _section_index_absolute(&self, pos: BlockPosition) -> usize {
+    fn section_index_absolute(&self, pos: BlockPosition) -> usize {
         ((pos.x - self.block_offset.x)
             + (pos.z - self.block_offset.z) * 16
             + (pos.y as i32 % 16) * 256) as usize
     }
 
     #[inline]
-    pub fn block_state_at(&self, _absolute_position: BlockPosition) -> Option<&'static BlockState> {
-        // match self
-        //     .section_store
-        //     .section_mapping
-        //     .get((absolute_position.y as usize) >> 4)
-        //     .map(|&index| &self.section_store.sections[index as usize])
-        // {
-        //     Some(section) => Registry::state_for_id(
-        //         section.block_id(self.section_index_absolute(absolute_position))?,
-        //     ),
-        //     None => None,
-        // }
-
-        // TODO: re-implement
-        unimplemented!()
+    pub fn block_state_at(&self, absolute_position: BlockPosition) -> Option<&'static BlockState> {
+        match self.section_store.get(absolute_position.y as i8 >> 4) {
+            Some(section) => Registry::state_for_id(
+                section.block_state_at(self.section_index_absolute(absolute_position))?,
+            ),
+            None => None,
+        }
     }
 
     /// Sets the blockstate at the provided position to the new state
@@ -68,25 +61,14 @@ impl Chunk {
     /// Returns the old state
     pub fn set_block_state_at(
         &mut self,
-        _absolute_position: BlockPosition,
-        _state: StateID,
+        absolute_position: BlockPosition,
+        state: StateID,
     ) -> Option<&'static BlockState> {
-        // let index = self.section_index_absolute(absolute_position);
-        // match self
-        //     .section_store
-        //     .section_mapping
-        //     .get((absolute_position.y as usize) >> 4)
-        // {
-        //     Some(&section_index) => {
-        //         let last_state =
-        //             self.section_store.sections[section_index as usize].set_state(index, state)?;
-        //         Registry::state_for_id(last_state)
-        //     }
-        //     None => None,
-        // }
-
-        // TODO: re-implement
-        unimplemented!()
+        let index = self.section_index_absolute(absolute_position);
+        match self.section_store.get_mut(absolute_position.y as i8 >> 4) {
+            Some(section) => Registry::state_for_id(section.set_block_state_at(index, state)?),
+            None => None,
+        }
     }
 
     pub fn sections(&self) -> &SectionStore {

@@ -485,7 +485,8 @@
           },
           {
             "name": "face",
-            "type": "i8"
+            "type": "facing",
+            "deserialize_with": "buffer.read_varying::<qdat::world::location::BlockFace>()?"
           }
         ]
       },
@@ -851,7 +852,7 @@
           },
           {
             "name": "face",
-            "type": "varint"
+            "type": "facing"
           },
           {
             "name": "cursor_position_x",
@@ -1846,11 +1847,11 @@
           },
           {
             "name": "gamemode",
-            "type": "u8"
+            "type": "gamemode"
           },
           {
             "name": "previous_gamemode",
-            "type": "i8"
+            "type": "gamemode"
           },
           {
             "name": "world_names",
@@ -2450,11 +2451,11 @@
           },
           {
             "name": "gamemode",
-            "type": "u8"
+            "type": "gamemode"
           },
           {
             "name": "previous_gamemode",
-            "type": "u8"
+            "type": "gamemode"
           },
           {
             "name": "is_debug",

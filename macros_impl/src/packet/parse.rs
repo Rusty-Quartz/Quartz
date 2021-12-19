@@ -251,6 +251,7 @@ where
     Ok(fields)
 }
 
+#[derive(Default)]
 struct PacketSerdeParams {
     varying: bool,
     greedy: bool,
@@ -368,18 +369,7 @@ impl Parse for PacketSerdeParams {
     }
 }
 
-impl Default for PacketSerdeParams {
-    fn default() -> Self {
-        PacketSerdeParams {
-            varying: false,
-            greedy: false,
-            nbt: false,
-            len: None,
-            condition: None,
-        }
-    }
-}
-
+#[allow(clippy::large_enum_variant)]
 pub enum ArrayLength {
     Expr(Expr),
     Prefixed,
@@ -387,6 +377,7 @@ pub enum ArrayLength {
     None,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum OptionCondition {
     Expr(Expr),
     Prefixed,

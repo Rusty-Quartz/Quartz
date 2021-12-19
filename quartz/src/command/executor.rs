@@ -48,7 +48,7 @@ mod cmds {
             help: Help<'cmd>
         {
             root executes |ctx| {
-                ctx.sender.send_message(&Component::colored(
+                ctx.sender.send_message(Component::colored(
                     "-- Command List --".to_owned(),
                     PredefinedColor::Gold,
                 ));
@@ -56,12 +56,12 @@ mod cmds {
                 let command_names = ctx.executor.get_suggestions("", &ctx);
 
                 for command in command_names {
-                    ctx.sender.send_message(&Component::colored(
+                    ctx.sender.send_message(Component::colored(
                         command.to_owned(),
                         PredefinedColor::Gray,
                     ));
                 }
-                ctx.sender.send_message(&Component::colored(
+                ctx.sender.send_message(Component::colored(
                     "-- Use 'help [command]' to get more information --".to_owned(),
                     PredefinedColor::Gold,
                 ));
@@ -74,7 +74,7 @@ mod cmds {
             };
 
             help executes |ctx| {
-                ctx.sender.send_message(&Component::text("Gives information on commands"));
+                ctx.sender.send_message(Component::text("Gives information on commands"));
                 Ok(())
             };
 
@@ -91,7 +91,7 @@ mod cmds {
             };
 
             help executes |ctx| {
-                ctx.sender.send_message(&Component::text("Stops the server"));
+                ctx.sender.send_message(Component::text("Stops the server"));
                 Ok(())
             }
         }
@@ -126,7 +126,7 @@ mod cmds {
                 }
 
                 ctx.sender.send_message(
-                    &ComponentBuilder::new()
+                    ComponentBuilder::new()
                         .color(PredefinedColor::Gold)
                         .add_text("Server TPS: ")
                         .custom_color(red as u8, green as u8, 0)
@@ -143,7 +143,7 @@ mod cmds {
             };
 
             help executes |ctx| {
-                ctx.sender.send_message(&Component::text("Shows the server's TPS and MSPT"));
+                ctx.sender.send_message(Component::text("Shows the server's TPS and MSPT"));
                 Ok(())
             }
         }

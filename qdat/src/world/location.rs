@@ -11,7 +11,11 @@ pub struct BlockPosition {
 }
 
 impl BlockPosition {
-    pub fn from_u64(value: u64) -> Self {
+    // We have to have these be i64 instead of u64 because -i64 -> u64 produces an overflow
+    // so after the shifts we don't get the negative sign
+    // This doesn't make total sense to me but thats what I obsureved through testing
+
+    pub const fn from_i64(value: i64) -> Self {
         let x = (value >> 38) as i32;
         let y = (value & 0xFFF) as i16;
         let z = (value << 26 >> 38) as i32;
@@ -19,10 +23,22 @@ impl BlockPosition {
         BlockPosition { x, y, z }
     }
 
-    pub fn as_u64(&self) -> u64 {
-        ((self.x as u32 as u64 & 0x3FFFFFF) << 38)
-            | ((self.z as u32 as u64 & 0x3FFFFFF) << 12)
-            | (self.y as u16 as u64 & 0xFFF)
+    pub const fn as_i64(&self) -> i64 {
+        ((self.x as i64 & 0x3FFFFFF) << 38)
+            | ((self.z as i64 & 0x3FFFFFF) << 12)
+            | (self.y as i64 & 0xFFF)
+    }
+
+    pub const fn face_offset(mut self, facing: &BlockFace) -> BlockPosition {
+        match facing {
+            BlockFace::Bottom => self.y -= 1,
+            BlockFace::Top => self.y += 1,
+            BlockFace::North => self.z -= 1,
+            BlockFace::South => self.z += 1,
+            BlockFace::West => self.x -= 1,
+            BlockFace::East => self.x += 1,
+        }
+        self
     }
 }
 
@@ -61,24 +77,49 @@ impl Coordinate {
     pub const fn as_block(&self) -> Self {
         match self {
             Coordinate::Block(_) => *self,
-            &Coordinate::Chunk(pair) => Self::block(pair.x << 4, pair.z << 4),
-            &Coordinate::Region(pair) => Self::block(pair.x << 9, pair.z << 9),
+            &Coordinate::Chunk(pair) => Self::block(pair.x << 4_i32, pair.z << 4_i32),
+            &Coordinate::Region(pair) => Self::block(pair.x << 9_i32, pair.z << 9_i32),
         }
     }
 
     pub const fn as_chunk(&self) -> Self {
         match self {
-            &Coordinate::Block(pair) => Self::chunk(pair.x >> 4, pair.z >> 4),
+            &Coordinate::Block(pair) => Self::chunk(pair.x >> 4_i32, pair.z >> 4_i32),
             Coordinate::Chunk(_) => *self,
-            &Coordinate::Region(pair) => Self::chunk(pair.x << 5, pair.z << 5),
+            &Coordinate::Region(pair) => Self::chunk(pair.x << 5_i32, pair.z << 5_i32),
         }
     }
 
     pub const fn as_region(&self) -> Self {
         match self {
-            &Coordinate::Block(pair) => Self::region(pair.x >> 9, pair.z >> 9),
-            &Coordinate::Chunk(pair) => Self::region(pair.x >> 5, pair.z >> 5),
+            &Coordinate::Block(pair) => Self::region(pair.x >> 9_i32, pair.z >> 9_i32),
+            &Coordinate::Chunk(pair) => Self::region(pair.x >> 5_i32, pair.z >> 5_i32),
             Coordinate::Region(_) => *self,
+        }
+    }
+
+    pub const fn x(&self) -> i32 {
+        match *self {
+            Coordinate::Block(pair) => pair.x,
+            Coordinate::Chunk(pair) => pair.x,
+            Coordinate::Region(pair) => pair.x,
+        }
+    }
+
+    pub const fn z(&self) -> i32 {
+        match *self {
+            Coordinate::Block(pair) => pair.z,
+            Coordinate::Chunk(pair) => pair.z,
+            Coordinate::Region(pair) => pair.z,
+        }
+    }
+
+    pub const fn as_block_pos(&self, y: i16) -> BlockPosition {
+        let b = self.as_block();
+        BlockPosition {
+            x: b.x(),
+            y,
+            z: b.z(),
         }
     }
 }
@@ -100,6 +141,18 @@ impl Debug for Coordinate {
             Coordinate::Chunk(CoordinatePair { x, z }) => write!(f, "C({}, {})", x, z),
             Coordinate::Region(CoordinatePair { x, z }) => write!(f, "R({}, {})", x, z),
         }
+    }
+}
+
+impl From<BlockPosition> for Coordinate {
+    fn from(coord: BlockPosition) -> Self {
+        Self::Block(CoordinatePair::new(coord.x, coord.z))
+    }
+}
+
+impl From<&BlockPosition> for Coordinate {
+    fn from(coord: &BlockPosition) -> Self {
+        Self::Block(CoordinatePair::new(coord.x, coord.z))
     }
 }
 
@@ -167,4 +220,14 @@ fn hash_partial_eq_test() {
     let coord_3_hash = hasher.finish();
     assert_ne!(coord_1_hash, coord_2_hash);
     assert_eq!(coord_1_hash, coord_3_hash);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BlockFace {
+    Bottom,
+    Top,
+    North,
+    South,
+    West,
+    East,
 }

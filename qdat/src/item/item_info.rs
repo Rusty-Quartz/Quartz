@@ -67,7 +67,7 @@ pub enum ItemInfo {
 
 impl ItemInfo {
     /// Gets the max durability of an item
-    pub fn max_durability(&self) -> u32 {
+    pub const fn max_durability(&self) -> u32 {
         match self {
             ItemInfo::FoodInfo { .. } => 0,
             ItemInfo::ArmorInfo { max_durability, .. } => *max_durability,
@@ -103,7 +103,7 @@ pub enum ToolLevel {
 
 impl ToolLevel {
     /// The max durability of the tool based on its level
-    pub fn max_durability(&self) -> u32 {
+    pub const fn max_durability(&self) -> u32 {
         match self {
             ToolLevel::Wood => 59,
             ToolLevel::Gold => 32,

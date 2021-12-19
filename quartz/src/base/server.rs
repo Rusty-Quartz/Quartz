@@ -6,7 +6,7 @@ use crate::{
     item::init_items,
     network::*,
     raw_console,
-    world::chunk::ChunkProvider,
+    world::world::WorldStore,
     Registry,
     RUNNING,
 };
@@ -20,6 +20,11 @@ use linefeed::{
 use log::*;
 use openssl::rsa::Rsa;
 use parking_lot::Mutex;
+use quartz_chat::{
+    component::{ClickEvent, ComponentType, HoverEntity, HoverEvent},
+    Component,
+    ComponentBuilder,
+};
 use quartz_net::*;
 use rand::{thread_rng, Rng};
 use std::{
@@ -40,6 +45,7 @@ use tokio::{
     runtime::Runtime,
     task,
 };
+use uuid::Uuid;
 
 /// The string form of the minecraft version quartz currently supports.
 pub const VERSION: &str = "1.17";
@@ -52,8 +58,8 @@ pub struct QuartzServer {
     pub(crate) client_list: ClientList,
     /// The join handle for the console command handler thread.
     console_command_handler: Option<JoinHandle<()>>,
-    /// The ChunckProvider
-    pub chunk_provider: ChunkProvider,
+    ///The World manager
+    pub world_store: WorldStore,
     /// A cloneable channel to send packets to the main server thread.
     sync_packet_sender: Sender<WrappedServerBoundPacket>,
     /// The receiver for packets that need to be handled on the server thread.
@@ -70,10 +76,7 @@ impl QuartzServer {
         }
 
         let (sender, receiver) = mpsc::channel::<WrappedServerBoundPacket>();
-        let chunk_provider = ChunkProvider::new(
-            Arc::clone(&rt),
-            "./world/region"
-        ).expect("Error making chunk provider");
+        let world_store = WorldStore::new(Arc::clone(&rt), "./world").expect("Error making world store");
 
         QuartzServer {
             rt,
@@ -81,7 +84,7 @@ impl QuartzServer {
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
             console_command_handler: None,
-            chunk_provider,
+            world_store,
         }
     }
 
@@ -282,7 +285,7 @@ impl QuartzServer {
     pub(crate) async fn tick(&mut self) {
         self.handle_packets().await;
         self.client_list.update_keep_alive();
-        self.chunk_provider.flush_ready().await;
+        self.world_store.flush_ready().await;
     }
 
     async fn handle_packets(&mut self) {
@@ -338,9 +341,11 @@ impl Drop for QuartzServer {
     }
 }
 
+pub type ClientId = usize;
+
 /// A thread-safe wrapper around a map of clients and their connection IDs.
 #[repr(transparent)]
-pub struct ClientList(HashMap<usize, Client>);
+pub struct ClientList(HashMap<ClientId, Client>);
 
 impl ClientList {
     /// Creates a new, empty client list.
@@ -349,12 +354,12 @@ impl ClientList {
     }
 
     /// Adds a new client with the given ID and write handle.
-    pub fn add_client(&mut self, client_id: usize, connection: AsyncWriteHandle) {
+    pub fn add_client(&mut self, client_id: ClientId, connection: AsyncWriteHandle) {
         self.0.insert(client_id, Client::new(connection));
     }
 
     /// Removes the client with the given ID.
-    pub fn remove_client(&mut self, client_id: usize) {
+    pub fn remove_client(&mut self, client_id: ClientId) {
         self.0.remove(&client_id);
     }
 
@@ -367,13 +372,13 @@ impl ClientList {
             .count()
     }
 
-    pub fn create_write_handle(&self, client_id: usize) -> Option<AsyncWriteHandle> {
+    pub fn create_write_handle(&self, client_id: ClientId) -> Option<AsyncWriteHandle> {
         self.0
             .get(&client_id)
             .map(|client| client.connection.clone())
     }
 
-    pub fn start_keep_alive(&mut self, client_id: usize) {
+    pub fn start_keep_alive(&mut self, client_id: ClientId) {
         match self.0.get_mut(&client_id) {
             Some(client) => {
                 let keep_alive_id = thread_rng().gen();
@@ -387,7 +392,7 @@ impl ClientList {
         }
     }
 
-    pub fn handle_keep_alive(&mut self, client_id: usize, keep_alive_id: i64) {
+    pub fn handle_keep_alive(&mut self, client_id: ClientId, keep_alive_id: i64) {
         match self.0.get_mut(&client_id) {
             Some(client) =>
                 if client.keep_alive_id == Some(keep_alive_id) {
@@ -404,14 +409,14 @@ impl ClientList {
     }
 
     /// Sends a packet to the client with the given ID.
-    pub fn send_packet(&self, client_id: usize, packet: ClientBoundPacket) {
+    pub fn send_packet(&self, client_id: ClientId, packet: ClientBoundPacket) {
         match self.0.get(&client_id) {
             Some(client) => client.connection.send_packet(packet),
             None => warn!("Attempted to send packet to disconnected client."),
         }
     }
 
-    pub fn send_all<I>(&self, client_id: usize, packets: I)
+    pub fn send_all<I>(&self, client_id: ClientId, packets: I)
     where I: IntoIterator<Item = ClientBoundPacket> {
         match self.0.get(&client_id) {
             Some(client) => client.connection.send_all(packets),
@@ -420,11 +425,75 @@ impl ClientList {
     }
 
     /// Sends a raw byte buffer to the client with the given ID.
-    pub fn send_buffer(&self, client_id: usize, buffer: PacketBuffer) {
+    pub fn send_buffer(&self, client_id: ClientId, buffer: PacketBuffer) {
         match self.0.get(&client_id) {
             Some(client) => client.connection.send_packet(buffer),
             None => warn!("Attempted to send buffer to disconnected client."),
         }
+    }
+
+    /// Sends a packet to every client connected
+    pub fn send_to_all<P>(&self, packet: P)
+    where P: Fn(&ClientId) -> ClientBoundPacket {
+        self.iter()
+            .for_each(|(id, client)| client.connection.send_packet(packet(id)));
+    }
+
+    /// Sends a packet to every client that passes the provided filter
+    pub fn send_to_filtered<F, P>(&self, packet: P, filter: F)
+    where
+        F: Fn(&&ClientId) -> bool,
+        P: Fn(&ClientId) -> ClientBoundPacket,
+    {
+        self.iter()
+            .filter(|(id, _client)| filter(id))
+            .for_each(|(id, client)| client.connection.send_packet(packet(id)));
+    }
+
+    fn iter(&self) -> ClientListIter<'_> {
+        ClientListIter(self.0.iter())
+    }
+
+    pub fn set_username(&mut self, client_id: ClientId, username: &str) -> Option<()> {
+        self.0.get_mut(&client_id)?.username = username.to_string();
+        Some(())
+    }
+
+    pub fn set_uuid(&mut self, client_id: ClientId, uuid: Uuid) -> Option<()> {
+        self.0.get_mut(&client_id)?.uuid = uuid;
+        Some(())
+    }
+
+    pub fn username(&self, client_id: ClientId) -> Option<&str> {
+        Some(self.0.get(&client_id)?.username())
+    }
+
+    pub fn uuid(&self, client_id: ClientId) -> Option<&Uuid> {
+        Some(self.0.get(&client_id)?.uuid())
+    }
+
+    pub fn send_chat(&self, client_id: ClientId, message: &str) -> Option<()> {
+        let uuid = *self.uuid(client_id)?;
+        let username = self.username(client_id)?;
+
+        self.iter()
+            .for_each(|(_, c)| c.send_message(message, Some((uuid, username))));
+        Some(())
+    }
+
+    pub fn send_system_message(&self, client_id: ClientId, message: &str) -> Option<()> {
+        self.0.get(&client_id)?.send_message(message, None);
+        Some(())
+    }
+}
+
+struct ClientListIter<'a>(std::collections::hash_map::Iter<'a, ClientId, Client>);
+
+impl<'a> Iterator for ClientListIter<'a> {
+    type Item = (&'a ClientId, &'a Client);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
     }
 }
 
@@ -440,6 +509,9 @@ struct Client {
     pub player_id: Option<usize>,
     keep_alive_id: Option<i64>,
     last_keep_alive_exchange: Instant,
+    username: String,
+    // The minecraft uuid of the client
+    uuid: Uuid,
 }
 
 impl Client {
@@ -449,6 +521,8 @@ impl Client {
             player_id: None,
             keep_alive_id: None,
             last_keep_alive_exchange: Instant::now(),
+            username: Default::default(),
+            uuid: Uuid::default(),
         }
     }
 
@@ -476,6 +550,50 @@ impl Client {
         }
 
         true
+    }
+
+    fn username(&self) -> &str {
+        &self.username
+    }
+
+    fn uuid(&self) -> &Uuid {
+        &self.uuid
+    }
+
+    fn send_message(&self, message: &str, user_info: Option<(Uuid, &str)>) {
+        match user_info {
+            Some((uuid, username)) => self.connection.send_packet(ClientBoundPacket::ChatMessage {
+                sender: uuid,
+                position: 0,
+                json_data: Box::new(Component {
+                    component_type: ComponentType::translate(
+                        "chat.type.text".to_owned(),
+                        Some(vec![
+                            ComponentBuilder::empty()
+                                .click_event(ClickEvent::suggest_command(format!(
+                                    "/tell {} ",
+                                    username
+                                )))
+                                .hover_event(HoverEvent::show_entity(HoverEntity {
+                                    id: uuid.to_string(),
+                                    name: Some(Component::text(username)),
+                                    entity_type: Some("minecraft:player".to_owned()),
+                                }))
+                                .insertion(username.to_owned())
+                                .add_text(username)
+                                .build(),
+                            Component::text(message),
+                        ]),
+                    ),
+                    ..Default::default()
+                }),
+            }),
+            None => self.connection.send_packet(ClientBoundPacket::ChatMessage {
+                sender: Uuid::from_u128(0),
+                position: 1,
+                json_data: Box::new(Component::text(message)),
+            }),
+        }
     }
 }
 

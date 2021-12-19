@@ -36,7 +36,9 @@
         "tag_array": "quartz_net::packet_data::TagArray",
         "section_data": "quartz_net::packet_data::SectionData",
         "jigsaw_update_data": "Box<quartz_net::packet_data::JigsawUpdateData>",
-        "mask": "quartz_net::BitMask"
+        "mask": "quartz_net::BitMask",
+        "gamemode": "qdat::Gamemode",
+        "facing": "qdat::world::location::BlockFace"
     },
     "primitives": [
         "bool",

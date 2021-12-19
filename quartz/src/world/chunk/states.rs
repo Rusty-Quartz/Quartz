@@ -349,7 +349,7 @@ impl CompactStateBuffer {
         let mut long_index = 0;
         let mut bit_index = 0;
 
-        while let Some(entry) = self.peek_entry() {
+        while let Some(entry) = self.entry_at(long_index, bit_index) {
             if let Some(altered) = f(entry) {
                 write_entry_to(
                     self.data.as_mut(),
@@ -520,7 +520,11 @@ fn write_entry_to(
 
     let insertion = (entry as u64) << bit_index;
     match dest.get_mut(long_index as usize) {
-        Some(long) => *long |= insertion,
+        Some(long) => {
+            // We have to clear the bits before we write the insertion;
+            *long &= !((u64::MAX >> (u64::BITS as u64 - bits_per_entry.get() as u64)) << bit_index);
+            *long |= insertion;
+        }
         None => return false,
     }
 

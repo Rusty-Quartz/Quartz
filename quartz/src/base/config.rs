@@ -1,4 +1,5 @@
 use log::*;
+use qdat::Gamemode;
 use quartz_chat::Component;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -21,6 +22,8 @@ pub struct Config {
     /// Whether to run the server in online or offline mode
     /// Offline mode skips the login state of the connection flow
     pub online_mode: bool,
+    /// The default gamemode for a player who joins the server
+    pub default_gamemode: Gamemode,
 }
 
 // Instantiate a config with default values
@@ -32,6 +35,7 @@ impl Default for Config {
             port: 25565,
             motd: Component::text("A Minecraft Server".to_owned()),
             online_mode: true,
+            default_gamemode: Gamemode::Survival,
         }
     }
 }

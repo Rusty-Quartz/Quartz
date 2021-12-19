@@ -1,7 +1,7 @@
 [package]
 name = "quartz_net"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -9,7 +9,7 @@ edition = "2018"
 qdat = { path = "../qdat" }
 quartz_chat = { path = "../chat" }
 quartz_macros = { path = "../macros" }
-quartz_nbt = "0.2.4"
+quartz_nbt = "0.2.5"
 
 uuid = { version = "0.8", features = ["serde", "v4"] }
 openssl = "0.10"

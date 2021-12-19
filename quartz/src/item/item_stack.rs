@@ -103,8 +103,9 @@ impl ItemStack {
 
 /// An ItemStack wrapped in an Option to save memory when it is empty
 #[repr(transparent)]
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct OptionalItemStack(Option<Box<ItemStack>>);
+pub const EMPTY_ITEM_STACK: OptionalItemStack = OptionalItemStack(None);
 
 impl OptionalItemStack {
     /// Creates a new OptionalItemStack
@@ -136,5 +137,16 @@ impl OptionalItemStack {
     /// Gets the inner data of the OptionalItemStack
     pub fn item(&self) -> Option<Box<ItemStack>> {
         self.0.clone()
+    }
+
+    /// Takes the stack and replaces it with an empty stack
+    pub fn take(&mut self) -> OptionalItemStack {
+        std::mem::take(self)
+    }
+}
+
+impl From<ItemStack> for OptionalItemStack {
+    fn from(i: ItemStack) -> Self {
+        Self(Some(Box::new(i)))
     }
 }

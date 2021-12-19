@@ -1,23 +1,25 @@
 use std::sync::mpsc::Sender;
 
+use crate::server::ClientId;
+
 use super::AsyncWriteHandle;
 use quartz_net::{ClientBoundPacket, PacketBuffer, ServerBoundPacket, WriteToPacket};
 use uuid::Uuid;
 
 pub enum WrappedServerBoundPacket {
     External {
-        sender: usize,
+        sender: ClientId,
         packet: ServerBoundPacket,
     },
     ClientConnected {
-        id: usize,
+        id: ClientId,
         write_handle: AsyncWriteHandle,
     },
     ClientDisconnected {
-        id: usize,
+        id: ClientId,
     },
     LoginSuccess {
-        id: usize,
+        id: ClientId,
         uuid: Uuid,
         username: String,
     },
@@ -31,7 +33,7 @@ pub enum WrappedServerBoundPacket {
 }
 
 impl WrappedServerBoundPacket {
-    pub fn external(sender: usize, packet: ServerBoundPacket) -> Self {
+    pub fn external(sender: ClientId, packet: ServerBoundPacket) -> Self {
         WrappedServerBoundPacket::External { sender, packet }
     }
 }

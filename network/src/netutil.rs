@@ -78,6 +78,8 @@ impl PacketBuffer {
         }
     }
 
+    // Not UB as long as the caller ensures the new memory is initialized before using it
+    #[allow(clippy::uninit_vec)]
     pub fn ensure_remaining(&mut self, n: usize) {
         if n <= self.remaining() {
             return;
@@ -567,7 +569,7 @@ impl ReadFromPacket for String {
 
 impl ReadFromPacket for BlockPosition {
     fn read_from(buffer: &mut PacketBuffer) -> Result<Self, PacketSerdeError> {
-        Ok(BlockPosition::from_u64(buffer.read::<i64>()? as u64))
+        Ok(BlockPosition::from_i64(buffer.read::<i64>()?))
     }
 }
 
@@ -754,7 +756,7 @@ impl WriteToPacket for &str {
 
 impl WriteToPacket for BlockPosition {
     fn write_to(&self, buffer: &mut PacketBuffer) {
-        buffer.write(&(self.as_u64() as i64));
+        buffer.write(&(self.as_i64() as i64));
     }
 }
 
@@ -793,7 +795,6 @@ impl WriteToPacket for Component {
     }
 }
 
-// TODO: add From<NbtIoError> when quartz_nbt is updated
 #[derive(Debug)]
 pub enum PacketSerdeError {
     EndOfBuffer,
@@ -865,5 +866,11 @@ impl From<serde_json::Error> for PacketSerdeError {
 impl From<ErrorStack> for PacketSerdeError {
     fn from(error: ErrorStack) -> Self {
         PacketSerdeError::OpenSSL(error)
+    }
+}
+
+impl From<NbtIoError> for PacketSerdeError {
+    fn from(error: NbtIoError) -> Self {
+        PacketSerdeError::Nbt(error)
     }
 }

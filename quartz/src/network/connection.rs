@@ -1,4 +1,4 @@
-use crate::network::*;
+use crate::{network::*, server::ClientId};
 
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use log::*;
@@ -404,7 +404,7 @@ impl AsyncWriteHandle {
 /// on the main server thread.
 pub struct AsyncClientConnection {
     /// The client ID.
-    pub id: usize,
+    pub id: ClientId,
     read_handle: OwnedReadHalf,
     pub write_handle: AsyncWriteHandle,
     /// The packet buffer used when reading packet bytes.
@@ -421,7 +421,7 @@ pub struct AsyncClientConnection {
 impl AsyncClientConnection {
     /// Creates a new connection wrapper around the given stream.
     pub fn new(
-        id: usize,
+        id: ClientId,
         stream: TcpStream,
         sync_packet_sender: StdSender<WrappedServerBoundPacket>,
     ) -> (Self, impl Future<Output = ()>) {

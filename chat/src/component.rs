@@ -38,11 +38,18 @@ pub struct Component {
     /// The text to insert into a player's chat upon shift-clicking this component.
     pub insertion: Option<String>,
     /// The event to run when this component is clicked.
+    #[serde(rename = "clickEvent")]
     pub click_event: Option<Box<ClickEvent>>,
     /// The event to run when the player hovers over this component.
+    #[serde(rename = "hoverEvent")]
     pub hover_event: Option<Box<HoverEvent>>,
     /// The children of this component.
+    #[serde(skip_serializing_if = "is_extra_empty")]
     pub extra: Option<Vec<Component>>,
+}
+
+fn is_extra_empty(extra: &Option<Vec<Component>>) -> bool {
+    extra.as_ref().map(|v| v.is_empty()).unwrap_or(true)
 }
 
 impl Component {
@@ -469,15 +476,19 @@ pub struct HoverItem {
 #[skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HoverEntity {
-    id: String,
-    name: Option<Component>,
+    /// The uuid of the entity
+    pub id: String,
+    /// An optional custom name of the entity
+    pub name: Option<Component>,
     #[serde(rename = "type")]
-    entity_type: Option<String>,
+    /// The type of the entity, should be prefixed with `minecraft:`
+    pub entity_type: Option<String>,
 }
 
 // The generalized event argument
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 enum EventArgument {
     Component(Component),
     Text(String),
@@ -493,7 +504,7 @@ impl ToComponent for NbtTag {
                     .color(PredefinedColor::Gold)
                     .add_text(format!("{}", $value))
                     .color(PredefinedColor::Red)
-                    .add_text(self.type_specifier())
+                    .add_text(self.type_specifier().unwrap_or(""))
                     .build_children()
             };
         }
@@ -505,7 +516,7 @@ impl ToComponent for NbtTag {
                     return ComponentBuilder::new()
                         .add_empty()
                         .color(PredefinedColor::Red)
-                        .add_text(self.type_specifier())
+                        .add_text(self.type_specifier().unwrap_or(""))
                         .add_text(";]")
                         .build_children();
                 }
@@ -516,7 +527,7 @@ impl ToComponent for NbtTag {
                     .add_empty()
                     .add_text("[")
                     .color(PredefinedColor::Red)
-                    .add_text(self.type_specifier())
+                    .add_text(self.type_specifier().unwrap_or(""))
                     .add_text("; ")
                     .color(PredefinedColor::Gold)
                     .add_text(format!("{}", $list[0]));

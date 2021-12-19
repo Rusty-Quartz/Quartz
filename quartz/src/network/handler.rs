@@ -1,10 +1,20 @@
 use crate::{
+    command::{CommandContext, CommandSender},
+    command_executor,
     config,
+    entities::{
+        player::{Player, PlayerInventory},
+        Position,
+    },
+    item::{ItemStack, EMPTY_ITEM_STACK},
     network::{packet_data::*, *},
-    server::{self, QuartzServer},
-    world::chunk::provider::ProviderRequest,
+    server::{self, ClientId, QuartzServer},
+    world::world::Dimension,
 };
-use qdat::world::location::{BlockPosition, Coordinate};
+use qdat::{
+    world::location::{BlockFace, BlockPosition, Coordinate},
+    Gamemode,
+};
 
 use hex::ToHex;
 use log::{debug, error};
@@ -16,6 +26,7 @@ use openssl::{
 };
 use qdat::UnlocalizedName;
 use quartz_chat::{color::PredefinedColor, Component};
+use quartz_commands::CommandModule;
 use quartz_nbt::NbtCompound;
 use rand::{thread_rng, Rng};
 use regex::Regex;
@@ -288,10 +299,13 @@ impl AsyncPacketHandler {
 impl QuartzServer {
     pub(crate) async fn handle_login_success_server(
         &mut self,
-        sender: usize,
-        _uuid: Uuid,
-        _username: &str,
+        sender: ClientId,
+        uuid: Uuid,
+        username: &str,
     ) {
+        self.client_list.set_username(sender, username);
+        log::debug!("{}", uuid);
+        self.client_list.set_uuid(sender, uuid);
         // let config = config().lock().await;
 
         /*
@@ -335,8 +349,8 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::JoinGame {
                 entity_id: 0,
                 is_hardcore: false,
-                gamemode: 1,
-                previous_gamemode: -1,
+                gamemode: Gamemode::Creative,
+                previous_gamemode: Gamemode::None,
                 world_names: vec![UnlocalizedName::minecraft("overworld")].into_boxed_slice(),
                 dimension_codec,
                 dimension,
@@ -364,7 +378,7 @@ impl QuartzServer {
         self.client_list.start_keep_alive(sender);
     }
 
-    async fn handle_legacy_server_list_ping(&mut self, sender: usize, _payload: u8) {
+    async fn handle_legacy_server_list_ping(&mut self, sender: ClientId, _payload: u8) {
         // Load in all needed values from server object
         let protocol_version = u16::to_string(&(PROTOCOL_VERSION as u16));
         let version = server::VERSION;
@@ -411,7 +425,7 @@ impl QuartzServer {
         self.client_list.send_buffer(sender, buffer);
     }
 
-    async fn handle_status_request(&mut self, sender: usize) {
+    async fn handle_status_request(&mut self, sender: ClientId) {
         let config = config().read();
         let json_response = json!({
             "version": {
@@ -434,38 +448,59 @@ impl QuartzServer {
             });
     }
 
-    async fn handle_keep_alive(&mut self, sender: usize, keep_alive_id: i64) {
+    async fn handle_keep_alive(&mut self, sender: ClientId, keep_alive_id: i64) {
         self.client_list.handle_keep_alive(sender, keep_alive_id);
     }
 
     #[allow(unused_variables)]
-    async fn handle_use_item(&mut self, sender: usize, hand: i32) {}
+    async fn handle_use_item(&mut self, sender: ClientId, hand: i32) {}
 
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     async fn handle_player_block_placement(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         hand: i32,
         location: &BlockPosition,
-        face: i32,
+        face: &BlockFace,
         cursor_position_x: f32,
         cursor_position_y: f32,
         cursor_position_z: f32,
         inside_block: bool,
     ) {
+        let world = self.world_store.get_player_world_mut(sender).unwrap();
+        let curr_item = {
+            let player_entity = *world.get_player_entity(sender).unwrap();
+            let entities = world.get_entities().await;
+            let player_inv = entities.get::<PlayerInventory>(player_entity).unwrap();
+            player_inv.current_slot()
+        };
+
+        if let Some(i) = curr_item.item() {
+            let mut chunk = world.get_loaded_chunk_mut((*location).into()).unwrap();
+            // TODO: change this over to using block items to allow conversions between items and blocks
+            if let Some(s) = qdat::item::item_to_block(i.item) {
+                let offset_pos = (*location).face_offset(face);
+                let last_state = chunk.set_block_state_at(offset_pos, s.id());
+                self.client_list
+                    .send_to_all(|_| ClientBoundPacket::BlockChange {
+                        location: offset_pos,
+                        block_id: s.id() as i32,
+                    });
+            };
+        }
     }
 
     #[allow(unused_variables)]
-    async fn handle_spectate(&mut self, sender: usize, target_player: Uuid) {}
+    async fn handle_spectate(&mut self, sender: ClientId, target_player: Uuid) {}
 
     #[allow(unused_variables)]
-    async fn handle_animation(&mut self, sender: usize, hand: i32) {}
+    async fn handle_animation(&mut self, sender: ClientId, hand: i32) {}
 
     #[allow(unused_variables)]
     async fn handle_update_sign(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         line_1: &str,
         line_2: &str,
@@ -478,7 +513,7 @@ impl QuartzServer {
     #[allow(clippy::too_many_arguments)]
     async fn handle_update_structure_block(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         action: i32,
         mode: i32,
@@ -501,16 +536,43 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_creative_inventory_action(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         slot: i16,
         clicked_item: &Slot,
     ) {
+        if slot != -1 {
+            let world = self.world_store.get_player_world_mut(sender).unwrap();
+            let player_entity = *world.get_player_entity(sender).unwrap();
+            let entities = world.get_entities_mut().await;
+            let mut player_inv = entities.get_mut::<PlayerInventory>(player_entity).unwrap();
+
+            if clicked_item.present {
+                player_inv.set_slot(
+                    slot as usize,
+                    ItemStack::new(
+                        qdat::item::ITEM_LOOKUP_BY_NUMERIC_ID
+                            .get(&clicked_item.item_id.unwrap())
+                            .unwrap(),
+                    )
+                    .into(),
+                );
+            } else {
+                player_inv.set_slot(slot as usize, EMPTY_ITEM_STACK);
+            }
+
+            self.client_list
+                .send_packet(sender, ClientBoundPacket::SetSlot {
+                    window_id: 0,
+                    slot: slot as i16,
+                    slot_data: clicked_item.clone(),
+                });
+        }
     }
 
     #[allow(unused_variables)]
     async fn handle_update_jigsaw_block(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         data: &JigsawUpdateData,
     ) {
@@ -519,7 +581,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_update_command_block_minecart(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         entity_id: i32,
         command: &str,
         track_output: bool,
@@ -529,7 +591,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_update_command_block(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         command: &str,
         mode: i32,
@@ -538,39 +600,52 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_held_item_change(&mut self, sender: usize, slot: i16) {}
+    async fn handle_held_item_change(&mut self, sender: ClientId, slot: i16) {
+        let world = self.world_store.get_player_world_mut(sender).unwrap();
+        let player_entity = *world.get_player_entity(sender).unwrap();
+        world
+            .get_entities_mut()
+            .await
+            .get_mut::<PlayerInventory>(player_entity)
+            .unwrap()
+            .set_curr_slot(slot as u8 + 36);
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::HeldItemChange {
+                slot: slot as i8,
+            })
+    }
 
     #[allow(unused_variables)]
     async fn handle_set_beacon_effect(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         primary_effect: i32,
         secondary_effect: i32,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_select_trade(&mut self, sender: usize, selected_slod: i32) {}
+    async fn handle_select_trade(&mut self, sender: ClientId, selected_slod: i32) {}
 
     #[allow(unused_variables)]
     async fn handle_advancement_tab(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         action: i32,
         tab_id: &Option<UnlocalizedName>,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_resource_pack_status(&mut self, sender: usize, result: i32) {}
+    async fn handle_resource_pack_status(&mut self, sender: ClientId, result: i32) {}
 
     #[allow(unused_variables)]
-    async fn handle_name_item(&mut self, sender: usize, item_name: &str) {}
+    async fn handle_name_item(&mut self, sender: ClientId, item_name: &str) {}
 
     #[allow(unused_variables)]
     async fn handle_set_recipe_book_state(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         book_id: i32,
         book_open: bool,
         filter_active: bool,
@@ -578,12 +653,13 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_set_displayed_recipe(&mut self, sender: usize, recipe_id: &UnlocalizedName) {}
+    async fn handle_set_displayed_recipe(&mut self, sender: ClientId, recipe_id: &UnlocalizedName) {
+    }
 
     #[allow(unused_variables)]
     async fn handle_steer_vehicle(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         sideways: f32,
         forward: f32,
         flags: u8,
@@ -591,12 +667,12 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_pong(&mut self, sender: usize, id: i32) {}
+    async fn handle_pong(&mut self, sender: ClientId, id: i32) {}
 
     #[allow(unused_variables)]
     async fn handle_entity_action(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         entity_id: i32,
         action_id: i32,
         jump_boost: i32,
@@ -606,20 +682,20 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_player_digging(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         status: i32,
         location: &BlockPosition,
-        face: i8,
+        face: &BlockFace,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_player_abilities(&mut self, sender: usize, flags: i8) {}
+    async fn handle_player_abilities(&mut self, sender: ClientId, flags: i8) {}
 
     #[allow(unused_variables)]
     async fn handle_craft_recipe_request(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         window_id: i8,
         recipe: &UnlocalizedName,
         make_all: bool,
@@ -627,24 +703,24 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_pick_item(&mut self, sender: usize, slot_to_use: i32) {}
+    async fn handle_pick_item(&mut self, sender: ClientId, slot_to_use: i32) {}
 
     #[allow(unused_variables)]
     async fn handle_steer_boat(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         left_paddle_turning: bool,
         right_paddle_turning: bool,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_player_movement(&mut self, sender: usize, on_ground: bool) {}
+    async fn handle_player_movement(&mut self, sender: ClientId, on_ground: bool) {}
 
     #[allow(unused_variables)]
     async fn handle_player_rotation(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         yaw: f32,
         pitch: f32,
         on_ground: bool,
@@ -654,7 +730,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_vehicle_move(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         x: f64,
         y: f64,
         z: f64,
@@ -666,7 +742,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_player_position(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         x: f64,
         feet_y: f64,
         z: f64,
@@ -678,7 +754,7 @@ impl QuartzServer {
     #[allow(clippy::too_many_arguments)]
     async fn handle_player_position_and_rotation(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         x: f64,
         feet_y: f64,
         z: f64,
@@ -689,12 +765,12 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_lock_difficulty(&mut self, sender: usize, locked: bool) {}
+    async fn handle_lock_difficulty(&mut self, sender: ClientId, locked: bool) {}
 
     #[allow(unused_variables)]
     async fn handle_generate_structure(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         location: &BlockPosition,
         levels: i32,
         keep_jigsaws: bool,
@@ -705,7 +781,7 @@ impl QuartzServer {
     #[allow(clippy::too_many_arguments)]
     async fn handle_interact_entity(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         entity_id: i32,
         r#type: i32,
         target_x: Option<f32>,
@@ -719,7 +795,7 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_edit_book(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         new_book: &Slot,
         is_signing: bool,
         hand: i32,
@@ -729,20 +805,20 @@ impl QuartzServer {
     #[allow(unused_variables)]
     async fn handle_plugin_message(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         channel: &UnlocalizedName,
         data: &[u8],
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_close_window(&mut self, sender: usize, window_id: u8) {}
+    async fn handle_close_window(&mut self, sender: ClientId, window_id: u8) {}
 
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     async fn handle_click_window(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         window_id: u8,
         slot: i16,
         button: i8,
@@ -753,16 +829,17 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_click_window_button(&mut self, sender: usize, window_id: i8, button_id: i8) {}
+    async fn handle_click_window_button(&mut self, sender: ClientId, window_id: i8, button_id: i8) {
+    }
 
     #[allow(unused_variables)]
-    async fn handle_tab_complete(&mut self, sender: usize, trasaction_id: i32, text: &str) {}
+    async fn handle_tab_complete(&mut self, sender: ClientId, trasaction_id: i32, text: &str) {}
 
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     async fn handle_client_settings(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         locale: &str,
         view_distance: i8,
         chat_mode: i32,
@@ -771,6 +848,9 @@ impl QuartzServer {
         main_hand: i32,
         disable_text_filtering: bool,
     ) {
+        // Unwrap is safe because we're guarrenteed to have a uuid at this point
+        let uuid = *self.client_list.uuid(sender).unwrap();
+
         self.client_list
             .send_packet(sender, ClientBoundPacket::HeldItemChange { slot: 0 });
 
@@ -810,14 +890,14 @@ impl QuartzServer {
             });
 
         self.client_list
-            .send_packet(sender, ClientBoundPacket::PlayerInfo {
+            .send_to_all(|_| ClientBoundPacket::PlayerInfo {
                 action: 0,
                 player: vec![WrappedPlayerInfoAction {
-                    uuid: Uuid::new_v4(),
+                    uuid,
                     action: PlayerInfoAction::AddPlayer {
-                        name: "Test".to_owned(),
+                        name: self.client_list.username(sender).unwrap().to_string(),
                         properties: vec![].into_boxed_slice(),
-                        gamemode: 0,
+                        gamemode: Gamemode::Creative,
                         ping: 120,
                         display_name: None,
                     },
@@ -829,7 +909,7 @@ impl QuartzServer {
             .send_packet(sender, ClientBoundPacket::PlayerInfo {
                 action: 2,
                 player: vec![WrappedPlayerInfoAction {
-                    uuid: Uuid::new_v4(),
+                    uuid,
                     action: PlayerInfoAction::UpdateLatency { ping: 12 },
                 }]
                 .into_boxed_slice(),
@@ -841,61 +921,79 @@ impl QuartzServer {
                 chunk_z: 0,
             });
 
+        self.world_store
+            .spawn_player(
+                Dimension::Overworld,
+                sender,
+                Player::new(
+                    Gamemode::Creative,
+                    Position {
+                        x: 0.,
+                        y: 60.,
+                        z: 0.,
+                    },
+                    self.client_list.create_write_handle(sender).unwrap(),
+                ),
+            )
+            .await;
+
         let write_handle = self.client_list.create_write_handle(sender).unwrap();
+        let player_world = self.world_store.get_player_world_mut(sender).unwrap();
         let start = Instant::now();
         for x in -view_distance .. view_distance {
             for z in -view_distance .. view_distance {
                 let coords = Coordinate::chunk(x as i32, z as i32);
-                self.chunk_provider.request(ProviderRequest::MinLoadSend {
-                    coords,
-                    handle: write_handle.clone(),
-                });
-                // self.chunk_provider
-                //     .request(ProviderRequest::LoadFull(coords));
+                player_world.load_chunk(coords);
             }
         }
-        // self.chunk_provider.join_pending().await;
+        player_world.join_pending().await;
         let elapsed = start.elapsed();
         log::info!("Chunk load time: {:?}", elapsed);
 
-        // let start = Instant::now();
-        // let vd = view_distance as u8 as usize;
-        // let mut packets = Vec::with_capacity(vd * vd);
-        // for chunk in self.chunk_provider.store.loaded_chunks() {
-        //     let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
+        let start = Instant::now();
+        let vd = view_distance as u8 as usize;
+        let mut packets = Vec::with_capacity(vd * vd);
+        for x in -view_distance .. view_distance {
+            for z in -view_distance .. view_distance {
+                let chunk_coords = Coordinate::chunk(x as i32, z as i32);
+                let chunk = match player_world.get_loaded_chunk(chunk_coords) {
+                    Some(c) => c,
+                    None => continue
+                };
+                let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
 
-        //     let chunk_coords: CoordinatePair = chunk.coordinates().as_chunk().into();
+                packets.push(ClientBoundPacket::ChunkData {
+                    chunk_x: chunk_coords.x(),
+                    chunk_z: chunk_coords.z(),
+                    primary_bit_mask,
+                    heightmaps: chunk.get_heightmaps(),
+                    biomes: Box::from(chunk.biomes()),
+                    // TODO: send block entities for chunk when we support them
+                    block_entities: vec![].into_boxed_slice(),
+                    data: section_data,
+                });
 
-        //     packets.push(ClientBoundPacket::ChunkData {
-        //         chunk_x: chunk_coords.x,
-        //         chunk_z: chunk_coords.z,
-        //         primary_bit_mask: primary_bit_mask,
-        //         heightmaps: chunk.get_heightmaps(),
-        //         biomes: Box::from(chunk.biomes()),
-        //         // TODO: send block entities for chunk when we support them
-        //         block_entities: vec![].into_boxed_slice(),
-        //         data: section_data,
-        //     });
+                let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) =
+                    chunk.gen_sky_lights();
+                let (block_light_mask, empty_block_light_mask, block_light_arrays) =
+                    chunk.gen_block_lights();
 
-        //     let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) = chunk.gen_sky_lights();
-        //     let (block_light_mask, empty_block_light_mask, block_light_arrays) =
-        //         chunk.gen_block_lights();
-
-        //     packets.push(ClientBoundPacket::UpdateLight {
-        //         chunk_x: chunk_coords.x,
-        //         chunk_z: chunk_coords.z,
-        //         trust_edges: true,
-        //         sky_light_mask,
-        //         block_light_mask,
-        //         empty_sky_light_mask,
-        //         empty_block_light_mask,
-        //         sky_light_arrays,
-        //         block_light_arrays,
-        //     });
-        // }
-        // self.client_list.send_all(sender, packets).await;
-        // let elapsed = start.elapsed();
-        // log::info!("Chunk and light send time: {:?}", elapsed);
+                packets.push(ClientBoundPacket::UpdateLight {
+                    chunk_x: chunk_coords.x(),
+                    chunk_z: chunk_coords.z(),
+                    trust_edges: true,
+                    sky_light_mask,
+                    block_light_mask,
+                    empty_sky_light_mask,
+                    empty_block_light_mask,
+                    sky_light_arrays,
+                    block_light_arrays,
+                });
+            }
+        }
+        self.client_list.send_all(sender, packets);
+        let elapsed = start.elapsed();
+        log::info!("Chunk and light send time: {:?}", elapsed);
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::SpawnPosition {
@@ -917,29 +1015,49 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_client_status(&mut self, sender: usize, action_id: i32) {}
+    async fn handle_client_status(&mut self, sender: ClientId, action_id: i32) {}
 
     #[allow(unused_variables)]
-    async fn handle_chat_message(&mut self, sender: usize, messag: &str) {}
+    async fn handle_chat_message(&mut self, sender: ClientId, message: &str) {
+        if let Some(command) = message.strip_prefix('/') {
+            let write_handle = self.client_list.create_write_handle(sender).unwrap();
+            let executor = command_executor();
+            let ctx = CommandContext::new(self, &*executor, CommandSender::Client(write_handle));
+
+            match executor.dispatch(command, ctx) {
+                Ok(_) => {}
+                // This technically should send a text component colored red for the error
+                // but that would require reworking the api to send messages so im just not going to yet
+                Err(e) => self.client_list.send_system_message(sender, &e).unwrap(),
+            };
+        } else {
+            self.client_list.send_chat(sender, message);
+        }
+    }
 
     #[allow(unused_variables)]
-    async fn handle_set_difficulty(&mut self, sender: usize, new_difficulty: i8) {}
+    async fn handle_set_difficulty(&mut self, sender: ClientId, new_difficulty: i8) {}
 
     #[allow(unused_variables)]
-    async fn handle_query_entity_nbt(&mut self, sender: usize, trasaction_id: i32, entity_id: i32) {
+    async fn handle_query_entity_nbt(
+        &mut self,
+        sender: ClientId,
+        trasaction_id: i32,
+        entity_id: i32,
+    ) {
     }
 
     #[allow(unused_variables)]
     async fn handle_query_block_nbt(
         &mut self,
-        sender: usize,
+        sender: ClientId,
         trasaction_id: i32,
         location: &BlockPosition,
     ) {
     }
 
     #[allow(unused_variables)]
-    async fn handle_teleport_confirm(&mut self, sender: usize, teleport_id: i32) {}
+    async fn handle_teleport_confirm(&mut self, sender: ClientId, teleport_id: i32) {}
 }
 
 /// Handles the given asynchronos connecting using blocking I/O opperations.
