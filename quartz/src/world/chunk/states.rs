@@ -228,14 +228,14 @@ impl CompactStateBuffer {
         // count function
         const_assert!(4096 % ENTRIES_PER_LONG == 0);
 
-        // FIXME: make this depend on ENTRIES_PER_LONG so that it's not hard coded
         const fn gen_niche(id: StateID) -> u64 {
             let mut long = 0;
             let id = id as u64;
-            long |= id;
-            long |= id << MAX_BITS_PER_BLOCK;
-            long |= id << (2 * MAX_BITS_PER_BLOCK);
-            long |= id << (3 * MAX_BITS_PER_BLOCK);
+            let mut i = 0;
+            while i < ENTRIES_PER_LONG {
+                long |= id << (i as u8 * MAX_BITS_PER_BLOCK);
+                i += 1;
+            }
             long
         }
 

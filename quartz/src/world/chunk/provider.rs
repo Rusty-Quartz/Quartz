@@ -34,30 +34,29 @@ use std::{
 use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, SeekFrom},
-    runtime::{Builder, Runtime},
+    runtime::Runtime,
     sync::Mutex,
     task::{JoinError, JoinHandle},
 };
 
 pub struct ChunkProvider {
     pub store: Arc<RegionHandler>,
-    rt: Runtime,
+    rt: Arc<Runtime>,
     pending: FuturesUnordered<JoinHandle<Result<ProviderResponse, ProviderError>>>,
 }
 
 impl ChunkProvider {
     /// Creates a chunk provider for the given root directory with the given number of threads.
-    pub fn new<P: AsRef<Path>>(world_name: &str, root_directory: P) -> io::Result<Self> {
+    pub fn new<P: AsRef<Path>>(
+        rt: Arc<Runtime>,
+        root_directory: P
+    ) -> io::Result<Self> {
         let root_directory = root_directory.as_ref();
 
         // Ensure the root directory exists
         std::fs::create_dir_all(root_directory)?;
 
         let store = Arc::new(RegionHandler::new(root_directory.to_owned()));
-        let rt = Builder::new_multi_thread()
-            .enable_io()
-            .thread_name(format!("{}/chunk-provider-worker", world_name,))
-            .build()?;
         let pending = FuturesUnordered::new();
 
         Ok(ChunkProvider { store, rt, pending })
