@@ -1,6 +1,6 @@
 use crate::{
-    color::{Color, PredefinedColor},
-    component::{ClickEvent, Component, ComponentType, HoverEvent},
+    color::Color,
+    component::*,
 };
 
 /// Utility struct for building text components. Components can have children, and those children
@@ -13,30 +13,7 @@ pub struct ComponentBuilder {
     current_empty: bool,
 }
 
-macro_rules! component_format {
-    ($name:ident, $comment:expr) => {
-        #[doc = concat!("Set whether or not this component's text should be ", $comment, ".")]
-        pub fn $name(mut self, value: bool) -> Self {
-            self.current().$name = Some(value);
-            self
-        }
-    };
-}
-
 impl ComponentBuilder {
-    component_format!(
-        obfuscated,
-        "obfuscated (quickly changing, fixed-width text)"
-    );
-
-    component_format!(bold, "bolded");
-
-    component_format!(strikethrough, "struck-through");
-
-    component_format!(underline, "underlined");
-
-    component_format!(italic, "italicized");
-
     /// Creates a builder whose base component has no color and an empty text field.
     pub const fn empty() -> Self {
         ComponentBuilder {
@@ -48,7 +25,7 @@ impl ComponentBuilder {
     /// Creates a builder whose base component has no text and the color white.
     pub fn new() -> Self {
         ComponentBuilder {
-            component: Component::colored(String::new(), PredefinedColor::White),
+            component: Component::colored(String::new(), Color::White),
             current_empty: false,
         }
     }
@@ -123,8 +100,14 @@ impl ComponentBuilder {
         self
     }
 
+    /// Set the format of the current component according to the given flags.
+    pub fn format(mut self, format: Format) -> Self {
+        self.current().format = format;
+        self
+    }
+
     /// Set the font of this component.
-    pub fn font(mut self, font: String) -> Self {
+    pub fn font(mut self, font: Font) -> Self {
         self.current().font = Some(font);
         self
     }

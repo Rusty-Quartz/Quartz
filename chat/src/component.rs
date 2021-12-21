@@ -1,15 +1,16 @@
 use crate::{
     builder::ComponentBuilder,
-    color::{Color, PredefinedColor},
+    color::Color,
 };
 use quartz_nbt::{NbtCompound, NbtList, NbtTag};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::{self, Visitor}, ser::SerializeMap};
 use serde_json::Value;
 use serde_with::skip_serializing_none;
 use std::{
     fmt::{self, Display, Formatter},
     str,
 };
+use bitflags::bitflags;
 
 #[cfg(unix)]
 use termion::style;
@@ -24,17 +25,10 @@ pub struct Component {
     /// The color of the component.
     pub color: Option<Color>,
     /// The font of the component.
-    pub font: Option<String>,
-    /// Whether or not the component should be obfuscated.
-    pub obfuscated: Option<bool>,
-    /// Whether or not the component should be bolded.
-    pub bold: Option<bool>,
-    /// Whether or not the component should be struck-through.
-    pub strikethrough: Option<bool>,
-    /// Whether or not the component should be underlined.
-    pub underline: Option<bool>,
-    /// Whether or not the component should be italicized.
-    pub italic: Option<bool>,
+    pub font: Option<Font>,
+    /// The formatting of this component.
+    #[serde(flatten)]
+    pub format: Format,
     /// The text to insert into a player's chat upon shift-clicking this component.
     pub insertion: Option<String>,
     /// The event to run when this component is clicked.
@@ -61,11 +55,7 @@ impl Component {
             },
             color: None,
             font: None,
-            obfuscated: None,
-            bold: None,
-            strikethrough: None,
-            underline: None,
-            italic: None,
+            format: Format::empty(),
             insertion: None,
             click_event: None,
             hover_event: None,
@@ -140,21 +130,19 @@ impl Component {
         // Apply formatting variables
         #[cfg(unix)]
         macro_rules! apply_format {
-            ($field:expr, $add_style:ident, $remove_style:ident) => {
-                if let Some(value) = $field {
-                    if value {
-                        write!(f, "{}", style::$add_style)?;
-                    } else {
-                        write!(f, "{}", style::$remove_style)?;
-                    }
+            ($field:ident, $add_style:ident, $remove_style:ident) => {
+                if self.format.contains(Format::$field) {
+                    write!(f, "{}", style::$add_style)?;
+                } else {
+                    write!(f, "{}", style::$remove_style)?;
                 }
             };
         }
 
-        apply_format!(self.bold, Bold, NoBold);
-        apply_format!(self.strikethrough, CrossedOut, NoCrossedOut);
-        apply_format!(self.underline, Underline, NoUnderline);
-        apply_format!(self.italic, Italic, NoItalic);
+        apply_format!(BOLD, Bold, NoBold);
+        apply_format!(STRIKETHROUGH, CrossedOut, NoCrossedOut);
+        apply_format!(UNDERLINE, Underline, NoUnderline);
+        apply_format!(ITALIC, Italic, NoItalic);
 
         Ok(())
     }
@@ -201,7 +189,7 @@ impl Display for Component {
         }
 
         // Undo the changes
-        PredefinedColor::Reset.apply(f)?;
+        Color::Reset.apply(f)?;
 
         Ok(())
     }
@@ -248,7 +236,7 @@ pub enum ComponentType {
     /// A score component consisting of data about a scoreboard.
     Score {
         /// The score data.
-        score: ScoreComponentData,
+        score: Box<ScoreComponentData>,
     },
 }
 
@@ -278,12 +266,152 @@ impl ComponentType {
     /// Creates a new score component type with the given fields.
     pub fn score(name: String, value: Option<Value>, objective: String) -> Self {
         ComponentType::Score {
-            score: ScoreComponentData {
+            score: Box::new(ScoreComponentData {
                 name,
                 value,
                 objective,
-            },
+            }),
         }
+    }
+}
+
+/// The possible font types for a 1.16+ chat component.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Font {
+    /// Default minecraft font.
+    Default,
+    /// Unicode font.
+    Uniform,
+    /// Enchanting table font.
+    Alt,
+}
+
+impl Default for Font {
+    #[inline]
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+impl Font {
+    /// Returns the Minecraft identifier for the given font.
+    pub fn as_identifier(&self) -> &'static str {
+        match self {
+            Self::Default => "minecraft:default",
+            Self::Uniform => "minecraft:uniform",
+            Self::Alt => "minecraft:alt",
+        }
+    }
+}
+
+impl Serialize for Font {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer
+    {
+        serializer.serialize_str(self.as_identifier())
+    }
+}
+
+impl<'de> Deserialize<'de> for Font {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>
+    {
+        let string: &'de str = Deserialize::deserialize(deserializer)?;
+        match string {
+            "minecraft:default" | "default" => Ok(Self::Default),
+            "minecraft:uniform" | "uniform" => Ok(Self::Uniform),
+            "minecraft:alt" | "alt" => Ok(Self::Alt),
+            _ => Err(de::Error::custom(format!("Invalid font type: {}", string)))
+        }
+    }
+}
+
+bitflags! {
+    /// Possible text formatting components can have.
+    pub struct Format: u8 {
+        #[allow(missing_docs)]
+        const BOLD          = 0b00001;
+        #[allow(missing_docs)]
+        const ITALIC        = 0b00010;
+        #[allow(missing_docs)]
+        const OBFUSCATED    = 0b00100;
+        #[allow(missing_docs)]
+        const STRIKETHROUGH = 0b01000;
+        #[allow(missing_docs)]
+        const UNDERLINE     = 0b10000;
+    }
+}
+
+impl Serialize for Format {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer
+    {
+        let mut serializer = serializer.serialize_map(None)?;
+        macro_rules! serialize_formats {
+            ($($name:ident, $string:literal);*) => {
+                $(
+                    if self.contains(Self::$name) {
+                        serializer.serialize_entry($string, &true)?;
+                    }
+                )*
+            };
+        }
+
+        serialize_formats! {
+            BOLD, "bold";
+            ITALIC, "italic";
+            OBFUSCATED, "obfuscated";
+            STRIKETHROUGH, "strikethrough";
+            UNDERLINE, "underline"
+        }
+
+        serializer.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Format {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>
+    {
+        deserializer.deserialize_struct(
+            "__unused",
+            &["bold", "italic", "obfuscated", "strikethrough", "underline"],
+            FormatVisitor
+        )
+    }
+}
+
+struct FormatVisitor;
+
+impl<'de> Visitor<'de> for FormatVisitor {
+    type Value = Format;
+
+    fn expecting(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "A map specifying format flags")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::MapAccess<'de>,
+    {
+        let mut format = Format::empty();
+
+        while let Some((name, set)) = map.next_entry::<&'de str, bool>()? {
+            match name {
+                "bold" => if set { format |= Format::BOLD },
+                "italic" => if set { format |= Format::ITALIC },
+                "obfuscated" => if set { format |= Format::OBFUSCATED },
+                "strikethrough" => if set { format |= Format::STRIKETHROUGH },
+                "underline" => if set { format |= Format::UNDERLINE },
+                _ => return Err(de::Error::custom(format!("Unkown format type: {}", name)))
+            }
+        }
+
+        Ok(format)
     }
 }
 
@@ -307,7 +435,7 @@ pub trait ToComponent {
 
     /// Creates a component representing the data in this object.
     fn to_component(&self) -> Component {
-        let mut component = Component::colored(String::new(), PredefinedColor::White);
+        let mut component = Component::colored(String::new(), Color::White);
         component.extra = Some(self.to_component_parts());
         component
     }
@@ -501,9 +629,9 @@ impl ToComponent for NbtTag {
             ($value:expr) => {
                 ComponentBuilder::new()
                     .add_empty()
-                    .color(PredefinedColor::Gold)
+                    .color(Color::Gold)
                     .add_text(format!("{}", $value))
-                    .color(PredefinedColor::Red)
+                    .color(Color::Red)
                     .add_text(self.type_specifier().unwrap_or(""))
                     .build_children()
             };
@@ -515,7 +643,7 @@ impl ToComponent for NbtTag {
                 if $list.is_empty() {
                     return ComponentBuilder::new()
                         .add_empty()
-                        .color(PredefinedColor::Red)
+                        .color(Color::Red)
                         .add_text(self.type_specifier().unwrap_or(""))
                         .add_text(";]")
                         .build_children();
@@ -526,16 +654,16 @@ impl ToComponent for NbtTag {
                 let mut builder = ComponentBuilder::new()
                     .add_empty()
                     .add_text("[")
-                    .color(PredefinedColor::Red)
+                    .color(Color::Red)
                     .add_text(self.type_specifier().unwrap_or(""))
                     .add_text("; ")
-                    .color(PredefinedColor::Gold)
+                    .color(Color::Gold)
                     .add_text(format!("{}", $list[0]));
 
                 for element in $list.iter().skip(1) {
                     builder = builder
                         .add_text(", ")
-                        .color(PredefinedColor::Gold)
+                        .color(Color::Gold)
                         .add_text(format!("{}", element));
                 }
 
@@ -548,7 +676,7 @@ impl ToComponent for NbtTag {
             NbtTag::Short(value) => primitive_to_component!(value),
             NbtTag::Int(value) => vec![Component::colored(
                 format!("{}", value),
-                PredefinedColor::Gold,
+                Color::Gold,
             )],
             NbtTag::Long(value) => primitive_to_component!(value),
             NbtTag::Float(value) => primitive_to_component!(value),
@@ -576,7 +704,7 @@ impl ToComponent for NbtTag {
                 ComponentBuilder::new()
                     .add_empty()
                     .add_text(surrounding)
-                    .color(PredefinedColor::Green)
+                    .color(Color::Green)
                     .add_text(snbt_string)
                     .add_text(surrounding)
                     .build_children()
@@ -635,7 +763,7 @@ impl ToComponent for NbtCompound {
                 }
                 components.push(Component::colored(
                     snbt_key[1 .. snbt_key.len() - 1].to_owned(),
-                    PredefinedColor::Aqua,
+                    Color::Aqua,
                 ));
                 components.push(Component::text(format!("{}: ", quote)));
             }
@@ -646,7 +774,7 @@ impl ToComponent for NbtCompound {
                 }
                 components.push(Component::colored(
                     element.0.to_owned(),
-                    PredefinedColor::Aqua,
+                    Color::Aqua,
                 ));
                 components.push(Component::text(": "));
             }

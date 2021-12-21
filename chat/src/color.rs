@@ -7,89 +7,9 @@ use termion::{color, style};
 
 /// Highest level definition of a chat color which can either be predefined or custom as of minecraft
 /// 1.16.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[doc(hidden)]
 pub enum Color {
-    /// A predefined color.
-    Predefined(PredefinedColor),
-
-    /// A custom RBG color.
-    #[serde(
-        serialize_with = "Color::serialize_custom",
-        deserialize_with = "Color::deserialize_custom"
-    )]
-    Custom(
-        /// The red value.
-        u8,
-        /// The green value.
-        u8,
-        /// The blue value.
-        u8,
-    ),
-}
-
-impl Color {
-    /// Applies the color to the terminal (unix only).
-    #[cfg(unix)]
-    pub fn apply(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Color::Predefined(color) => color.apply(f),
-            // Dividing by 43 maps the color to the correct ANSI range of [0,5]
-            &Color::Custom(r, g, b) => write!(
-                f,
-                "{}",
-                color::Fg(color::AnsiValue::rgb(r / 43, g / 43, b / 43))
-            ),
-        }
-    }
-
-    // Serde support functions for the custom color type
-
-    fn serialize_custom<S>(r: &u8, g: &u8, b: &u8, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
-        serializer.serialize_str(&format!(
-            "#{:06X}",
-            (*r as u32) << 16 | (*g as u32) << 8 | (*b as u32)
-        ))
-    }
-
-    fn deserialize_custom<'de, D>(deserializer: D) -> Result<(u8, u8, u8), D::Error>
-    where D: Deserializer<'de> {
-        let value: &'de str = Deserialize::deserialize(deserializer)?;
-
-        if value.is_empty() {
-            return Err(de::Error::custom(
-                "Expected hex color, found an empty string.",
-            ));
-        }
-
-        if value.len() != 7 {
-            return Err(de::Error::custom(
-                "Expected hex color in the form of '#RRGGBB'",
-            ));
-        }
-
-        if let Ok(rgb) = u32::from_str_radix(&value[1 ..], 16) {
-            Ok(((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8))
-        } else {
-            Err(de::Error::custom(
-                "Invalid hex color, expected 6 hexadecimal digits (0-F).",
-            ))
-        }
-    }
-}
-
-impl From<PredefinedColor> for Color {
-    fn from(predef_color: PredefinedColor) -> Self {
-        Color::Predefined(predef_color)
-    }
-}
-
-/// All predefined color types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[allow(missing_docs)]
-pub enum PredefinedColor {
     Black,
     DarkBlue,
     DarkGreen,
@@ -107,30 +27,123 @@ pub enum PredefinedColor {
     Yellow,
     White,
     Reset,
+    /// A custom RBG color.
+    Custom(u8, u8, u8),
 }
 
-impl PredefinedColor {
+impl Serialize for Color {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer
+    {
+        let string = match self {
+            Color::Black => "black",
+            Color::DarkBlue => "dark_blue",
+            Color::DarkGreen => "dark_green",
+            Color::DarkAqua => "dark_aqua",
+            Color::DarkRed => "dark_red",
+            Color::DarkPurple => "dark_purple",
+            Color::Gold => "gold",
+            Color::Gray => "gray",
+            Color::DarkGray => "dark_gray",
+            Color::Blue => "blue",
+            Color::Green => "green",
+            Color::Aqua => "aqua",
+            Color::Red => "red",
+            Color::LightPurple => "light_purple",
+            Color::Yellow => "yellow",
+            Color::White => "white",
+            Color::Reset => "reset",
+            &Color::Custom(r, g, b) => {
+                return serializer.serialize_str(&format!(
+                    "#{:06X}",
+                    (r as u32) << 16 | (g as u32) << 8 | (b as u32)
+                ));
+            }
+        };
+
+        serializer.serialize_str(string)
+    }
+}
+
+impl<'de> Deserialize<'de> for Color {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>
+    {
+        let string: &'de str = Deserialize::deserialize(deserializer)?;
+
+        match string {
+            "black" => Ok(Color::Black),
+            "dark_blue" => Ok(Color::DarkBlue),
+            "dark_green" => Ok(Color::DarkGreen),
+            "dark_aqua" => Ok(Color::DarkAqua),
+            "dark_red" => Ok(Color::DarkRed),
+            "dark_purple" => Ok(Color::DarkPurple),
+            "gold" => Ok(Color::Gold),
+            "gray" => Ok(Color::Gray),
+            "dark_gray" => Ok(Color::DarkGray),
+            "blue" => Ok(Color::Blue),
+            "green" => Ok(Color::Green),
+            "aqua" => Ok(Color::Aqua),
+            "red" => Ok(Color::Red),
+            "light_purple" => Ok(Color::LightPurple),
+            "yellow" => Ok(Color::Yellow),
+            "white" => Ok(Color::White),
+            "reset" => Ok(Color::Reset),
+            _ => {
+                if string.is_empty() {
+                    return Err(de::Error::custom(
+                        "Expected hex color, found an empty string.",
+                    ));
+                }
+        
+                if string.len() != 7 {
+                    return Err(de::Error::custom(
+                        "Expected hex color in the form of '#RRGGBB'",
+                    ));
+                }
+        
+                if let Ok(rgb) = u32::from_str_radix(&string[1 ..], 16) {
+                    Ok(Color::Custom((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8))
+                } else {
+                    Err(de::Error::custom(
+                        "Invalid hex color, expected 6 hexadecimal digits (0-F).",
+                    ))
+                }
+            }
+        }
+    }
+}
+
+impl Color {
     /// Applies the color to the terminal (unix only).
     #[cfg(unix)]
-    pub fn apply(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    pub fn apply(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            PredefinedColor::Black => write!(f, "{}", color::Fg(color::Black)),
-            PredefinedColor::DarkBlue => write!(f, "{}", color::Fg(color::Blue)),
-            PredefinedColor::DarkGreen => write!(f, "{}", color::Fg(color::Green)),
-            PredefinedColor::DarkAqua => write!(f, "{}", color::Fg(color::Cyan)),
-            PredefinedColor::DarkRed => write!(f, "{}", color::Fg(color::Red)),
-            PredefinedColor::DarkPurple => write!(f, "{}", color::Fg(color::Magenta)),
-            PredefinedColor::Gold => write!(f, "{}", color::Fg(color::Yellow)),
-            PredefinedColor::Gray => write!(f, "{}", color::Fg(color::White)),
-            PredefinedColor::DarkGray => write!(f, "{}", color::Fg(color::LightBlack)),
-            PredefinedColor::Blue => write!(f, "{}", color::Fg(color::LightBlue)),
-            PredefinedColor::Green => write!(f, "{}", color::Fg(color::LightGreen)),
-            PredefinedColor::Aqua => write!(f, "{}", color::Fg(color::LightCyan)),
-            PredefinedColor::Red => write!(f, "{}", color::Fg(color::LightRed)),
-            PredefinedColor::LightPurple => write!(f, "{}", color::Fg(color::LightMagenta)),
-            PredefinedColor::Yellow => write!(f, "{}", color::Fg(color::LightYellow)),
-            PredefinedColor::White => write!(f, "{}", color::Fg(color::LightWhite)),
-            PredefinedColor::Reset => write!(f, "{}{}", color::Fg(color::Reset), style::Reset),
+            Color::Black => write!(f, "{}", color::Fg(color::Black)),
+            Color::DarkBlue => write!(f, "{}", color::Fg(color::Blue)),
+            Color::DarkGreen => write!(f, "{}", color::Fg(color::Green)),
+            Color::DarkAqua => write!(f, "{}", color::Fg(color::Cyan)),
+            Color::DarkRed => write!(f, "{}", color::Fg(color::Red)),
+            Color::DarkPurple => write!(f, "{}", color::Fg(color::Magenta)),
+            Color::Gold => write!(f, "{}", color::Fg(color::Yellow)),
+            Color::Gray => write!(f, "{}", color::Fg(color::White)),
+            Color::DarkGray => write!(f, "{}", color::Fg(color::LightBlack)),
+            Color::Blue => write!(f, "{}", color::Fg(color::LightBlue)),
+            Color::Green => write!(f, "{}", color::Fg(color::LightGreen)),
+            Color::Aqua => write!(f, "{}", color::Fg(color::LightCyan)),
+            Color::Red => write!(f, "{}", color::Fg(color::LightRed)),
+            Color::LightPurple => write!(f, "{}", color::Fg(color::LightMagenta)),
+            Color::Yellow => write!(f, "{}", color::Fg(color::LightYellow)),
+            Color::White => write!(f, "{}", color::Fg(color::LightWhite)),
+            Color::Reset => write!(f, "{}{}", color::Fg(color::Reset), style::Reset),
+            // Dividing by 43 maps the color to the correct ANSI range of [0,5]
+            &Color::Custom(r, g, b) => write!(
+                f,
+                "{}",
+                color::Fg(color::AnsiValue::rgb(r / 43, g / 43, b / 43))
+            ),
         }
     }
 }
