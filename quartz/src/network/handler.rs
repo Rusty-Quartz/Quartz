@@ -25,7 +25,7 @@ use openssl::{
     sha,
 };
 use qdat::UnlocalizedName;
-use quartz_chat::{color::PredefinedColor, Component};
+use quartz_chat::{color::Color, Component};
 use quartz_commands::CommandModule;
 use quartz_nbt::NbtCompound;
 use rand::{thread_rng, Rng};
@@ -152,7 +152,7 @@ impl AsyncPacketHandler {
                 .send_packet(ClientBoundPacket::Disconnect {
                     reason: Box::new(Component::colored(
                         "Error verifying encryption".to_owned(),
-                        PredefinedColor::Red,
+                        Color::Red,
                     )),
                 });
         }

@@ -35,7 +35,7 @@ impl<'ctx> CommandModule<CommandContext<'ctx>> for StaticCommandExecutor {
 #[allow(clippy::redundant_pattern)]
 mod cmds {
     use crate::{command::CommandContext, ServerClock, DIAGNOSTICS, RUNNING};
-    use quartz_chat::{color::PredefinedColor, Component, ComponentBuilder};
+    use quartz_chat::{color::Color, Component, ComponentBuilder};
     use quartz_commands::{self, module, CommandModule, Help};
     use std::sync::atomic::Ordering;
     module! {
@@ -50,7 +50,7 @@ mod cmds {
             root executes |ctx| {
                 ctx.sender.send_message(Component::colored(
                     "-- Command List --".to_owned(),
-                    PredefinedColor::Gold,
+                    Color::Gold,
                 ));
 
                 let command_names = ctx.executor.get_suggestions("", &ctx);
@@ -58,12 +58,12 @@ mod cmds {
                 for command in command_names {
                     ctx.sender.send_message(Component::colored(
                         command.to_owned(),
-                        PredefinedColor::Gray,
+                        Color::Gray,
                     ));
                 }
                 ctx.sender.send_message(Component::colored(
                     "-- Use 'help [command]' to get more information --".to_owned(),
-                    PredefinedColor::Gold,
+                    Color::Gold,
                 ));
 
                 Ok(())
@@ -127,7 +127,7 @@ mod cmds {
 
                 ctx.sender.send_message(
                     ComponentBuilder::new()
-                        .color(PredefinedColor::Gold)
+                        .color(Color::Gold)
                         .add_text("Server TPS: ")
                         .custom_color(red as u8, green as u8, 0)
                         .add_text(format!(
