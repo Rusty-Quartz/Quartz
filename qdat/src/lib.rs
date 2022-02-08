@@ -10,7 +10,7 @@ pub use uln::*;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename = "snake_case")]
 pub enum Gamemode {
     /// None is only valid when sending the JoinGame packet previous gamemode packet

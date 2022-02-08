@@ -35,20 +35,17 @@ pub fn gen_blockstates() {
     let struct_enum = gen_struct_enum(&data);
     let lookup = gen_name_lookup(&data);
 
-    fs::write(
-        &dest_path,
-        quote! {
-            use phf::{phf_map};
-            pub const STATE_COUNT: u16 = #state_count;
-            #enums
-            #structs
-            #struct_enum
-            #lookup
-        }
-        .to_string(),
-    )
-    .unwrap();
-    super::format_in_place(dest_path.as_os_str());
+    let unformatted = quote! {
+        use phf::{phf_map};
+        pub const STATE_COUNT: u16 = #state_count;
+        #enums
+        #structs
+        #struct_enum
+        #lookup
+    }
+    .to_string();
+    let formatted = super::format_ast(unformatted).unwrap();
+    fs::write(&dest_path, formatted).unwrap();
 
     println!("cargo:rerun-if-changed=../assets/blocks.json");
     println!("cargo:rerun-if-changes=buildscript/blockstate.rs");

@@ -12,3 +12,8 @@ pub(crate) fn format_in_place(file: &OsStr) {
         .output()
         .unwrap_or_else(|_| panic!("Failed to format file: {:?}", file));
 }
+
+pub(crate) fn format_ast(code: String) -> syn::Result<String> {
+    let file = syn::parse_file(&code)?;
+    Ok(prettyplease::unparse(&file))
+}
