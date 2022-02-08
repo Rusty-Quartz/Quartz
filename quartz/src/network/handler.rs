@@ -3,7 +3,7 @@ use crate::{
     command_executor,
     config,
     entities::{
-        player::{Player, PlayerInventory},
+        player::{Player, PlayerInventory, PlayerState},
         Position,
     },
     item::{ItemStack, EMPTY_ITEM_STACK},
@@ -300,13 +300,21 @@ impl QuartzServer {
     pub(crate) async fn handle_login_success_server(
         &mut self,
         sender: ClientId,
-        uuid: Uuid,
+        mut uuid: Uuid,
         username: &str,
     ) {
+        let config = config().read();
+        if !config.online_mode {
+            // I have no idea what to use as the namespace here lol
+            uuid = Uuid::new_v4()
+            // Use a random namespace so we can have multiple players with the same username
+            //     &Uuid::from_str("OfflinePlayer").unwrap(),
+            //     username.as_bytes(),
+            // );
+        }
         self.client_list.set_username(sender, username);
         log::debug!("{}", uuid);
         self.client_list.set_uuid(sender, uuid);
-        // let config = config().lock().await;
 
         /*
 
@@ -748,6 +756,41 @@ impl QuartzServer {
         z: f64,
         on_ground: bool,
     ) {
+        // We assume the player is in the game if we're getting this packet
+        let world = self.world_store.get_player_world_mut(sender).unwrap();
+        let player_entity = *world.get_player_entity(sender).unwrap();
+        let mut entities = world.get_entities_mut().await;
+        let uuid = *self.client_list.uuid(sender).unwrap();
+
+        // If the player isn't ready we need to return
+        match *entities.get::<PlayerState>(player_entity).unwrap() {
+            PlayerState::Ready => {}
+            _ => return,
+        }
+
+        let pos = entities.get::<Position>(player_entity).unwrap();
+        let dx = (x * 32. - pos.x * 32.) * 128.;
+        let dy = (feet_y * 32. - pos.y * 32.) * 128.;
+        let dz = (z * 32. - pos.z * 32.) * 128.;
+        drop(pos);
+
+        for (id, (pos, write_handle)) in
+            entities.query_mut::<(&mut Position, &mut AsyncWriteHandle)>()
+        {
+            if id == player_entity {
+                pos.x = x;
+                pos.y = feet_y;
+                pos.z = z;
+            } else {
+                write_handle.send_packet(ClientBoundPacket::EntityPosition {
+                    entity_id: player_entity.id() as i32,
+                    delta_x: dx as i16,
+                    delta_y: dy as i16,
+                    delta_z: dz as i16,
+                    on_ground,
+                })
+            }
+        }
     }
 
     #[allow(unused_variables)]
@@ -762,6 +805,45 @@ impl QuartzServer {
         pitch: f32,
         on_ground: bool,
     ) {
+        // We assume the player is in the game if we're getting this packet
+        let world = self.world_store.get_player_world_mut(sender).unwrap();
+        let player_entity = *world.get_player_entity(sender).unwrap();
+        let mut entities = world.get_entities_mut().await;
+        let uuid = *self.client_list.uuid(sender).unwrap();
+
+        // If the player isn't ready we need to return
+        match *entities.get::<PlayerState>(player_entity).unwrap() {
+            PlayerState::Ready => {}
+            _ => return,
+        }
+
+        let pos = entities.get::<Position>(player_entity).unwrap();
+        let dx = (x * 32. - pos.x * 32.) * 128.;
+        let dy = (feet_y * 32. - pos.y * 32.) * 128.;
+        let dz = (z * 32. - pos.z * 32.) * 128.;
+        drop(pos);
+
+        // TODO: filter the query to just the players in render distance of the player
+        for (id, (player,)) in entities.query_mut::<(&mut Player,)>() {
+            if id == player_entity {
+                let mut pos = &mut player.pos;
+                pos.x = x;
+                pos.y = feet_y;
+                pos.z = z;
+            } else {
+                player
+                    .write_handle
+                    .send_packet(ClientBoundPacket::EntityPositionAndRotation {
+                        entity_id: player_entity.id() as i32,
+                        delta_x: dx as i16,
+                        delta_y: dy as i16,
+                        delta_z: dz as i16,
+                        yaw: (yaw / 256.0) as u8,
+                        pitch: (pitch / 256.0) as u8,
+                        on_ground,
+                    })
+            }
+        }
     }
 
     #[allow(unused_variables)]
@@ -921,7 +1003,8 @@ impl QuartzServer {
                 chunk_z: 0,
             });
 
-        self.world_store
+        let player = self
+            .world_store
             .spawn_player(
                 Dimension::Overworld,
                 sender,
@@ -929,13 +1012,27 @@ impl QuartzServer {
                     Gamemode::Creative,
                     Position {
                         x: 0.,
-                        y: 60.,
+                        y: 100.,
                         z: 0.,
                     },
                     self.client_list.create_write_handle(sender).unwrap(),
                 ),
             )
-            .await;
+            .await
+            .unwrap();
+
+        self.client_list.send_to_filtered(
+            |_| ClientBoundPacket::SpawnPlayer {
+                entity_id: player.id() as i32,
+                player_uuid: uuid,
+                x: 0.,
+                y: 100.,
+                z: 0.,
+                pitch: 0,
+                yaw: 0,
+            },
+            |client_id| **client_id != sender,
+        );
 
         let write_handle = self.client_list.create_write_handle(sender).unwrap();
         let player_world = self.world_store.get_player_world_mut(sender).unwrap();
@@ -994,21 +1091,72 @@ impl QuartzServer {
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::SpawnPosition {
-                location: BlockPosition { x: 0, y: 60, z: 0 },
+                location: BlockPosition { x: 0, y: 100, z: 0 },
                 angle: 0.0,
             });
 
         self.client_list
             .send_packet(sender, ClientBoundPacket::PlayerPositionAndLook {
-                dismount_vehicle: true,
+                dismount_vehicle: false,
                 x: 0.0,
                 y: 100.0,
                 z: 0.0,
                 yaw: 0.0,
                 pitch: 0.0,
                 flags: 0,
-                teleport_id: 0,
+                teleport_id: 1,
             });
+
+        self.client_list
+            .send_packet(sender, ClientBoundPacket::PlayerInfo {
+                action: 0,
+                player: self
+                    .client_list
+                    .iter()
+                    .filter_map(|(client_id, client)| {
+                        if *client_id != sender {
+                            Some(WrappedPlayerInfoAction {
+                                uuid: *client.uuid(),
+                                action: PlayerInfoAction::AddPlayer {
+                                    name: client.username().to_owned(),
+                                    properties: vec![].into_boxed_slice(),
+                                    gamemode: Gamemode::Creative,
+                                    ping: 50,
+                                    display_name: None,
+                                },
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            });
+
+        let overworld = self.world_store.get_world(Dimension::Overworld).unwrap();
+        let entities = overworld.get_entities().await;
+
+        let player_packets = overworld
+            .get_players()
+            .filter_map(|(client_id, player_id)| {
+                if *client_id != sender {
+                    let pos = entities.get::<Position>(*player_id).unwrap();
+                    Some(ClientBoundPacket::SpawnPlayer {
+                        entity_id: player_id.id() as i32,
+                        player_uuid: *self.client_list.uuid(*client_id).unwrap(),
+                        x: pos.x,
+                        y: pos.y,
+                        z: pos.z,
+                        pitch: 0,
+                        yaw: 0,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        self.client_list.send_all(sender, player_packets);
     }
 
     #[allow(unused_variables)]
@@ -1054,7 +1202,22 @@ impl QuartzServer {
     }
 
     #[allow(unused_variables)]
-    async fn handle_teleport_confirm(&mut self, sender: ClientId, teleport_id: i32) {}
+    async fn handle_teleport_confirm(&mut self, sender: ClientId, teleport_id: i32) {
+        // Teleport id 1 *should* only be used for spawning players
+        if teleport_id == 1 {
+            // Ensure that we have spawned the player
+            if let Some(player_world) = self.world_store.get_player_world_mut(sender) {
+                let player_entity = *player_world.get_player_entity(sender).unwrap();
+                let entities = player_world.get_entities_mut().await;
+                let mut player_state = entities.get_mut::<PlayerState>(player_entity).unwrap();
+
+                // Change the player's state to ready
+                if let PlayerState::Spawning = *player_state {
+                    *player_state = PlayerState::Ready;
+                }
+            }
+        }
+    }
 }
 
 /// Handles the given asynchronos connecting using blocking I/O opperations.

@@ -2,6 +2,7 @@ use crate::item::{ItemStack, OptionalItemStack};
 use quartz_nbt::{NbtCompound, NbtList};
 
 /// Represents a basic inventory
+#[derive(Clone)]
 pub struct Inventory {
     /// The size of the inventory
     pub size: usize,

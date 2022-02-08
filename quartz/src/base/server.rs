@@ -306,8 +306,17 @@ impl QuartzServer {
                     self.handle_login_success_server(id, uuid, &username).await,
                 WrappedServerBoundPacket::ClientConnected { id, write_handle } =>
                     self.client_list.add_client(id, write_handle),
-                WrappedServerBoundPacket::ClientDisconnected { id } =>
-                    self.client_list.remove_client(id),
+                WrappedServerBoundPacket::ClientDisconnected { id } => {
+                    self.client_list.remove_client(id);
+                    if let Err(e) = self.world_store.remove_player(id).await {
+                        // Only log this error in debug mode
+                        // It can be an error but also triggers when sending status packets
+                        // so in release we probably shouldn't log it
+                        // but it could be useful to mark as error when debugging
+                        #[cfg(debug_assertations)]
+                        log::error!("Error removing player: {}", e);
+                    }
+                }
                 WrappedServerBoundPacket::ConsoleCommand { command } => {
                     let executor = command_executor();
                     let sender = CommandSender::Console;
@@ -464,7 +473,7 @@ impl ClientList {
             .for_each(|(id, client)| client.connection.send_packet(packet(id)));
     }
 
-    fn iter(&self) -> ClientListIter<'_> {
+    pub fn iter(&self) -> ClientListIter<'_> {
         ClientListIter(self.0.iter())
     }
 
@@ -501,7 +510,7 @@ impl ClientList {
     }
 }
 
-struct ClientListIter<'a>(std::collections::hash_map::Iter<'a, ClientId, Client>);
+pub struct ClientListIter<'a>(std::collections::hash_map::Iter<'a, ClientId, Client>);
 
 impl<'a> Iterator for ClientListIter<'a> {
     type Item = (&'a ClientId, &'a Client);
@@ -518,7 +527,7 @@ impl Default for ClientList {
 }
 
 /// Wrapper around an asynchronous connection write handle that also contains an optional player ID.
-struct Client {
+pub struct Client {
     pub connection: AsyncWriteHandle,
     pub player_id: Option<usize>,
     keep_alive_id: Option<i64>,
@@ -566,11 +575,11 @@ impl Client {
         true
     }
 
-    fn username(&self) -> &str {
+    pub fn username(&self) -> &str {
         &self.username
     }
 
-    fn uuid(&self) -> &Uuid {
+    pub fn uuid(&self) -> &Uuid {
         &self.uuid
     }
 

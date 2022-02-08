@@ -9,10 +9,11 @@ use crate::{
 
 #[derive(Bundle)]
 pub struct Player {
-    inventory: PlayerInventory,
-    pos: Position,
-    gamemode: Gamemode,
-    write_handle: AsyncWriteHandle,
+    pub inventory: PlayerInventory,
+    pub pos: Position,
+    pub gamemode: Gamemode,
+    pub write_handle: AsyncWriteHandle,
+    pub state: PlayerState,
 }
 
 impl Player {
@@ -22,10 +23,18 @@ impl Player {
             pos,
             gamemode,
             write_handle,
+            state: PlayerState::Spawning,
         }
     }
 }
 
+pub enum PlayerState {
+    Spawning,
+    Ready,
+    Despawning,
+}
+
+#[derive(Clone)]
 pub struct PlayerInventory {
     current_slot: u8,
     inv: Inventory,

@@ -8,10 +8,13 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use hecs::{Bundle, Entity, World as EntityStore};
 
-use qdat::{world::location::Coordinate, UnlocalizedName};
+use qdat::{world::location::Coordinate, Gamemode, UnlocalizedName};
 
 use crate::{
-    entities::player::Player,
+    entities::{
+        player::{Player, PlayerInventory},
+        Position,
+    },
     network::AsyncWriteHandle,
     server::ClientId,
     world::chunk::{
@@ -27,8 +30,6 @@ pub struct World {
     chunk_provider: ChunkProvider,
 }
 
-// Player {...}
-// (Inventroy, Position, Gamemode)
 
 impl World {
     fn new<P: AsRef<Path>>(name: &str, world_path: P) -> std::io::Result<Self> {
@@ -47,15 +48,59 @@ impl World {
     ///
     /// Does not load the chunks around the player
     pub async fn spawn_player(&mut self, player_id: ClientId, player: Player) -> Entity {
+        // TODO: we need to have the world read the player's position from file
+        // and update the player before spawning
         let mut entities = self.entities.write().await;
-        // TODO: actually spawn a player here
         let player = entities.spawn(player);
         self.curr_players.insert(player_id, player);
         player
     }
 
+    pub async fn remove_player(&mut self, player_id: ClientId) -> Result<Player, String> {
+        let player = self
+            .curr_players
+            .remove(&player_id)
+            .ok_or("Player is not currently in this world".to_owned())?;
+
+        let mut entities = self.entities.write().await;
+
+        let write_handle = entities.get::<AsyncWriteHandle>(player).unwrap();
+        let inv = entities.get::<PlayerInventory>(player).unwrap();
+        let gamemode = entities.get::<Gamemode>(player).unwrap();
+
+        let mut p = Player::new(
+            *gamemode.deref(),
+            Position {
+                x: 0.,
+                y: 0.,
+                z: 0.,
+            },
+            write_handle.deref().clone(),
+        );
+        p.inventory = inv.deref().clone();
+
+        // TODO: we need to write the player's info to file
+
+        drop(write_handle);
+        drop(inv);
+        drop(gamemode);
+
+        entities
+            .despawn(player)
+            .map_err(|e| format!("Error despawning player entity: {}", e))?;
+
+        Ok(p)
+    }
+
     pub fn get_player_entity(&self, player_id: ClientId) -> Option<&Entity> {
         self.curr_players.get(&player_id)
+    }
+
+    pub fn get_client_id_for_entity(&self, entity_id: Entity) -> Option<ClientId> {
+        self.curr_players
+            .iter()
+            .find(|(_id, e)| **e == entity_id)
+            .map(|(c, _e)| *c)
     }
 
     pub async fn spawn_entity<E: Bundle>(&mut self, entity: E) -> Entity {
@@ -71,7 +116,7 @@ impl World {
     }
 
     /// Returns a reference to the entity store
-    pub async fn get_entities(&mut self) -> EntitiesRef<'_> {
+    pub async fn get_entities(&self) -> EntitiesRef<'_> {
         EntitiesRef {
             lock: self.entities.read().await,
         }
@@ -101,6 +146,10 @@ impl World {
 
     pub async fn join_pending(&mut self) {
         self.chunk_provider.join_pending().await;
+    }
+
+    pub fn get_players(&self) -> std::collections::hash_map::Iter<'_, ClientId, Entity> {
+        self.curr_players.iter()
     }
 }
 
@@ -201,19 +250,47 @@ impl WorldStore {
 
     /// Flushes all the ready chunks into storage
     pub async fn flush_ready(&mut self) {
-        for (_, w) in &mut self.worlds {
+        for w in self.worlds.values_mut() {
             w.chunk_provider.flush_ready().await
         }
     }
 
     pub async fn join_pending(&mut self) {
-        for (_, w) in &mut self.worlds {
+        for w in self.worlds.values_mut() {
             w.chunk_provider.join_pending().await;
         }
     }
+
+    pub async fn remove_player(&mut self, client_id: ClientId) -> Result<(), String> {
+        let world_id = self
+            .player_worlds
+            .get(&client_id)
+            .ok_or("Player is not currently spawned".to_owned())?;
+        let w = self.worlds.get_mut(world_id).unwrap();
+        w.remove_player(client_id).await?;
+        self.player_worlds.remove(&client_id);
+        Ok(())
+    }
+
+    pub async fn change_player_dimension(
+        &mut self,
+        client_id: ClientId,
+        dimension: Dimension,
+    ) -> Result<Entity, String> {
+        let world_id = self
+            .player_worlds
+            .get(&client_id)
+            .ok_or("Player is not currently spawned".to_owned())?;
+
+        let w = self.worlds.get_mut(world_id).unwrap();
+        let p = w.remove_player(client_id).await?;
+        let new_world = self.worlds.get_mut(&dimension).unwrap();
+
+        Ok(new_world.spawn_player(client_id, p).await)
+    }
 }
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum Dimension {
     Overworld,
     Nether,
