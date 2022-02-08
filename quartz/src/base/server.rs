@@ -42,7 +42,7 @@ use std::{
 };
 use tokio::{
     net::TcpListener,
-    runtime::{Builder, Runtime},
+    runtime::Runtime,
     task,
 };
 use uuid::Uuid;
@@ -53,13 +53,13 @@ pub const VERSION: &str = "1.17";
 /// The main struct containing all relevant data to the quartz server instance.
 // TODO: consider boxing some fields
 pub struct QuartzServer {
+    rt: Arc<Runtime>,
     /// The list of connected clients.
     pub(crate) client_list: ClientList,
     /// The join handle for the console command handler thread.
     console_command_handler: Option<JoinHandle<()>>,
     ///The World manager
     pub world_store: WorldStore,
-    tcp_server_runtime: Option<Runtime>,
     /// A cloneable channel to send packets to the main server thread.
     sync_packet_sender: Sender<WrappedServerBoundPacket>,
     /// The receiver for packets that need to be handled on the server thread.
@@ -67,7 +67,7 @@ pub struct QuartzServer {
 }
 
 impl QuartzServer {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(rt: Arc<Runtime>) -> Self {
         if RUNNING
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
@@ -76,20 +76,15 @@ impl QuartzServer {
         }
 
         let (sender, receiver) = mpsc::channel::<WrappedServerBoundPacket>();
-        let tcp_server_runtime = Builder::new_multi_thread()
-            .enable_io()
-            .thread_name("tcp-worker")
-            .build()
-            .map(Some)
-            .expect("Failed to construct TCP server runtime");
+        let world_store = WorldStore::new(Arc::clone(&rt), "./world").expect("Error making world store");
 
         QuartzServer {
+            rt,
             client_list: ClientList::new(),
             sync_packet_sender: sender,
             sync_packet_receiver: receiver,
             console_command_handler: None,
-            world_store: WorldStore::new("./world").expect("Error making world store"),
-            tcp_server_runtime,
+            world_store,
         }
     }
 
@@ -226,12 +221,8 @@ impl QuartzServer {
 
         let sync_packet_sender = self.sync_packet_sender.clone();
 
-        let rt = self
-            .tcp_server_runtime
-            .as_ref()
-            .expect("TCP server runtime not initialized");
-        let listener = rt.block_on(TcpListener::bind(addr))?;
-        rt.spawn(Self::tcp_server(listener, sync_packet_sender));
+        let listener = self.rt.block_on(TcpListener::bind(addr))?;
+        self.rt.spawn(Self::tcp_server(listener, sync_packet_sender));
 
         Ok(())
     }
@@ -355,11 +346,6 @@ impl Drop for QuartzServer {
                 let _ = StdTcpStream::connect(format!("{}:{}", guard.server_ip, guard.port));
             }
             None => warn!("Failed to shutdown TCP thread."),
-        }
-
-        // Shutdown the server runtime, forcibly stopping it after five seconds
-        if let Some(rt) = self.tcp_server_runtime.take() {
-            rt.shutdown_timeout(Duration::from_secs(5));
         }
     }
 }

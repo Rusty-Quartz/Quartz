@@ -259,13 +259,7 @@ struct Packet {
     #[serde(rename = "async", default)]
     asynchronous: bool,
     #[serde(default)]
-    unimplemented: bool,
-    #[serde(default)]
     sender_independent: bool,
-    #[serde(default)]
-    internal: bool,
-    #[serde(default = "Packet::dispatch_default")]
-    dispatch: bool,
     name: String,
     id: String,
     fields: Vec<Field>,
@@ -380,11 +374,6 @@ impl Packet {
                 }
             })
     }
-
-    #[inline(always)]
-    fn dispatch_default() -> bool {
-        true
-    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -406,8 +395,6 @@ struct Field {
     ser_as_nbt: bool,
     #[serde(default)]
     condition: Option<String>,
-    #[serde(default)]
-    deserialize_with: Option<String>,
     #[serde(skip)]
     cached_type: OnceCell<Type>,
 }

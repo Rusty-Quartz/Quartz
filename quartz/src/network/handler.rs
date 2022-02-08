@@ -25,7 +25,7 @@ use openssl::{
     sha,
 };
 use qdat::UnlocalizedName;
-use quartz_chat::{color::PredefinedColor, Component};
+use quartz_chat::{color::Color, Component};
 use quartz_commands::CommandModule;
 use quartz_nbt::NbtCompound;
 use rand::{thread_rng, Rng};
@@ -152,7 +152,7 @@ impl AsyncPacketHandler {
                 .send_packet(ClientBoundPacket::Disconnect {
                     reason: Box::new(Component::colored(
                         "Error verifying encryption".to_owned(),
-                        PredefinedColor::Red,
+                        Color::Red,
                     )),
                 });
         }
@@ -1053,7 +1053,10 @@ impl QuartzServer {
         for x in -view_distance .. view_distance {
             for z in -view_distance .. view_distance {
                 let chunk_coords = Coordinate::chunk(x as i32, z as i32);
-                let chunk = player_world.get_loaded_chunk(chunk_coords).unwrap();
+                let chunk = match player_world.get_loaded_chunk(chunk_coords) {
+                    Some(c) => c,
+                    None => continue
+                };
                 let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
 
                 packets.push(ClientBoundPacket::ChunkData {

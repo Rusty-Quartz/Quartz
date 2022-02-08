@@ -320,16 +320,8 @@ struct StatePacketInfo {
 
 #[derive(Deserialize, Clone)]
 struct Packet {
-    #[serde(rename = "async", default)]
-    asynchronous: bool,
-    #[serde(default)]
-    unimplemented: bool,
-    #[serde(default)]
-    sender_independent: bool,
     #[serde(default)]
     internal: bool,
-    #[serde(default = "Packet::dispatch_default")]
-    dispatch: bool,
     name: String,
     id: String,
     fields: Vec<Field>,
@@ -407,11 +399,6 @@ impl Packet {
             }
         })
     }
-
-    #[inline(always)]
-    fn dispatch_default() -> bool {
-        true
-    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -423,8 +410,6 @@ struct Field {
     unused: bool,
     #[serde(default)]
     referenced: bool,
-    #[serde(default)]
-    pass_raw: bool,
     #[serde(default)]
     option: bool,
     #[serde(default)]

@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::runtime::Runtime;
 
 use hecs::{Bundle, Entity, World as EntityStore};
 
@@ -32,10 +33,10 @@ pub struct World {
 
 
 impl World {
-    fn new<P: AsRef<Path>>(name: &str, world_path: P) -> std::io::Result<Self> {
+    fn new<P: AsRef<Path>>(rt: Arc<Runtime>, world_path: P) -> std::io::Result<Self> {
         let entities = Arc::new(RwLock::new(EntityStore::new()));
         let curr_players = HashMap::new();
-        let chunk_provider = ChunkProvider::new(name, world_path)?;
+        let chunk_provider = ChunkProvider::new(rt, world_path)?;
 
         Ok(Self {
             entities,
@@ -223,23 +224,23 @@ impl WorldStore {
         self.worlds.get_mut(&dim)
     }
 
-    pub fn new<P: AsRef<Path>>(world_path: P) -> std::io::Result<Self> {
+    pub fn new<P: AsRef<Path>>(rt: Arc<Runtime>, world_path: P) -> std::io::Result<Self> {
         let mut worlds = HashMap::with_capacity(3);
         let player_worlds = HashMap::new();
 
         worlds.insert(
             Dimension::Overworld,
-            World::new("overworld", world_path.as_ref().join("region"))?,
+            World::new(Arc::clone(&rt), world_path.as_ref().join("region"))?,
         );
 
         worlds.insert(
             Dimension::Nether,
-            World::new("nether", world_path.as_ref().join("DIM-1/region"))?,
+            World::new(Arc::clone(&rt), world_path.as_ref().join("DIM-1/region"))?,
         );
 
         worlds.insert(
             Dimension::End,
-            World::new("the end", world_path.as_ref().join("DIM1/region"))?,
+            World::new(rt, world_path.as_ref().join("DIM1/region"))?,
         );
 
         Ok(Self {

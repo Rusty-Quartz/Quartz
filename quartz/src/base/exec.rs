@@ -66,7 +66,14 @@ pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
         .ok()
         .expect("Raw console initialized before server was run.");
 
-    let mut server = QuartzServer::new();
+    let rt = Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("main-tick-thread")
+        .build()
+        .expect("Failed to build main-tick runtime");
+    let rt = Arc::new(rt);
+
+    let mut server = QuartzServer::new(Arc::clone(&rt));
     server.init();
     COMMAND_EXECUTOR
         .set(CommandExecutor::new())
@@ -75,13 +82,8 @@ pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
 
     info!("Started server thread");
 
-    let rt = Builder::new_current_thread()
-        .enable_all()
-        .thread_name("main-tick-thread")
-        .build()
-        .expect("Failed to build main-tick runtime");
     let local_set = LocalSet::new();
-    local_set.block_on(&rt, async {
+    local_set.block_on(&*rt, async move {
         let mut clock = ServerClock::new();
 
         while RUNNING.load(Ordering::Acquire) {
@@ -94,6 +96,14 @@ pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
             clock.finish_tick().await;
         }
     });
+
+    drop(local_set);
+
+    let rt = Arc::try_unwrap(rt);
+    match rt {
+        Ok(rt) => rt.shutdown_timeout(Duration::from_secs(5)),
+        Err(_) => error!("Failed to reclaim ownership of runtime")
+    }
 }
 
 const FULL_TICK_LENGTH: u64 = 50;
