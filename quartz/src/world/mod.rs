@@ -1,6 +1,7 @@
 pub mod chunk {
     mod chunk;
     mod error;
+    pub mod gen;
     mod palette;
     pub mod provider;
     mod section;

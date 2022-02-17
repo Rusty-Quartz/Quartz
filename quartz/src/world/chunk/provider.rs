@@ -5,7 +5,7 @@ use crate::{
         ClientBoundPacket,
         WrappedClientBoundPacket,
     },
-    world::chunk::{chunk::RawChunk, Chunk, ChunkDecodeError, RawClientChunk},
+    world::chunk::{chunk::RawChunk, gen::ChunkGenerator, Chunk, ChunkDecodeError, RawClientChunk},
 };
 use byteorder::{BigEndian, ByteOrder};
 use dashmap::{
@@ -27,6 +27,7 @@ use std::{
     fmt::{self, Display, Formatter},
     future::Future,
     io::{self, Error as IoError, Write},
+    marker::PhantomData,
     path::{Path, PathBuf},
     sync::Arc,
     task::Poll,
@@ -39,18 +40,16 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
-pub struct ChunkProvider {
+pub struct ChunkProvider<T: ChunkGenerator + 'static> {
     pub store: Arc<RegionHandler>,
     rt: Arc<Runtime>,
     pending: FuturesUnordered<JoinHandle<Result<ProviderResponse, ProviderError>>>,
+    __generator: PhantomData<T>,
 }
 
-impl ChunkProvider {
+impl<T: ChunkGenerator + 'static> ChunkProvider<T> {
     /// Creates a chunk provider for the given root directory with the given number of threads.
-    pub fn new<P: AsRef<Path>>(
-        rt: Arc<Runtime>,
-        root_directory: P
-    ) -> io::Result<Self> {
+    pub fn new<P: AsRef<Path>>(rt: Arc<Runtime>, root_directory: P) -> io::Result<Self> {
         let root_directory = root_directory.as_ref();
 
         // Ensure the root directory exists
@@ -59,7 +58,12 @@ impl ChunkProvider {
         let store = Arc::new(RegionHandler::new(root_directory.to_owned()));
         let pending = FuturesUnordered::new();
 
-        Ok(ChunkProvider { store, rt, pending })
+        Ok(ChunkProvider {
+            store,
+            rt,
+            pending,
+            __generator: PhantomData,
+        })
     }
 
     pub fn request(&self, request: ProviderRequest) {
@@ -153,23 +157,28 @@ impl ChunkProvider {
 
         // We skip a downgrade on `region` here because futures are lazy and the overhead
         // is minimal
-        let chunk_nbt = region.chunk_nbt(coords)?;
+        let chunk_nbt = region.chunk_nbt(coords);
 
         drop(region);
+
+        let chunk_nbt = match chunk_nbt {
+            Ok(c) => c,
+            Err(_) => {
+                let mut generator = T::start_chunk(coords);
+                generator.shape_chunk();
+                return Ok(Some(generator.finish_chunk()));
+            }
+        };
 
         match chunk_nbt {
             Some(chunk_nbt) => {
                 let chunk_nbt = chunk_nbt.await?;
-                return Self::decode_chunk::<RawChunk, _, _>(chunk_nbt, Chunk::from)
+                Self::decode_chunk::<RawChunk, _, _>(chunk_nbt, Chunk::from)
                     .await
-                    .map(Some);
+                    .map(Some)
             }
-            None => {
-                log::warn!("Chunk generation not supported yet.");
-            }
+            None => Ok(Some(Self::handle_chunk_gen(coords).await)),
         }
-
-        Ok(None)
     }
 
     async fn handle_load_send(
@@ -286,7 +295,41 @@ impl ChunkProvider {
                 ));
             }
             None => {
-                log::warn!("Chunk generation not supported yet.");
+                let chunk = Self::handle_chunk_gen(coords).await;
+
+                let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
+
+                packets.push(WrappedClientBoundPacket::Singleton(
+                    ClientBoundPacket::ChunkData {
+                        chunk_x,
+                        chunk_z,
+                        primary_bit_mask,
+                        heightmaps: chunk.get_heightmaps(),
+                        biomes: Box::from(chunk.biomes()),
+                        // TODO: send block entities for chunk when we support them
+                        block_entities: vec![].into_boxed_slice(),
+                        data: section_data,
+                    },
+                ));
+
+                let (sky_light_mask, empty_sky_light_mask, sky_light_arrays) =
+                    chunk.gen_sky_lights();
+                let (block_light_mask, empty_block_light_mask, block_light_arrays) =
+                    chunk.gen_block_lights();
+
+                packets.push(WrappedClientBoundPacket::Singleton(
+                    ClientBoundPacket::UpdateLight {
+                        chunk_x,
+                        chunk_z,
+                        trust_edges: true,
+                        sky_light_mask,
+                        block_light_mask,
+                        empty_sky_light_mask,
+                        empty_block_light_mask,
+                        sky_light_arrays,
+                        block_light_arrays,
+                    },
+                ));
             }
         }
 
@@ -342,6 +385,12 @@ impl ChunkProvider {
         };
 
         // TODO: write region to disk
+    }
+
+    async fn handle_chunk_gen(coords: Coordinate) -> Chunk {
+        let mut generator = T::start_chunk(coords);
+        generator.shape_chunk();
+        generator.finish_chunk()
     }
 }
 

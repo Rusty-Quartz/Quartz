@@ -4,8 +4,10 @@ use std::{
     path::Path,
     sync::Arc,
 };
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tokio::runtime::Runtime;
+use tokio::{
+    runtime::Runtime,
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
 use hecs::{Bundle, Entity, World as EntityStore};
 
@@ -28,7 +30,7 @@ use crate::{
 pub struct World {
     entities: Arc<RwLock<EntityStore>>,
     curr_players: HashMap<ClientId, Entity>,
-    chunk_provider: ChunkProvider,
+    chunk_provider: ChunkProvider<super::chunk::gen::SimpleChunkGenerator>,
 }
 
 

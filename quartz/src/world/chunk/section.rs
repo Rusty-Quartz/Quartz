@@ -443,6 +443,13 @@ pub struct SectionStore {
 }
 
 impl SectionStore {
+    pub fn new(size: usize) -> SectionStore {
+        SectionStore {
+            section_mapping: [OptionalSectionIndex::none(); MAX_SECTION_COUNT],
+            sections: Vec::with_capacity(size),
+        }
+    }
+
     pub fn insert(&mut self, section: Section) -> Result<&mut Section, SectionInsertionError> {
         let index = match self.section_mapping.get_mut(section.y.as_index()) {
             Some(index) => index,
@@ -461,16 +468,14 @@ impl SectionStore {
     pub fn get(&self, y: i8) -> Option<&Section> {
         self.section_mapping
             .get(SectionY::from(y).as_index())
-            .map(OptionalSectionIndex::as_option)
-            .flatten()
+            .and_then(OptionalSectionIndex::as_option)
             .map(|index| &self.sections[index])
     }
 
     pub fn get_mut(&mut self, y: i8) -> Option<&mut Section> {
         self.section_mapping
             .get(SectionY::from(y).as_index())
-            .map(OptionalSectionIndex::as_option)
-            .flatten()
+            .and_then(OptionalSectionIndex::as_option)
             .map(|index| &mut self.sections[index])
     }
 
@@ -566,10 +571,7 @@ impl<'de> Visitor<'de> for SectionStoreVisitor {
 
     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
     where A: SeqAccess<'de> {
-        let mut store = SectionStore {
-            section_mapping: [OptionalSectionIndex::none(); MAX_SECTION_COUNT],
-            sections: Vec::with_capacity(seq.size_hint().unwrap_or(0)),
-        };
+        let mut store = SectionStore::new(seq.size_hint().unwrap_or(0));
 
         while let Some(raw) = seq.next_element::<RawSection<'de>>()? {
             let section = Section::from_raw(raw).map_err(de::Error::custom)?;
