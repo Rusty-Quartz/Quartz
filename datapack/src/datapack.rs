@@ -94,7 +94,6 @@ fn recursive_read(path: &Path, prefix: String) -> Result<Vec<(String, DirEntry)>
 fn write_file_recursive<P: AsRef<Path>>(path: P) -> Result<File> {
     // TODO: This unwrap technically could fail if someone tried to write a datapack to the rootdir I think
     std::fs::create_dir_all(path.as_ref().parent().unwrap())?;
-    // println!("{}", path.as_ref().display());
     OpenOptions::new()
         .read(false)
         .write(true)
@@ -358,8 +357,6 @@ impl Namespace {
                 .write(false)
                 .open(entry.path())?;
 
-            println!("{}", entry.path().display());
-
             let mut str = String::new();
             file.read_to_string(&mut str)?;
 
@@ -447,7 +444,6 @@ impl Namespace {
         value: &HashMap<String, T>,
         path: &P,
     ) -> Result<()> {
-        println!("{} {}", value.len(), path.as_ref().display());
         for (name, val) in value {
             let file = write_file_recursive(path.as_ref().join(format!("{}.json", name)))?;
 
