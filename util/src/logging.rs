@@ -162,7 +162,7 @@ impl Append for CustomConsoleAppender {
     }
 
     #[cfg(not(unix))]
-    fn append(&self, record: &Record) -> Result<(), Box<dyn Error + Sync + Send>> {
+    fn append(&self, record: &Record) -> std::result::Result<(), anyhow::Error> {
         let mut writer = self.console_interface.lock_writer_erase()?;
         writeln!(
             writer,
