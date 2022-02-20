@@ -6,7 +6,8 @@ members = [
     "macros_impl",
     "util",
     "qdat",
-    "network"
+    "network",
+    "datapack"
 ]
 
 [profile.release]
