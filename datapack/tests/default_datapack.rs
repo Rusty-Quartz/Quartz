@@ -1,5 +1,6 @@
 use quartz_datapack::DataPack;
 
+#[ignore]
 #[test]
 fn default_datapack_test() {
     let datapack_path = "../run/datapacks/";
