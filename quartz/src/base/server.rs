@@ -21,6 +21,7 @@ use log::*;
 use openssl::rsa::Rsa;
 use parking_lot::Mutex;
 use quartz_chat::{
+    color::Color,
     component::{ClickEvent, ComponentType, HoverEntity, HoverEvent},
     Component,
     ComponentBuilder,
@@ -40,11 +41,7 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
-use tokio::{
-    net::TcpListener,
-    runtime::Runtime,
-    task,
-};
+use tokio::{net::TcpListener, runtime::Runtime, task};
 use uuid::Uuid;
 
 /// The string form of the minecraft version quartz currently supports.
@@ -76,7 +73,8 @@ impl QuartzServer {
         }
 
         let (sender, receiver) = mpsc::channel::<WrappedServerBoundPacket>();
-        let world_store = WorldStore::new(Arc::clone(&rt), "./world").expect("Error making world store");
+        let world_store =
+            WorldStore::new(Arc::clone(&rt), "./world").expect("Error making world store");
 
         QuartzServer {
             rt,
@@ -222,7 +220,8 @@ impl QuartzServer {
         let sync_packet_sender = self.sync_packet_sender.clone();
 
         let listener = self.rt.block_on(TcpListener::bind(addr))?;
-        self.rt.spawn(Self::tcp_server(listener, sync_packet_sender));
+        self.rt
+            .spawn(Self::tcp_server(listener, sync_packet_sender));
 
         Ok(())
     }
@@ -486,12 +485,17 @@ impl ClientList {
         let username = self.username(client_id)?;
 
         self.iter()
-            .for_each(|(_, c)| c.send_message(message, Some((uuid, username))));
+            .for_each(|(_, c)| c.send_message(message, Some((uuid, username)), false));
         Some(())
     }
 
     pub fn send_system_message(&self, client_id: ClientId, message: &str) -> Option<()> {
-        self.0.get(&client_id)?.send_message(message, None);
+        self.0.get(&client_id)?.send_message(message, None, false);
+        Some(())
+    }
+
+    pub fn send_system_error(&self, client_id: ClientId, message: &str) -> Option<()> {
+        self.0.get(&client_id)?.send_message(message, None, true);
         Some(())
     }
 }
@@ -569,7 +573,7 @@ impl Client {
         &self.uuid
     }
 
-    fn send_message(&self, message: &str, user_info: Option<(Uuid, &str)>) {
+    fn send_message(&self, message: &str, user_info: Option<(Uuid, &str)>, sys_error: bool) {
         match user_info {
             Some((uuid, username)) => self.connection.send_packet(ClientBoundPacket::ChatMessage {
                 sender: uuid,
@@ -594,6 +598,7 @@ impl Client {
                             Component::text(message),
                         ]),
                     ),
+                    color: if sys_error { Some(Color::Red) } else { None },
                     ..Default::default()
                 }),
             }),

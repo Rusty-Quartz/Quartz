@@ -1055,7 +1055,7 @@ impl QuartzServer {
                 let chunk_coords = Coordinate::chunk(x as i32, z as i32);
                 let chunk = match player_world.get_loaded_chunk(chunk_coords) {
                     Some(c) => c,
-                    None => continue
+                    None => continue,
                 };
                 let (primary_bit_mask, section_data) = chunk.gen_client_section_data();
 
@@ -1174,9 +1174,7 @@ impl QuartzServer {
 
             match executor.dispatch(command, ctx) {
                 Ok(_) => {}
-                // This technically should send a text component colored red for the error
-                // but that would require reworking the api to send messages so im just not going to yet
-                Err(e) => self.client_list.send_system_message(sender, &e).unwrap(),
+                Err(e) => self.client_list.send_system_error(sender, &e).unwrap(),
             };
         } else {
             self.client_list.send_chat(sender, message);
