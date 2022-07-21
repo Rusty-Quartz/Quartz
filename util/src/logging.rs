@@ -232,8 +232,7 @@ impl CustomLogRoller {
             // Find the logs that match today's date and determine the highest index ({date}-{index}.log).
             for path in paths
                 .flatten()
-                .map(|entry| entry.file_name().into_string())
-                .flatten()
+                .filter_map(|entry| entry.file_name().into_string().ok())
                 .filter(|name| name.starts_with(&today))
             {
                 if let Some(index) = Self::index_from_path(&path) {

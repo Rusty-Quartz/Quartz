@@ -93,11 +93,9 @@ pub fn gen_serialize_struct_field(field: &Field, buffer_ident: &Ident) -> TokenS
 
     if field.is_option {
         let field_ref = quote! { __value };
-        let write_condition = field
-            .condition
-            .as_ref()
-            .map(|condition| condition.gen_write_condition(&quote! { self.#name }, buffer_ident))
-            .flatten();
+        let write_condition = field.condition.as_ref().and_then(|condition| {
+            condition.gen_write_condition(&quote! { self.#name }, buffer_ident)
+        });
         let len_prefix = field.opt_write_length_prefix(&field_ref, buffer_ident);
         quote! {
             #write_condition
@@ -156,8 +154,7 @@ pub fn gen_serialize_enum_field(field: &Field, buffer_ident: &Ident) -> TokenStr
         let write_condition = field
             .condition
             .as_ref()
-            .map(|condition| condition.gen_write_condition(&quote! { #name }, buffer_ident))
-            .flatten();
+            .and_then(|condition| condition.gen_write_condition(&quote! { #name }, buffer_ident));
         let len_prefix = field.opt_write_length_prefix(&field_ref, buffer_ident);
         let write_impl = gen_write_impl(&field_ref);
 

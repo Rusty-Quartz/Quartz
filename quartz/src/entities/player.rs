@@ -1,3 +1,4 @@
+#![allow(clippy::forget_non_drop)]
 use hecs::Bundle;
 use qdat::Gamemode;
 
@@ -71,5 +72,11 @@ impl PlayerInventory {
 
     pub fn swap_slots(&mut self, a: usize, b: usize) {
         self.inv.swap(a, b);
+    }
+}
+
+impl Default for PlayerInventory {
+    fn default() -> Self {
+        Self::new()
     }
 }

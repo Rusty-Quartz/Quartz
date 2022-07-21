@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use proc_macro2::{Ident, Literal, TokenStream};
 use quote::{format_ident, quote};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, convert::TryFrom, env, fs, path::Path, slice::Iter};
+use std::{collections::BTreeMap, convert::TryFrom, env, fmt::Write, fs, path::Path, slice::Iter};
 use syn::Expr;
 
 pub fn gen_blockstates() {
@@ -64,7 +64,13 @@ fn find_shared_properties(data: &mut IndexMap<String, RawBlockInfo>) -> Vec<Prop
                 let mut second_word = name_split.next().unwrap().to_owned();
                 second_word[.. 1].make_ascii_uppercase();
 
-                cased_name.push_str(&format!("{}{}", if i > 0 { "_" } else { "" }, second_word));
+                write!(
+                    cased_name,
+                    "{}{}",
+                    if i > 0 { "_" } else { "" },
+                    second_word
+                )
+                .unwrap();
             }
 
             if vals == &vec!["true".to_owned(), "false".to_owned()] {
@@ -161,11 +167,7 @@ fn find_shared_properties(data: &mut IndexMap<String, RawBlockInfo>) -> Vec<Prop
                     snake_to_camel(&get_block_name(blocks.get(0).unwrap()))
                 )
             } else if values.get(0).unwrap().parse::<u8>().is_ok() {
-                format!(
-                    "{}_{}",
-                    property_name,
-                    values.get(values.len() - 1).unwrap()
-                )
+                format!("{}_{}", property_name, values.last().unwrap())
             } else {
                 name.clone()
             };
@@ -362,7 +364,7 @@ fn gen_default_states(
 
             default_state.insert(
                 prop_name,
-                format!("{}::{}", property.name.replace("_", ""), prop_value),
+                format!("{}::{}", property.name.replace('_', ""), prop_value),
             );
         }
 
@@ -607,11 +609,13 @@ fn get_original_property_name(property: &PropertyData) -> String {
     let offset = 1;
 
     for i in 0 .. split_name.clone().count() - offset {
-        lowercase_name.push_str(&format!(
+        write!(
+            lowercase_name,
             "{}{}",
             if i > 0 { "_" } else { "" },
             split_name.next().unwrap()
-        ))
+        )
+        .unwrap();
     }
     lowercase_name.to_ascii_lowercase()
 }

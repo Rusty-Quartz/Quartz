@@ -53,14 +53,13 @@ pub fn load_config(path: &Path) -> io::Result<Config> {
         file.read_to_string(&mut json)?;
 
         // Parse the json
-        let config: Config;
-        match serde_json::from_str(&json) {
-            Ok(cfg) => config = cfg,
+        let config: Config = match serde_json::from_str(&json) {
+            Ok(cfg) => cfg,
             Err(e) => {
                 error!("Invalid config JSON: {}", e);
                 return use_default(&mut file);
             }
-        }
+        };
 
         Ok(config)
     } else {

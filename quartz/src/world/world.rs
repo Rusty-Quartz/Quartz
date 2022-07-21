@@ -63,7 +63,7 @@ impl World {
         let player = self
             .curr_players
             .remove(&player_id)
-            .ok_or("Player is not currently in this world".to_owned())?;
+            .ok_or_else(|| "Player is not currently in this world".to_owned())?;
 
         let mut entities = self.entities.write().await;
 
@@ -268,7 +268,7 @@ impl WorldStore {
         let world_id = self
             .player_worlds
             .get(&client_id)
-            .ok_or("Player is not currently spawned".to_owned())?;
+            .ok_or_else(|| "Player is not currently spawned".to_owned())?;
         let w = self.worlds.get_mut(world_id).unwrap();
         w.remove_player(client_id).await?;
         self.player_worlds.remove(&client_id);
@@ -283,7 +283,7 @@ impl WorldStore {
         let world_id = self
             .player_worlds
             .get(&client_id)
-            .ok_or("Player is not currently spawned".to_owned())?;
+            .ok_or_else(|| "Player is not currently spawned".to_owned())?;
 
         let w = self.worlds.get_mut(world_id).unwrap();
         let p = w.remove_player(client_id).await?;

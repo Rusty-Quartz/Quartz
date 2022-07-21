@@ -106,15 +106,14 @@ impl AsyncPacketHandler {
         self.verify_token = verify_token.to_vec();
 
         // Format public key to send to client
-        let pub_key_der;
-        match self.key_pair.public_key_to_der() {
-            Ok(der) => pub_key_der = der,
+        let pub_key_der = match self.key_pair.public_key_to_der() {
+            Ok(der) => der,
             Err(e) => {
                 error!("Failed to convert public key to der: {}", e);
                 conn.write_handle.shutdown();
                 return;
             }
-        }
+        };
 
         conn.write_handle
             .send_packet(ClientBoundPacket::EncryptionRequest {
@@ -1170,7 +1169,7 @@ impl QuartzServer {
         if let Some(command) = message.strip_prefix('/') {
             let write_handle = self.client_list.create_write_handle(sender).unwrap();
             let executor = command_executor();
-            let ctx = CommandContext::new(self, &*executor, CommandSender::Client(write_handle));
+            let ctx = CommandContext::new(self, executor, CommandSender::Client(write_handle));
 
             match executor.dispatch(command, ctx) {
                 Ok(_) => {}

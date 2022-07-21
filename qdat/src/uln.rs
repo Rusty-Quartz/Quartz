@@ -214,7 +214,7 @@ impl UnlocalizedName {
     /// ```
     #[inline]
     pub fn as_uln_str(&self) -> &UlnStr {
-        &**self
+        self
     }
 }
 
@@ -316,14 +316,14 @@ impl Drop for UnlocalizedName {
 impl AsRef<UlnStr> for UnlocalizedName {
     #[inline]
     fn as_ref(&self) -> &UlnStr {
-        &**self
+        self
     }
 }
 
 impl Borrow<UlnStr> for UnlocalizedName {
     #[inline]
     fn borrow(&self) -> &UlnStr {
-        &**self
+        self
     }
 }
 
@@ -440,14 +440,14 @@ impl PartialEq<UnlocalizedName> for &str {
 impl PartialOrd for UnlocalizedName {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (&**self).partial_cmp(&**other)
+        (**self).partial_cmp(&**other)
     }
 }
 
 impl Ord for UnlocalizedName {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        (&**self).cmp(&**other)
+        (**self).cmp(&**other)
     }
 }
 

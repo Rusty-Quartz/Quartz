@@ -298,7 +298,7 @@ impl QuartzServer {
                     self.client_list.add_client(id, write_handle),
                 WrappedServerBoundPacket::ClientDisconnected { id } => {
                     self.client_list.remove_client(id);
-                    if let Err(e) = self.world_store.remove_player(id).await {
+                    if let Err(_e) = self.world_store.remove_player(id).await {
                         // Only log this error in debug mode
                         // It can be an error but also triggers when sending status packets
                         // so in release we probably shouldn't log it
@@ -310,7 +310,7 @@ impl QuartzServer {
                 WrappedServerBoundPacket::ConsoleCommand { command } => {
                     let executor = command_executor();
                     let sender = CommandSender::Console;
-                    let context = CommandContext::new(self, &*executor, sender);
+                    let context = CommandContext::new(self, executor, sender);
                     if let Err(e) = executor.dispatch(&command, context) {
                         display_to_console(&e);
                     }
@@ -375,8 +375,7 @@ impl ClientList {
     pub fn online_count(&self) -> usize {
         self.0
             .iter()
-            .map(|(_id, client)| client.player_id)
-            .flatten()
+            .filter_map(|(_id, client)| client.player_id)
             .count()
     }
 

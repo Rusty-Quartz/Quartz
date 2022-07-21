@@ -413,11 +413,11 @@ pub trait WriteToPacket {
 
 impl<T: WriteToPacket> WriteToPacket for Box<T> {
     fn write_to(&self, buffer: &mut PacketBuffer) {
-        (&**self).write_to(buffer)
+        (**self).write_to(buffer)
     }
 
     fn varying_write_to(&self, buffer: &mut PacketBuffer) {
-        (&**self).varying_write_to(buffer)
+        (**self).varying_write_to(buffer)
     }
 }
 

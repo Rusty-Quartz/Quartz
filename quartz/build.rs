@@ -242,7 +242,7 @@ fn parse_type_meta(field: &'_ str) -> Option<&'_ str> {
 
 fn snake_to_pascal(str: &str) -> String {
     str.split('_').fold(String::new(), |mut i, s| {
-        i.push_str(&(s[.. 1].to_ascii_uppercase() + &s[1 ..].to_owned()));
+        i.push_str(&(s[.. 1].to_ascii_uppercase() + &s[1 ..]));
         i
     })
 }

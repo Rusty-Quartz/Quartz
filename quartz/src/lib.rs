@@ -1,6 +1,10 @@
 #![deny(rust_2018_idioms)]
-// We allow this because if we have modules with the same name, we don't publicly expose the inner one
-#![allow(clippy::module_inception)]
+#![allow(
+    // We allow this because if we have modules with the same name, we don't publicly expose the inner one
+    clippy::module_inception, 
+    // explicit_auto_deref is currently over active due to a rustc bug 
+    clippy::explicit_auto_deref
+)]
 // TODO: enable when ready
 // #![warn(missing_docs)]
 // when we enable warn missing_docs we will disable this

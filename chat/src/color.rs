@@ -7,7 +7,7 @@ use termion::{color, style};
 
 /// Highest level definition of a chat color which can either be predefined or custom as of minecraft
 /// 1.16.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[doc(hidden)]
 pub enum Color {
     Black,
@@ -33,9 +33,7 @@ pub enum Color {
 
 impl Serialize for Color {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer
-    {
+    where S: Serializer {
         let string = match self {
             Color::Black => "black",
             Color::DarkBlue => "dark_blue",
@@ -68,9 +66,7 @@ impl Serialize for Color {
 
 impl<'de> Deserialize<'de> for Color {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>
-    {
+    where D: Deserializer<'de> {
         let string: &'de str = Deserialize::deserialize(deserializer)?;
 
         match string {
@@ -97,15 +93,19 @@ impl<'de> Deserialize<'de> for Color {
                         "Expected hex color, found an empty string.",
                     ));
                 }
-        
+
                 if string.len() != 7 {
                     return Err(de::Error::custom(
                         "Expected hex color in the form of '#RRGGBB'",
                     ));
                 }
-        
+
                 if let Ok(rgb) = u32::from_str_radix(&string[1 ..], 16) {
-                    Ok(Color::Custom((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8))
+                    Ok(Color::Custom(
+                        (rgb >> 16) as u8,
+                        (rgb >> 8) as u8,
+                        rgb as u8,
+                    ))
                 } else {
                     Err(de::Error::custom(
                         "Invalid hex color, expected 6 hexadecimal digits (0-F).",

@@ -1,16 +1,18 @@
-use crate::{
-    builder::ComponentBuilder,
-    color::Color,
-};
+use crate::{builder::ComponentBuilder, color::Color};
+use bitflags::bitflags;
 use quartz_nbt::{NbtCompound, NbtList, NbtTag};
-use serde::{Deserialize, Serialize, de::{self, Visitor}, ser::SerializeMap};
+use serde::{
+    de::{self, Visitor},
+    ser::SerializeMap,
+    Deserialize,
+    Serialize,
+};
 use serde_json::Value;
 use serde_with::skip_serializing_none;
 use std::{
     fmt::{self, Display, Formatter},
     str,
 };
-use bitflags::bitflags;
 
 #[cfg(unix)]
 use termion::style;
@@ -306,24 +308,20 @@ impl Font {
 
 impl Serialize for Font {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer
-    {
+    where S: serde::Serializer {
         serializer.serialize_str(self.as_identifier())
     }
 }
 
 impl<'de> Deserialize<'de> for Font {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>
-    {
+    where D: serde::Deserializer<'de> {
         let string: &'de str = Deserialize::deserialize(deserializer)?;
         match string {
             "minecraft:default" | "default" => Ok(Self::Default),
             "minecraft:uniform" | "uniform" => Ok(Self::Uniform),
             "minecraft:alt" | "alt" => Ok(Self::Alt),
-            _ => Err(de::Error::custom(format!("Invalid font type: {}", string)))
+            _ => Err(de::Error::custom(format!("Invalid font type: {}", string))),
         }
     }
 }
@@ -346,9 +344,7 @@ bitflags! {
 
 impl Serialize for Format {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer
-    {
+    where S: serde::Serializer {
         let mut serializer = serializer.serialize_map(None)?;
         macro_rules! serialize_formats {
             ($($name:ident, $string:literal);*) => {
@@ -374,13 +370,11 @@ impl Serialize for Format {
 
 impl<'de> Deserialize<'de> for Format {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>
-    {
+    where D: serde::Deserializer<'de> {
         deserializer.deserialize_struct(
             "__unused",
             &["bold", "italic", "obfuscated", "strikethrough", "underline"],
-            FormatVisitor
+            FormatVisitor,
         )
     }
 }
@@ -395,19 +389,32 @@ impl<'de> Visitor<'de> for FormatVisitor {
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: de::MapAccess<'de>,
-    {
+    where A: de::MapAccess<'de> {
         let mut format = Format::empty();
 
         while let Some((name, set)) = map.next_entry::<&'de str, bool>()? {
             match name {
-                "bold" => if set { format |= Format::BOLD },
-                "italic" => if set { format |= Format::ITALIC },
-                "obfuscated" => if set { format |= Format::OBFUSCATED },
-                "strikethrough" => if set { format |= Format::STRIKETHROUGH },
-                "underline" => if set { format |= Format::UNDERLINE },
-                _ => return Err(de::Error::custom(format!("Unkown format type: {}", name)))
+                "bold" =>
+                    if set {
+                        format |= Format::BOLD
+                    },
+                "italic" =>
+                    if set {
+                        format |= Format::ITALIC
+                    },
+                "obfuscated" =>
+                    if set {
+                        format |= Format::OBFUSCATED
+                    },
+                "strikethrough" =>
+                    if set {
+                        format |= Format::STRIKETHROUGH
+                    },
+                "underline" =>
+                    if set {
+                        format |= Format::UNDERLINE
+                    },
+                _ => return Err(de::Error::custom(format!("Unkown format type: {}", name))),
             }
         }
 
@@ -674,22 +681,14 @@ impl ToComponent for NbtTag {
         match self {
             NbtTag::Byte(value) => primitive_to_component!(value),
             NbtTag::Short(value) => primitive_to_component!(value),
-            NbtTag::Int(value) => vec![Component::colored(
-                format!("{}", value),
-                Color::Gold,
-            )],
+            NbtTag::Int(value) => vec![Component::colored(format!("{}", value), Color::Gold)],
             NbtTag::Long(value) => primitive_to_component!(value),
             NbtTag::Float(value) => primitive_to_component!(value),
             NbtTag::Double(value) => primitive_to_component!(value),
             NbtTag::ByteArray(value) => list_to_component!(value),
             NbtTag::String(value) => {
                 // Determine the best option for the surrounding quotes to minimize escape sequences
-                let surrounding: char;
-                if value.contains('\"') {
-                    surrounding = '\'';
-                } else {
-                    surrounding = '"';
-                }
+                let surrounding = if value.contains('\"') { '\'' } else { '"' };
 
                 let mut snbt_string = String::with_capacity(value.len());
 
@@ -772,10 +771,7 @@ impl ToComponent for NbtCompound {
                 if components.len() > 1 {
                     components.push(Component::text(", "));
                 }
-                components.push(Component::colored(
-                    element.0.to_owned(),
-                    Color::Aqua,
-                ));
+                components.push(Component::colored(element.0.to_owned(), Color::Aqua));
                 components.push(Component::text(": "));
             }
 

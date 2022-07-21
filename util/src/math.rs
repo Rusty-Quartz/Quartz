@@ -61,11 +61,9 @@ pub const fn fast_ceil_log2_64(value: u64) -> u64 {
 /// one-tenth of one percent.
 #[inline]
 pub fn fast_inv_sqrt64(mut value: f64) -> f64 {
-    let i: u64;
-    let x: f64;
+    let i: u64 = 0x5FE6EB50C7B537A9 - (value.to_bits() >> 1);
+    let x: f64 = value * 0.5;
 
-    x = value * 0.5;
-    i = 0x5FE6EB50C7B537A9 - (value.to_bits() >> 1);
     value = f64::from_bits(i);
 
     // This constant is a short-cut for another iteration of Newton's method. It is the optimal number to

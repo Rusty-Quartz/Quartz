@@ -30,13 +30,13 @@ pub fn init_items() {
     info!("Loading item data");
 
     // Load in assets/items.json generated from data-generator
-    let raw_list = from_str::<BTreeMap<String, RawItemData>>(assets::ITEM_INFO)
+    let raw_list = from_str::<BTreeMap<&'static str, RawItemData>>(assets::ITEM_INFO)
         .expect("items.json is corrupt");
 
     let mut item_list: BTreeMap<UnlocalizedName, Item> = BTreeMap::new();
 
     for (i, (name, raw_data)) in raw_list.into_iter().enumerate() {
-        let uln = UnlocalizedName::from_str(&name).expect("Invalid item name in items.json");
+        let uln = UnlocalizedName::from_str(name).expect("Invalid item name in items.json");
 
         // This should never happen if the data integrity is not compromised
         assert_ne!(
@@ -46,13 +46,13 @@ pub fn init_items() {
         );
 
         // NOTE: this is disabled because I don't feel like trying to make the id an &'static str
-        // item_list.insert(uln.clone(), Item {
-        //     id: uln.identifier(),
-        //     num_id: i as u16,
-        //     stack_size: raw_data.stack_size,
-        //     rarity: raw_data.rarity,
-        //     item_info: raw_data.info,
-        // });
+        item_list.insert(uln.clone(), Item {
+            id: name,
+            num_id: i as u16,
+            stack_size: raw_data.stack_size,
+            rarity: raw_data.rarity,
+            item_info: raw_data.info,
+        });
     }
 
     if ITEM_LIST.set(item_list).is_err() {

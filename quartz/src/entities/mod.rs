@@ -1,4 +1,4 @@
-use qdat::world::location::{BlockPosition, Coordinate};
+use qdat::world::location::{BlockPosition};
 
 pub mod player;
 

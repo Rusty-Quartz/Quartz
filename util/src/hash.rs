@@ -32,7 +32,7 @@ impl Hasher for NumHashIsomorphism {
     fn write(&mut self, bytes: &[u8]) {
         let mut buf = [0u8; 8];
         for window in bytes.windows(8) {
-            (&mut buf[.. window.len()]).copy_from_slice(window);
+            (buf[.. window.len()]).copy_from_slice(window);
             (window.len() .. 8).for_each(|j| buf[j] = 0);
             self.state ^= unsafe { mem::transmute_copy::<_, u64>(&buf) };
         }
