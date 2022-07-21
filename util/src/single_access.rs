@@ -2,7 +2,7 @@ use std::{
     cell::{Cell, UnsafeCell},
     marker::Unsize,
     ops::{CoerceUnsized, Deref, DerefMut},
-    ptr,
+    ptr::{self, Thin},
 };
 
 /// Similar to [`SingleAccessorBox`], except that this structure allocates its value on the stack.
@@ -107,7 +107,7 @@ impl<T> SingleAccessorBox<T> {
     }
 }
 
-impl<T: ?Sized> SingleAccessorBox<T> {
+impl<T: ?Sized + Thin> SingleAccessorBox<T> {
     /// Attempts to take the value stored in this box, returning exclusive access to that value, or `None`
     /// if the value is already taken.
     ///
@@ -151,7 +151,7 @@ pub struct BoxAccessGuard<'a, T: ?Sized> {
     source: &'a Cell<*mut T>,
 }
 
-impl<'a, T: ?Sized> BoxAccessGuard<'a, T> {
+impl<'a, T: ?Sized + Thin> BoxAccessGuard<'a, T> {
     /// Creates a new access-guard smart pointer with the given cell.
     ///
     /// If the pointer in the cell is null, then `None` is returned, otherwise the data part of the pointer
@@ -166,7 +166,7 @@ impl<'a, T: ?Sized> BoxAccessGuard<'a, T> {
         }
 
         // Set the data part of the pointer in the cell to null
-        source.set(value.set_ptr_value(ptr::null_mut()));
+        source.set(value.with_metadata_of(ptr::null_mut()));
 
         Some(BoxAccessGuard { value, source })
     }
