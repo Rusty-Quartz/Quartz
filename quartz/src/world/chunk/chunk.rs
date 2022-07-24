@@ -35,7 +35,12 @@ impl From<RawChunk> for Chunk {
 }
 
 impl Chunk {
-    pub fn new(block_offset: CoordinatePair, section_store: SectionStore, heightmaps: NbtCompound, biomes: Box<[i32]>) -> Chunk {
+    pub fn new(
+        block_offset: CoordinatePair,
+        section_store: SectionStore,
+        heightmaps: NbtCompound,
+        biomes: Box<[i32]>,
+    ) -> Chunk {
         Chunk {
             block_offset,
             section_store,
@@ -43,7 +48,6 @@ impl Chunk {
             biomes,
         }
     }
-
 
     pub fn coordinates(&self) -> Coordinate {
         Coordinate::Block(self.block_offset)
