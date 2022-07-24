@@ -1,3 +1,5 @@
+#![allow(unused, clippy::too_many_arguments)]
+
 use std::mem::MaybeUninit;
 
 use qdat::world::location::{BlockPosition, Coordinate};
@@ -5,7 +7,13 @@ use quartz_nbt::NbtCompound;
 
 use crate::world::chunk::{Section, SectionStore, MAX_SECTION_COUNT};
 
-use noise::{NoiseFn, Perlin};
+use ::noise::{NoiseFn, Perlin};
+
+mod noise;
+mod qnoise {
+    use super::noise::*;
+}
+mod random;
 
 pub enum ChunkStatus {
     Empty,

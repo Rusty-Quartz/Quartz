@@ -45,6 +45,7 @@ tinyvec = "1.2.0"
 ureq = { version = "2.1.1", features = ["json"] }
 uuid = { version = "0.8.2", features = ["serde", "v4", "v3"] }
 noise = "0.7.0"
+md-5 = "0.10"
 
 [dependencies.tokio]
 version = "1.9.0"
