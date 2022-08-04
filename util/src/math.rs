@@ -70,3 +70,13 @@ pub fn fast_inv_sqrt64(mut value: f64) -> f64 {
     // reduce the mean squared relative error of this algorithm.
     1.0009632777831923 * value * (1.5 - (x * value * value))
 }
+
+/// Preforms an unsigned bitshift right
+pub const fn unsigned_shr(lhs: i32, rhs: i32) -> i32 {
+    (lhs as u32 >> rhs) as i32
+}
+
+/// Preforms an unsigned bitshift right
+pub const fn unsigned_shr_i64(lhs: i64, rhs: i64) -> i64 {
+    (lhs as u64 >> rhs) as i64
+}

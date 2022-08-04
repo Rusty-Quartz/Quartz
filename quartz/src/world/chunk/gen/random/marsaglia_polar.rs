@@ -2,6 +2,7 @@ use std::{cell::Cell, rc::Rc};
 
 use crate::world::chunk::gen::random::RandomSource;
 
+#[derive(Default)]
 pub struct MarsagliaPolarGaussian {
     next_next_gaussian: f64,
     have_next_next_gaussian: bool,

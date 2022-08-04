@@ -14,31 +14,34 @@ const INCREMENT: i64 = 11;
 
 pub struct LegacyRandom {
     seed: AtomicI64,
-    guassian_source: MarsagliaPolarGaussian,
 }
 
 impl LegacyRandom {
     pub fn new(seed: i64) -> LegacyRandom {
         LegacyRandom {
-            seed: AtomicI64::new(seed),
-            guassian_source: MarsagliaPolarGaussian::new(),
+            seed: AtomicI64::new((seed ^ MULTIPLIER) & MODULUS_MASK),
         }
+    }
+
+    fn test(&mut self) {
+        self.next_int();
     }
 }
 
 impl BitRandomSource for LegacyRandom {
     type Positional = LegacyPositionalRandom;
 
-    fn set_seed(&mut self, seed: i64) {
+    fn set_seed(&mut self, seed: i64, gaussian: &mut MarsagliaPolarGaussian) {
         self.seed
             .store((seed ^ MULTIPLIER) & MODULUS_MASK, Ordering::Relaxed);
-        self.guassian_source.reset();
+        gaussian.reset();
     }
 
     fn next_bits(&mut self, bits: u8) -> i32 {
         loop {
             let orig_seed = self.seed.load(Ordering::Relaxed);
-            let new_seed = (orig_seed * MULTIPLIER + INCREMENT) & MODULUS_MASK;
+            let new_seed =
+                (orig_seed.wrapping_mul(MULTIPLIER).wrapping_add(INCREMENT)) & MODULUS_MASK;
             if self
                 .seed
                 .compare_exchange(orig_seed, new_seed, Ordering::Relaxed, Ordering::Relaxed)
@@ -77,8 +80,8 @@ impl PositionalRandomBuilder for LegacyPositionalRandom {
         LegacyRandom::new(new_seed)
     }
 
-    fn fork_from_hashed_string(&self, str: String) -> Self::Source {
-        let hash = java_string_hash(&str);
+    fn fork_from_hashed_string(&self, str: impl AsRef<str>) -> Self::Source {
+        let hash = java_string_hash(str.as_ref());
         LegacyRandom::new(hash as i64 ^ self.seed)
     }
 }

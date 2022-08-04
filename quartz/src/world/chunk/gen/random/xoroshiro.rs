@@ -10,7 +10,7 @@ use crate::world::chunk::gen::random::{
 };
 
 /// Used to construct new instances of [XoroshiroRandomSource]
-struct XoroshiroPositonalRandomBuilder {
+pub struct XoroshiroPositonalRandomBuilder {
     seed_low: i64,
     seed_high: i64,
 }
@@ -25,17 +25,16 @@ impl XoroshiroPositonalRandomBuilder {
 }
 
 impl PositionalRandomBuilder for XoroshiroPositonalRandomBuilder {
-    type Source = XoroshiroRandomSource;
+    type Source = XoroshiroRandom;
 
-    fn fork_at(&self, x: i32, y: i32, z: i32) -> XoroshiroRandomSource {
+    fn fork_at(&self, x: i32, y: i32, z: i32) -> XoroshiroRandom {
         let pos_seed = get_pos_seed(x, y, z);
-        XoroshiroRandomSource::from_longs(pos_seed ^ self.seed_low, self.seed_high)
+        XoroshiroRandom::from_longs(pos_seed ^ self.seed_low, self.seed_high)
     }
 
-    #[allow(clippy::wrong_self_convention)]
-    fn fork_from_hashed_string(&self, str: String) -> XoroshiroRandomSource {
-        let (low, high) = hash_string_md5(&str);
-        XoroshiroRandomSource {
+    fn fork_from_hashed_string(&self, str: impl AsRef<str>) -> XoroshiroRandom {
+        let (low, high) = hash_string_md5(str.as_ref());
+        XoroshiroRandom {
             rng: XoroshiroPlusPlus::new(low ^ self.seed_low, high ^ self.seed_high),
             gaussian: MarsagliaPolarGaussian::new(),
         }
@@ -43,21 +42,22 @@ impl PositionalRandomBuilder for XoroshiroPositonalRandomBuilder {
 }
 
 
-struct XoroshiroRandomSource {
+pub struct XoroshiroRandom {
     rng: XoroshiroPlusPlus,
     gaussian: MarsagliaPolarGaussian,
 }
 
-impl XoroshiroRandomSource {
+impl XoroshiroRandom {
     pub fn new(seed: i64) -> Self {
-        XoroshiroRandomSource {
-            rng: XoroshiroPlusPlus::from_u128(i64_seed_to_u128_seed(seed)),
+        let (low, high) = i64_seed_to_u128_seed(seed);
+        XoroshiroRandom {
+            rng: XoroshiroPlusPlus::new(low, high),
             gaussian: MarsagliaPolarGaussian::new(),
         }
     }
 
     pub fn from_longs(seed_low: i64, seed_high: i64) -> Self {
-        XoroshiroRandomSource {
+        XoroshiroRandom {
             rng: XoroshiroPlusPlus::new(seed_low, seed_high),
             gaussian: MarsagliaPolarGaussian::new(),
         }
@@ -68,10 +68,10 @@ impl XoroshiroRandomSource {
     }
 }
 
-impl RandomSource for XoroshiroRandomSource {
+impl RandomSource for XoroshiroRandom {
     type Positional = XoroshiroPositonalRandomBuilder;
 
-    fn fork(&mut self) -> XoroshiroRandomSource {
+    fn fork(&mut self) -> XoroshiroRandom {
         let low = self.rng.next_long();
         let high = self.rng.next_long();
         Self::from_longs(low, high)
@@ -98,14 +98,14 @@ impl RandomSource for XoroshiroRandomSource {
     }
 
     fn next_int_bounded(&mut self, bound: u32) -> i32 {
-        let mut l = self.next_int() as u64;
-        let mut m = l * bound as u64;
+        let mut l = self.next_int() as i64 & 0xFFFFFFFF;
+        let mut m = l.wrapping_mul(bound as i64);
         let mut n = m & 4294967295;
-        if n < bound as u64 {
+        if n < bound as i64 {
             let j = (!bound + 1) % bound;
-            while n < j as u64 {
-                l = self.next_int() as u64;
-                m = l * bound as u64;
+            while n < j as i64 {
+                l = self.next_int() as i64;
+                m = l.wrapping_mul(bound as i64);
                 n = m & 4294967295;
             }
         }
@@ -126,8 +126,9 @@ impl RandomSource for XoroshiroRandomSource {
         self.next_bits(53) as f64 * 1.110223E-16
     }
 
-    fn set_seed(&mut self, seed: i64) {
-        self.rng = XoroshiroPlusPlus::from_u128(i64_seed_to_u128_seed(seed))
+    fn set_seed(&mut self, seed: i64, _gaussian: &mut MarsagliaPolarGaussian) {
+        let (low, high) = i64_seed_to_u128_seed(seed);
+        self.rng = XoroshiroPlusPlus::new(low, high)
     }
 }
 
@@ -140,9 +141,6 @@ impl XoroshiroPlusPlus {
     pub fn new(low: i64, high: i64) -> Self {
         // the seed being 0 is a bad case for the rng
         // so we replace 0 seeds with the same thing vanilla uses
-
-        // mojang *said* they fixed a 0 seed being a special case but I don't actually see that sooooooo
-        // they might mean elsewhere but /shrug
         if (low | high) == 0 {
             XoroshiroPlusPlus {
                 seed_low: -7046029254386353131,
@@ -156,17 +154,17 @@ impl XoroshiroPlusPlus {
         }
     }
 
-    pub fn from_u128(seed: u128) -> Self {
-        Self::new(seed as i64, (seed >> 64) as i64)
-    }
+    // pub fn from_u128(seed: u128) -> Self {
+    //     Self::new(seed as i64, (seed >> 64) as i64)
+    // }
 
     pub fn next_long(&mut self) -> i64 {
-        let mut high = self.seed_high;
         let low = self.seed_low;
-        let output = (low + high).rotate_left(17) + low;
+        let mut high = self.seed_high;
+        let output = (low.wrapping_add(high)).rotate_left(17).wrapping_add(low);
         high ^= low;
         self.seed_low = low.rotate_left(49) ^ high ^ high << 21;
-        self.seed_high = high.rotate_left(29);
+        self.seed_high = high.rotate_left(28);
         output
     }
 }

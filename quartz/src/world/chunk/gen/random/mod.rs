@@ -9,23 +9,27 @@ pub mod util;
 pub mod worldgen;
 pub mod xoroshiro;
 
+/// A way to get random numbers from [Random Sources](RandomSource)
+///
+/// We need this because [next_gaussian](Random::next_gaussian) would violate the single mutable borrow rule
+/// if we just used gaussian generators in the random sources
 pub struct Random<T: RandomSource> {
     source: T,
     gaussian: MarsagliaPolarGaussian,
 }
 
 macro_rules! random_method {
-    ($($name: ident, $return: ty,)*) => {
+     ($($name: ident ($($field: ident, $field_ty: ty),*), $return: ty,)*) => {
         $(
-            pub fn $name(&mut self) -> $return {
+            pub fn $name(&mut self, $($field: $field_ty),*) -> $return {
                 self.source.$name($($field),*)
             }
         )*
     };
-    ($($name: ident $($field: ident, $field_ty: ty),*, $return: ty,)*) => {
+    ($($name: ident, $return: ty,)*) => {
         $(
-            pub fn $name(&mut self, $($field: $field_ty),*) -> $return {
-                self.source.$name($($field),*)
+            pub fn $name(&mut self) -> $return {
+                self.source.$name()
             }
         )*
     };
@@ -39,13 +43,17 @@ impl<T: RandomSource> Random<T> {
         next_float, f32,
         next_double, f64,
         next_bool, bool,
-        set_seed seed, i64, (),
         fork_positional, T::Positional,
-        // we could make this return Random
-        // but that would require a tiny amount of effort for not tons of gain
-        // plus we can't do it to fork_positional
-        // and it would seem weird to me to need to re-wrap that in a Random but not this
-        fork, T,
+    }
+
+    random_method! {
+        next_int_bounded (bound, u32), i32,
+        next_int_in_range (max, i32, min, i32), i32,
+        consume (bits, usize), (),
+    }
+
+    pub fn set_seed(&mut self, seed: i64) {
+        self.source.set_seed(seed, &mut self.gaussian);
     }
 
     pub fn new(random_source: T) -> Self {
@@ -53,6 +61,10 @@ impl<T: RandomSource> Random<T> {
             source: random_source,
             gaussian: MarsagliaPolarGaussian::new(),
         }
+    }
+
+    pub fn fork(&mut self) -> Random<T> {
+        Random::new(self.source.fork())
     }
 
     pub fn next_gaussian(&mut self) -> f64 {
@@ -67,7 +79,7 @@ pub trait RandomSource {
 
     fn fork(&mut self) -> Self;
     fn fork_positional(&mut self) -> Self::Positional;
-    fn set_seed(&mut self, seed: i64);
+    fn set_seed(&mut self, seed: i64, gaussian: &mut MarsagliaPolarGaussian);
     fn next_int(&mut self) -> i32;
     fn next_int_bounded(&mut self, bound: u32) -> i32;
     fn next_int_in_range(&mut self, max: i32, min: i32) -> i32 {
@@ -101,7 +113,7 @@ pub trait PositionalRandomBuilder {
     fn fork_from_hash<T: ToString>(&self, input: T) -> Self::Source {
         self.fork_from_hashed_string(input.to_string())
     }
-    fn fork_from_hashed_string(&self, str: String) -> Self::Source;
+    fn fork_from_hashed_string(&self, str: impl AsRef<str>) -> Self::Source;
 }
 
 /// A [RandomSource] who's PRNG who's purpose is variable length
@@ -115,7 +127,7 @@ pub trait BitRandomSource {
 
     fn fork(&mut self) -> Self;
     fn fork_positional(&mut self) -> Self::Positional;
-    fn set_seed(&mut self, seed: i64);
+    fn set_seed(&mut self, seed: i64, gaussian: &mut MarsagliaPolarGaussian);
     fn next_bits(&mut self, bits: u8) -> i32;
 
     fn next_int(&mut self) -> i32 {
@@ -124,7 +136,7 @@ pub trait BitRandomSource {
 
     fn next_int_bounded(&mut self, bound: u32) -> i32 {
         if bound & (bound - 1) == 0 {
-            ((bound as i64 * self.next_bits(31) as i64) >> 31) as i32
+            (((bound as i64).wrapping_mul(self.next_bits(31) as i64) as i64) >> 31) as i32
         } else {
             let mut j = self.next_bits(31);
             let mut k = j % bound as i32;
@@ -180,10 +192,6 @@ impl<B: BitRandomSource> RandomSource for B {
         self.fork_positional()
     }
 
-    fn set_seed(&mut self, seed: i64) {
-        self.set_seed(seed)
-    }
-
     fn next_int(&mut self) -> i32 {
         self.next_int()
     }
@@ -214,5 +222,9 @@ impl<B: BitRandomSource> RandomSource for B {
 
     fn next_bits(&mut self, bits: i32) -> i32 {
         self.next_bits(bits as u8)
+    }
+
+    fn set_seed(&mut self, seed: i64, gaussian: &mut MarsagliaPolarGaussian) {
+        self.set_seed(seed, gaussian)
     }
 }

@@ -10,10 +10,10 @@ use crate::world::chunk::{Section, SectionStore, MAX_SECTION_COUNT};
 use ::noise::{NoiseFn, Perlin};
 
 mod noise;
-mod qnoise {
+pub mod qnoise {
     use super::noise::*;
 }
-mod random;
+pub mod random;
 
 pub enum ChunkStatus {
     Empty,
