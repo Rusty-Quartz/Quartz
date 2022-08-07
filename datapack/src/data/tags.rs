@@ -1,5 +1,10 @@
 use qdat::UnlocalizedName;
-use serde::{de::Visitor, ser::SerializeMap, Deserialize, Serialize};
+use serde::{
+    de::Visitor,
+    ser::{SerializeMap, SerializeSeq},
+    Deserialize,
+    Serialize,
+};
 
 /// A [tag](https://minecraft.fandom.com/wiki/Tag)
 pub struct Tag {
@@ -297,4 +302,189 @@ fn failable_test() {
             true
         )]
     });
+}
+
+pub struct TagProvider(UnlocalizedName);
+
+impl<'de> Deserialize<'de> for TagProvider {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: serde::Deserializer<'de> {
+        deserializer.deserialize_any(TagProviderVisitor)
+    }
+}
+
+struct TagProviderVisitor;
+
+impl<'de> Visitor<'de> for TagProviderVisitor {
+    type Value = TagProvider;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "A tag prepended by a #")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where E: serde::de::Error {
+        if let Some(v) = v.strip_prefix('#') {
+            match UnlocalizedName::from_str(v) {
+                Ok(uln) => Ok(TagProvider(uln)),
+                Err(e) => Err(serde::de::Error::custom(format!(
+                    "Invalid identifier found while parsing: {e}"
+                ))),
+            }
+        } else {
+            Err(serde::de::Error::custom(format!(
+                "A tag has to be prepended by a #"
+            )))
+        }
+    }
+}
+
+impl Serialize for TagProvider {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        serializer.serialize_str(&format!("#{}", self.0))
+    }
+}
+
+
+/// A field that can be a reference to either an id, a tag, or a list of ids
+///
+/// Vanilla has the single id case be sugar for [id] internally but we store them seperately
+#[derive(Hash, PartialEq, Eq, Debug)]
+pub enum IdsOrTag {
+    SingleTag(UnlocalizedName),
+    SingleId(UnlocalizedName),
+    IdList(Vec<UnlocalizedName>),
+}
+
+impl<'de> Deserialize<'de> for IdsOrTag {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: serde::Deserializer<'de> {
+        deserializer.deserialize_any(IdsOrTagVisitor)
+    }
+}
+
+struct IdsOrTagVisitor;
+
+impl<'de> Visitor<'de> for IdsOrTagVisitor {
+    type Value = IdsOrTag;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "A reference to a tag or list of tags")
+    }
+
+    fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+    where E: serde::de::Error {
+        if let Some(v) = v.strip_prefix('#') {
+            match UnlocalizedName::from_str(v) {
+                Ok(uln) => Ok(IdsOrTag::SingleTag(uln)),
+                Err(e) => Err(serde::de::Error::custom(format!(
+                    "Invalid identifier found while parsing: {e}"
+                ))),
+            }
+        } else {
+            match UnlocalizedName::from_str(v) {
+                Ok(uln) => Ok(IdsOrTag::SingleId(uln)),
+                Err(e) => Err(serde::de::Error::custom(format!(
+                    "Invalid identifier found while parsing: {e}"
+                ))),
+            }
+        }
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where A: serde::de::SeqAccess<'de> {
+        let mut list = Vec::new();
+        while let Ok(Some(v)) = seq.next_element::<&'de str>() {
+            match UnlocalizedName::from_str(v) {
+                Ok(uln) => list.push(uln),
+                Err(e) =>
+                    return Err(serde::de::Error::custom(format!(
+                        "Invalid identifier found while parsing: {e}"
+                    ))),
+            }
+        }
+        Ok(IdsOrTag::IdList(list))
+    }
+}
+
+impl Serialize for IdsOrTag {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        match self {
+            IdsOrTag::SingleTag(uln) => serializer.serialize_str(&format!("#{uln}")),
+            IdsOrTag::SingleId(uln) => serializer.serialize_str(uln.repr()),
+            IdsOrTag::IdList(ulns) => {
+                let mut seq = serializer.serialize_seq(Some(ulns.len()))?;
+                for uln in ulns {
+                    seq.serialize_element(uln.repr())?
+                }
+                seq.end()
+            }
+        }
+    }
+}
+
+#[test]
+fn ids_or_list_test() {
+    use serde_json::{from_str, to_string_pretty};
+    let json = r###"
+        {
+            "name": "hello",
+            "block": "#logs",
+            "block2": ["logs", "logs2"],
+            "block3": "moss_replacable"
+        }
+    "###;
+
+    #[derive(Serialize, Deserialize)]
+    struct TestStruct {
+        name: String,
+        block: IdsOrTag,
+        block2: IdsOrTag,
+        block3: IdsOrTag,
+    }
+
+    let parsed = from_str::<TestStruct>(json);
+
+    assert!(parsed.is_ok());
+
+    let parsed = parsed.unwrap();
+
+    assert_eq!(
+        parsed.block,
+        IdsOrTag::SingleTag(UnlocalizedName::minecraft("logs"))
+    );
+
+    assert_eq!(
+        parsed.block2,
+        IdsOrTag::IdList(vec![
+            UnlocalizedName::minecraft("logs"),
+            UnlocalizedName::minecraft("logs2")
+        ])
+    );
+
+    assert_eq!(
+        parsed.block3,
+        IdsOrTag::SingleTag(UnlocalizedName::minecraft("moss_replacable"))
+    );
+
+    let str = to_string_pretty(&parsed);
+
+    assert!(str.is_ok());
+
+    let str = str.unwrap();
+
+    assert_eq!(
+        r###"{
+  "name": "hello",
+  "block": "logs",
+  "block2": [
+    "logs",
+    "logs2"
+  ],
+  "block3": "moss_replacable"
+}"###,
+        str
+    )
 }

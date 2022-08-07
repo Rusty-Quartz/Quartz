@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::data::tags::TagProvider;
+
 #[derive(Serialize, Deserialize)]
 pub struct DimensionType {
     pub ultrawarm: bool,
@@ -16,7 +18,7 @@ pub struct DimensionType {
     pub logical_height: i32,
     pub min_y: i32,
     pub height: i32,
-    pub infiniburn: String,
+    pub infiniburn: TagProvider,
     #[serde(default = "Default::default")]
     pub effects: DimensionEffects,
 }

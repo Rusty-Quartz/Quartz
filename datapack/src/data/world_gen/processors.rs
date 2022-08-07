@@ -1,6 +1,8 @@
 use qdat::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 
+use crate::data::tags::TagProvider;
+
 use super::{features::HeightMaps, noise_settings::BlockState};
 
 #[derive(Serialize, Deserialize)]
@@ -30,7 +32,7 @@ pub enum Processor {
     #[serde(rename = "minecraft:nop")]
     Nop,
     #[serde(rename = "minecraft:protected_blocks")]
-    ProtectedBlocks { value: String },
+    ProtectedBlocks { value: TagProvider },
 }
 
 #[derive(Serialize, Deserialize)]

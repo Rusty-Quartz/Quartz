@@ -12,9 +12,10 @@ use crate::data::{
     advancement::Advancement,
     biome::Biome,
     carvers::Carver,
+    density_function::DensityFunctionProvider,
     dimension::Dimension,
     dimension_type::DimensionType,
-    features::Feature,
+    features::{Feature, PlacedFeature},
     functions::{read_function, write_function, Function},
     item_modifiers::ItemModifier,
     jigsaw_pool::JigsawPool,
@@ -25,6 +26,7 @@ use crate::data::{
     recipe::VanillaRecipeType,
     structure::Structure,
     structure_features::StructureFeatures,
+    structure_set::StructureSet,
     surface_builders::SurfaceBuilder,
     tags::Tag,
 };
@@ -265,6 +267,7 @@ pub struct Namespace {
     pub item_modifiers: HashMap<String, ItemModifier>,
     pub advancements: HashMap<String, Advancement>,
     pub biomes: HashMap<String, Biome>,
+    pub density_functions: HashMap<String, DensityFunctionProvider>,
     pub dimensions: HashMap<String, Dimension>,
     pub dimension_types: HashMap<String, DimensionType>,
     pub noise_settings: HashMap<String, NoiseSettings>,
@@ -274,7 +277,9 @@ pub struct Namespace {
     pub structure_features: HashMap<String, StructureFeatures>,
     pub jigsaw_pools: HashMap<String, JigsawPool>,
     pub processors: HashMap<String, ProcessorList>,
+    pub structure_sets: HashMap<String, StructureSet>,
     pub structures: HashMap<String, Structure>,
+    pub placed_features: HashMap<String, PlacedFeature>,
 }
 
 impl Namespace {
@@ -305,6 +310,10 @@ impl Namespace {
         let noise_settings = Self::read_datatype(&namespace_path.join("worldgen/noise_settings"))?;
         let processors = Self::read_datatype(&namespace_path.join("worldgen/processor_list"))?;
         let jigsaw_pools = Self::read_datatype(&namespace_path.join("worldgen/template_pool"))?;
+        let density_functions =
+            Self::read_datatype(&namespace_path.join("worldgen/density_function"))?;
+        let placed_features = Self::read_datatype(&namespace_path.join("worldgen/placed_feature"))?;
+        let structure_sets = Self::read_datatype(&namespace_path.join("worldgen/structure_set"))?;
         let structures = match Self::read_structures(&namespace_path.join("structures")) {
             Ok(s) => s,
             Err(e) =>
@@ -324,6 +333,7 @@ impl Namespace {
             loot_tables,
             predicates,
             item_modifiers,
+            density_functions,
             dimensions,
             dimension_types,
             biomes,
@@ -335,6 +345,8 @@ impl Namespace {
             processors,
             jigsaw_pools,
             structures,
+            structure_sets,
+            placed_features,
         })
     }
 
@@ -347,6 +359,7 @@ impl Namespace {
         };
 
         for (name, entry) in tag_files {
+            println!("{name} {entry:?}");
             let mut file = OpenOptions::new()
                 .read(true)
                 .write(false)
@@ -377,6 +390,7 @@ impl Namespace {
         };
 
         for (name, entry) in files {
+            println!("{name} {entry:?}");
             let file = OpenOptions::new()
                 .read(true)
                 .write(false)
@@ -399,6 +413,7 @@ impl Namespace {
         };
 
         for (name, entry) in files {
+            println!("{name} {entry:?}");
             let mut file = OpenOptions::new()
                 .read(true)
                 .write(false)
@@ -423,6 +438,7 @@ impl Namespace {
         };
 
         for (name, entry) in files {
+            println!("{name} {entry:?}");
             let mut file = OpenOptions::new()
                 .read(true)
                 .write(false)
@@ -488,6 +504,18 @@ impl Namespace {
         Self::write_datatype(
             &self.jigsaw_pools,
             &namespace_path.join("worldgen/template_pool"),
+        )?;
+        Self::write_datatype(
+            &self.density_functions,
+            &namespace_path.join("worldgen/density_function"),
+        )?;
+        Self::write_datatype(
+            &self.placed_features,
+            &namespace_path.join("worldgen/placed_feature"),
+        )?;
+        Self::write_datatype(
+            &self.structure_sets,
+            &namespace_path.join("worldgen/structure_set"),
         )?;
         match Self::write_structures(&self.structures, &namespace_path.join("structures")) {
             Ok(_) => {}
