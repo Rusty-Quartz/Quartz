@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs::{DirEntry, File, OpenOptions},
-    io::{Read, Result},
+    io::{Error, ErrorKind, Read, Result},
     path::Path,
 };
 
@@ -50,9 +50,31 @@ pub const fn datapack_version(major: u8, minor: u8, patch: u8) -> u8 {
         (1, 17, _) => 7,
         (1, 18, 2) => 9,
         (1, 18, _) => 8,
+        (1, 19, _) => 10,
         // Future versions we don't support
         _ => 1,
     }
+}
+/// The datapack version we currently support
+///
+/// This takes into account experimental features and so will be the strictest possible filter for supported versions
+pub const SUPPORTED_VERSION: u8 = 9;
+/// The lowest datapack version we support if the pack is not using experimental features
+///
+/// The currently the only experimental features are the worldgen features
+// TODO: actually check that this is accurate 1.16 feels right because that was before the worldgen stuff was added iirc
+pub const LOWEST_SUPPORTED_STABLE_VERSION: u8 = 6;
+
+#[derive(Clone, Copy)]
+pub enum VersionFilter {
+    /// Only allow pack formats that are equal to [SUPPORTED_VERSION]
+    Latest,
+    /// Allow pack formats that are equal to or greater than [LOWEST_SUPPORTED_STABLE_VERSION]
+    Stable,
+    /// Same as [Latest](VersionFilter::Latest) unless the pack does not contain any experimental features, then allow [Stable](VersionFilter::Stable)
+    LatestOrStable,
+    /// Try to load all packs and ignore the given pack format
+    None,
 }
 
 fn recursive_read(path: &Path, prefix: String) -> Result<Vec<(String, DirEntry)>> {
@@ -123,7 +145,13 @@ impl DataPack {
         &self.meta.name
     }
 
-    pub fn read_datapacks<P: AsRef<Path>>(path: &P) -> Result<Vec<Result<DataPack>>> {
+    /// Reads in all the datapacks in a directory
+    ///
+    /// `version_filter` allows you to provide a filter for which pack formats will be attempted to be loaded
+    pub fn read_datapacks<P: AsRef<Path>>(
+        path: &P,
+        version_filter: VersionFilter,
+    ) -> Result<Vec<Result<DataPack>>> {
         let files = path.as_ref().read_dir()?;
         let mut packs = Vec::new();
 
@@ -134,6 +162,7 @@ impl DataPack {
                 packs.push(Self::read(
                     &entry.path(),
                     entry.file_name().to_str().unwrap(),
+                    version_filter,
                 ))
             }
         }
@@ -141,7 +170,10 @@ impl DataPack {
         Ok(packs)
     }
 
-    pub fn read(path: &Path, pack_name: &str) -> Result<DataPack> {
+    /// Reads in a datapack from a given folder.
+    ///
+    /// `version_filter` allows you to provide a filter for which pack formats will be attempted to be loaded
+    pub fn read(path: &Path, pack_name: &str, version_filter: VersionFilter) -> Result<DataPack> {
         let mut file = OpenOptions::new()
             .read(true)
             .write(false)
@@ -151,6 +183,45 @@ impl DataPack {
         file.read_to_string(&mut json)?;
 
         let mut meta: RawMcMeta = serde_json::from_str(&json)?;
+
+        match version_filter {
+            VersionFilter::Latest =>
+                if meta.pack.pack_format != SUPPORTED_VERSION {
+                    return Err(Error::new(
+                        ErrorKind::Other,
+                        format!(
+                            "Pack {} format version ({}) is lower than the supported version",
+                            meta.pack.name, meta.pack.pack_format
+                        ),
+                    ));
+                },
+            VersionFilter::Stable =>
+                if meta.pack.pack_format < LOWEST_SUPPORTED_STABLE_VERSION {
+                    return Err(Error::new(
+                        ErrorKind::Other,
+                        format!(
+                            "Pack {} format version ({}) is lower than the supported version",
+                            meta.pack.name, meta.pack.pack_format
+                        ),
+                    ));
+                },
+            VersionFilter::LatestOrStable =>
+                if meta.pack.pack_format != SUPPORTED_VERSION {
+                    if meta.pack.pack_format < LOWEST_SUPPORTED_STABLE_VERSION
+                        || path.join("data/worldgen").exists()
+                    {
+                        return Err(Error::new(
+                            ErrorKind::Other,
+                            format!(
+                                "Pack {} format version ({}) is lower than the supported version",
+                                meta.pack.name, meta.pack.pack_format
+                            ),
+                        ));
+                    }
+                },
+            VersionFilter::None => {}
+        }
+
 
         meta.pack.name = pack_name.to_owned();
 
