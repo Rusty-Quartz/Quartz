@@ -20,6 +20,7 @@ use crate::data::{
     item_modifiers::ItemModifier,
     jigsaw_pool::JigsawPool,
     loot_tables::LootTable,
+    noise::Noise,
     noise_settings::NoiseSettings,
     predicate::Predicate,
     processors::ProcessorList,
@@ -251,7 +252,7 @@ impl DataPack {
 
 
         for namespace in &self.namespaces {
-            namespace.write(&path.as_ref().join(&namespace.name))?;
+            namespace.write(&path.as_ref().join(&namespace.name).join("data"))?;
         }
         Ok(())
     }
@@ -270,6 +271,7 @@ pub struct Namespace {
     pub density_functions: HashMap<String, DensityFunctionProvider>,
     pub dimensions: HashMap<String, Dimension>,
     pub dimension_types: HashMap<String, DimensionType>,
+    pub noise: HashMap<String, Noise>,
     pub noise_settings: HashMap<String, NoiseSettings>,
     pub carvers: HashMap<String, Carver>,
     pub surface_builders: HashMap<String, SurfaceBuilder>,
@@ -307,6 +309,7 @@ impl Namespace {
             Self::read_datatype(&namespace_path.join("worldgen/configured_structure_feature"))?;
         let surface_builders =
             Self::read_datatype(&namespace_path.join("worldgen/configured_surface_builder"))?;
+        let noise = Self::read_datatype(&namespace_path.join("worldgen/noise"))?;
         let noise_settings = Self::read_datatype(&namespace_path.join("worldgen/noise_settings"))?;
         let processors = Self::read_datatype(&namespace_path.join("worldgen/processor_list"))?;
         let jigsaw_pools = Self::read_datatype(&namespace_path.join("worldgen/template_pool"))?;
@@ -341,6 +344,7 @@ impl Namespace {
             features,
             structure_features,
             surface_builders,
+            noise,
             noise_settings,
             processors,
             jigsaw_pools,
@@ -493,6 +497,7 @@ impl Namespace {
             &self.surface_builders,
             &namespace_path.join("worldgen/configured_surface_builder"),
         )?;
+        Self::write_datatype(&self.noise, &namespace_path.join("worldgen/noise"))?;
         Self::write_datatype(
             &self.noise_settings,
             &namespace_path.join("worldgen/noise_settings"),
