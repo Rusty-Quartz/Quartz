@@ -216,6 +216,65 @@ impl UnlocalizedName {
     pub fn as_uln_str(&self) -> &UlnStr {
         self
     }
+
+    /// Combines the namespace and identifier into a String and then creates an UnlocalizedName from that
+    ///
+    /// This function will return an error if the given string has an empty namespace or empty identifier,
+    /// in other words if the combined string is in the form `namespace:`, `:identifier`, or ":".
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use qdat::uln::UnlocalizedName;
+    /// let namespace = "quartz";
+    /// let stone = UnlocalizedName::from_parts(namespace, "stone").unwrap();
+    ///
+    /// assert_eq!(stone.namespace(), "quartz");
+    /// assert_eq!(stone.identifier(), "stone");
+    ///
+    /// ```
+    pub fn from_parts(
+        namespace: &str,
+        identifier: &str,
+    ) -> Result<Self, ParseUnlocalizedNameError> {
+        if namespace.is_empty() {
+            return Err(ParseUnlocalizedNameError::EmptyNamespace);
+        }
+
+        if identifier.is_empty() {
+            return Err(ParseUnlocalizedNameError::EmptyIdentifier);
+        }
+
+        let str_len = namespace.len() + identifier.len() + 1;
+        if str_len > MAX_ULN_LENGTH {
+            return Err(ParseUnlocalizedNameError::StringTooLarge(str_len));
+        }
+
+        if namespace == "minecraft" {
+            unsafe {
+                // The length of identifier was already checked and None for colon is safe
+                Ok(UnlocalizedName::from_string_unchecked(
+                    identifier.to_owned(),
+                    None,
+                ))
+            }
+        } else {
+            let mut repr = String::with_capacity(str_len);
+            repr.push_str(namespace);
+            repr.push(':');
+            repr.push_str(identifier);
+
+            unsafe {
+                // We have checked to ensure namespace and identifier are not empty
+                // so colon has to be at least 1 and can't be the end of the repr
+                // we also have already checked that the total length is less than the max
+                Ok(UnlocalizedName::from_string_unchecked(
+                    repr,
+                    NonZeroUsize::new(namespace.len()),
+                ))
+            }
+        }
+    }
 }
 
 impl Serialize for UnlocalizedName {
