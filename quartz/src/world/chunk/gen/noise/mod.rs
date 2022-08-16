@@ -1,3 +1,4 @@
+pub mod blended;
 pub mod normal;
 pub mod perlin;
 pub mod simplex;
@@ -69,4 +70,11 @@ pub(self) fn lfloor(val: f64) -> i64 {
     } else {
         l
     }
+}
+
+pub struct NoiseSamplingSettings {
+    xz_scale: f64,
+    y_scale: f64,
+    xz_factor: f64,
+    y_factor: f64,
 }
