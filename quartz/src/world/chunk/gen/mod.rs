@@ -13,6 +13,7 @@ mod noise;
 pub mod qnoise {
     use super::noise::*;
 }
+pub mod density_function;
 pub mod random;
 
 pub enum ChunkStatus {
