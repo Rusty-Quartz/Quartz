@@ -1,9 +1,9 @@
-mod netutil;
 mod bitmask;
+mod netutil;
 pub mod packet_data;
 
-pub use netutil::*;
 pub use bitmask::*;
+pub use netutil::*;
 
 /// All possible states of a client's connection to the server.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
