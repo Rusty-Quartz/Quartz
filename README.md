@@ -25,5 +25,5 @@ We also plan on having our own plugin system to allow extending the functionalit
 
 ### Credits
 Packet info and minecraft datatypes from the [minecraft protocol wiki](https://wiki.vg/)  
-Info about the format of datapacks taken from [Minsode's datapack generator](https://misode.github.io/)
+Info about the format of datapacks taken from [Minsode's datapack generator](https://misode.github.io/)  
 Other info taken from minecraft source deobfuscated using [parchment mappings](https://parchmentmc.org/), [quilt mappings](https://github.com/QuiltMC/quilt-mappings), and Mojang's own mappings
