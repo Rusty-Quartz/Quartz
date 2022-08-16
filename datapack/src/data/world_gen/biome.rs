@@ -15,7 +15,6 @@ pub struct Biome {
     pub creature_spawn_probability: Option<f32>,
     pub effects: BiomeEffects,
     pub carvers: BiomeCarvers,
-    // TODO: is tag?
     pub features: Vec<IdsOrTag>,
     pub spawners: HashMap<MobCategory, Vec<MobSpawners>>,
     // This is literally never used by vanilla
@@ -117,7 +116,7 @@ pub struct BiomeParticleOptions {
 //         id: UnlocalizedName,
 //         #[serde(rename = "Count")]
 //         count: i32,
-//         // TODO: this is snbt
+//         // TO DO: this is snbt
 //         tag: String,
 //     },
 // }
