@@ -1,27 +1,17 @@
 use qdat::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 
+use crate::data::tags::IdsOrTag;
+
 use super::processors::Processor;
 
 #[derive(Serialize, Deserialize)]
 pub struct JigsawPool {
     pub name: UnlocalizedName,
     pub fallback: UnlocalizedName,
-    pub elements: Vec<JigsawStructure>,
+    pub elements: Vec<WeightedJigsawElement>,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum JigsawStructure {
-    SingleElement {
-        weight: i32,
-        element: JigsawElement,
-    },
-    ElementList {
-        weight: i32,
-        elements: Vec<WeightedJigsawElement>,
-    },
-}
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -32,8 +22,7 @@ pub enum JigsawProjection {
 
 #[derive(Serialize, Deserialize)]
 pub struct WeightedJigsawElement {
-    weight: i32,
-    #[serde(flatten)]
+    weight: u32,
     element: JigsawElement,
 }
 
@@ -43,11 +32,15 @@ pub enum JigsawElement {
     #[serde(rename = "minecraft:empty_pool_element")]
     EmptyPoolElement,
     #[serde(rename = "minecraft:list_pool_element")]
-    // TODO: I have no idea what the format of this is
-    ListPoolElement {},
+    ListPoolElement {
+        projection: JigsawProjection,
+        elements: Vec<JigsawElement>,
+    },
     #[serde(rename = "minecraft:feature_pool_element")]
-    // TODO: see above
-    FeaturePoolElement {},
+    FeaturePoolElement {
+        projection: JigsawProjection,
+        feature: IdsOrTag,
+    },
     #[serde(rename = "minecraft:legacy_single_pool_element")]
     LegacySinglePoolElement {
         location: UnlocalizedName,
