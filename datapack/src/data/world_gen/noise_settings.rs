@@ -1,23 +1,22 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use qdat::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 
-use super::{dimension::StructureSettings, features::SurfaceType};
+use crate::data::world_gen::density_function::DensityFunctionProvider;
+
+use super::features::SurfaceType;
 
 #[derive(Serialize, Deserialize)]
 pub struct NoiseSettings {
     pub sea_level: i32,
     pub disable_mob_generation: bool,
-    pub noise_caves_enabled: bool,
-    pub noodle_caves_enabled: bool,
     pub ore_veins_enabled: bool,
     pub aquifers_enabled: bool,
     pub legacy_random_source: bool,
     pub default_block: BlockState,
     pub default_fluid: BlockState,
-    pub structures: BTreeMap<UnlocalizedName, StructureSettings>,
-    pub noise: Noise,
+    pub noise: NoiseOptions,
     pub surface_rule: SurfaceRule,
 }
 
@@ -120,7 +119,7 @@ pub enum HeightConditionProvider {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Noise {
+pub struct NoiseOptions {
     pub min_y: i32,
     pub height: i32,
     pub size_horizontal: i32,
@@ -148,7 +147,7 @@ pub struct TerrainShaper {
 #[serde(untagged)]
 pub enum TerrainShaperValue {
     Spline {
-        coordinate: String,
+        coordinate: TerrainSpineCoordinate,
         points: Vec<TerrainSplinePoint>,
     },
     Constant(f32),
@@ -193,4 +192,23 @@ pub struct BlockState {
     #[serde(rename = "Properties")]
     #[serde(default = "Default::default")]
     pub properties: HashMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct NoiseRouter {
+    barrier: DensityFunctionProvider,
+    fluid_level_floodedness: DensityFunctionProvider,
+    fluid_level_spread: DensityFunctionProvider,
+    lava: DensityFunctionProvider,
+    temperature: DensityFunctionProvider,
+    vegetation: DensityFunctionProvider,
+    continents: DensityFunctionProvider,
+    erosion: DensityFunctionProvider,
+    depth: DensityFunctionProvider,
+    ridges: DensityFunctionProvider,
+    initial_density_without_jaggedness: DensityFunctionProvider,
+    final_density: DensityFunctionProvider,
+    vein_toggle: DensityFunctionProvider,
+    vein_ridged: DensityFunctionProvider,
+    vein_gap: DensityFunctionProvider,
 }

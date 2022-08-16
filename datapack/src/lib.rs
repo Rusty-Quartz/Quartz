@@ -1,8 +1,8 @@
 //! quartz_datapack is a crate to read and write minecraft datapacks
 //!
-//! Note: To avoid the amount of single-use datatypes many types have notes ensuring the usage is valid<br>
+//! Note: To avoid the amount of single-use datatypes some types have notes ensuring the usage is valid<br>
 //! If these notes are not followed then the datapack will not be valid by vanilla's standards<br>
-//! To help with this, many Serialize and Deserialize implementations will enforce these rules<br>
+//! To help with this, manual Serialize and Deserialize implementations will enforce these rules<br>
 //! Though, where custom implementations were not already necessary for the datatype these were not added
 
 /// Unwraps the fields and returns a missing_field error if they are `None`

@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs::{DirEntry, File, OpenOptions},
-    io::{Read, Result},
+    io::{Error, ErrorKind, Read, Result},
     path::Path,
 };
 
@@ -12,19 +12,22 @@ use crate::data::{
     advancement::Advancement,
     biome::Biome,
     carvers::Carver,
+    density_function::DensityFunctionProvider,
     dimension::Dimension,
     dimension_type::DimensionType,
-    features::Feature,
+    features::{Feature, PlacedFeature},
     functions::{read_function, write_function, Function},
     item_modifiers::ItemModifier,
     jigsaw_pool::JigsawPool,
     loot_tables::LootTable,
+    noise::Noise,
     noise_settings::NoiseSettings,
     predicate::Predicate,
     processors::ProcessorList,
     recipe::VanillaRecipeType,
     structure::Structure,
     structure_features::StructureFeatures,
+    structure_set::StructureSet,
     surface_builders::SurfaceBuilder,
     tags::Tag,
 };
@@ -50,9 +53,31 @@ pub const fn datapack_version(major: u8, minor: u8, patch: u8) -> u8 {
         (1, 17, _) => 7,
         (1, 18, 2) => 9,
         (1, 18, _) => 8,
+        (1, 19, _) => 10,
         // Future versions we don't support
         _ => 1,
     }
+}
+/// The datapack version we currently support
+///
+/// This takes into account experimental features and so will be the strictest possible filter for supported versions
+pub const SUPPORTED_VERSION: u8 = 9;
+/// The lowest datapack version we support if the pack is not using experimental features
+///
+/// The currently the only experimental features are the worldgen features
+// TODO: actually check that this is accurate 1.16 feels right because that was before the worldgen stuff was added iirc
+pub const LOWEST_SUPPORTED_STABLE_VERSION: u8 = 6;
+
+#[derive(Clone, Copy)]
+pub enum VersionFilter {
+    /// Only allow pack formats that are equal to [SUPPORTED_VERSION]
+    Latest,
+    /// Allow pack formats that are equal to or greater than [LOWEST_SUPPORTED_STABLE_VERSION]
+    Stable,
+    /// Same as [Latest](VersionFilter::Latest) unless the pack does not contain any experimental features, then allow [Stable](VersionFilter::Stable)
+    LatestOrStable,
+    /// Try to load all packs and ignore the given pack format
+    None,
 }
 
 fn recursive_read(path: &Path, prefix: String) -> Result<Vec<(String, DirEntry)>> {
@@ -123,7 +148,13 @@ impl DataPack {
         &self.meta.name
     }
 
-    pub fn read_datapacks<P: AsRef<Path>>(path: &P) -> Result<Vec<Result<DataPack>>> {
+    /// Reads in all the datapacks in a directory
+    ///
+    /// `version_filter` allows you to provide a filter for which pack formats will be attempted to be loaded
+    pub fn read_datapacks<P: AsRef<Path>>(
+        path: &P,
+        version_filter: VersionFilter,
+    ) -> Result<Vec<Result<DataPack>>> {
         let files = path.as_ref().read_dir()?;
         let mut packs = Vec::new();
 
@@ -134,6 +165,7 @@ impl DataPack {
                 packs.push(Self::read(
                     &entry.path(),
                     entry.file_name().to_str().unwrap(),
+                    version_filter,
                 ))
             }
         }
@@ -141,7 +173,10 @@ impl DataPack {
         Ok(packs)
     }
 
-    pub fn read(path: &Path, pack_name: &str) -> Result<DataPack> {
+    /// Reads in a datapack from a given folder.
+    ///
+    /// `version_filter` allows you to provide a filter for which pack formats will be attempted to be loaded
+    pub fn read(path: &Path, pack_name: &str, version_filter: VersionFilter) -> Result<DataPack> {
         let mut file = OpenOptions::new()
             .read(true)
             .write(false)
@@ -151,6 +186,45 @@ impl DataPack {
         file.read_to_string(&mut json)?;
 
         let mut meta: RawMcMeta = serde_json::from_str(&json)?;
+
+        match version_filter {
+            VersionFilter::Latest =>
+                if meta.pack.pack_format != SUPPORTED_VERSION {
+                    return Err(Error::new(
+                        ErrorKind::Other,
+                        format!(
+                            "Pack {} format version ({}) is lower than the supported version",
+                            meta.pack.name, meta.pack.pack_format
+                        ),
+                    ));
+                },
+            VersionFilter::Stable =>
+                if meta.pack.pack_format < LOWEST_SUPPORTED_STABLE_VERSION {
+                    return Err(Error::new(
+                        ErrorKind::Other,
+                        format!(
+                            "Pack {} format version ({}) is lower than the supported version",
+                            meta.pack.name, meta.pack.pack_format
+                        ),
+                    ));
+                },
+            VersionFilter::LatestOrStable =>
+                if meta.pack.pack_format != SUPPORTED_VERSION {
+                    if meta.pack.pack_format < LOWEST_SUPPORTED_STABLE_VERSION
+                        || path.join("data/worldgen").exists()
+                    {
+                        return Err(Error::new(
+                            ErrorKind::Other,
+                            format!(
+                                "Pack {} format version ({}) is lower than the supported version",
+                                meta.pack.name, meta.pack.pack_format
+                            ),
+                        ));
+                    }
+                },
+            VersionFilter::None => {}
+        }
+
 
         meta.pack.name = pack_name.to_owned();
 
@@ -178,7 +252,7 @@ impl DataPack {
 
 
         for namespace in &self.namespaces {
-            namespace.write(&path.as_ref().join(&namespace.name))?;
+            namespace.write(&path.as_ref().join(&namespace.name).join("data"))?;
         }
         Ok(())
     }
@@ -194,8 +268,10 @@ pub struct Namespace {
     pub item_modifiers: HashMap<String, ItemModifier>,
     pub advancements: HashMap<String, Advancement>,
     pub biomes: HashMap<String, Biome>,
+    pub density_functions: HashMap<String, DensityFunctionProvider>,
     pub dimensions: HashMap<String, Dimension>,
     pub dimension_types: HashMap<String, DimensionType>,
+    pub noise: HashMap<String, Noise>,
     pub noise_settings: HashMap<String, NoiseSettings>,
     pub carvers: HashMap<String, Carver>,
     pub surface_builders: HashMap<String, SurfaceBuilder>,
@@ -203,7 +279,9 @@ pub struct Namespace {
     pub structure_features: HashMap<String, StructureFeatures>,
     pub jigsaw_pools: HashMap<String, JigsawPool>,
     pub processors: HashMap<String, ProcessorList>,
+    pub structure_sets: HashMap<String, StructureSet>,
     pub structures: HashMap<String, Structure>,
+    pub placed_features: HashMap<String, PlacedFeature>,
 }
 
 impl Namespace {
@@ -231,9 +309,14 @@ impl Namespace {
             Self::read_datatype(&namespace_path.join("worldgen/configured_structure_feature"))?;
         let surface_builders =
             Self::read_datatype(&namespace_path.join("worldgen/configured_surface_builder"))?;
+        let noise = Self::read_datatype(&namespace_path.join("worldgen/noise"))?;
         let noise_settings = Self::read_datatype(&namespace_path.join("worldgen/noise_settings"))?;
         let processors = Self::read_datatype(&namespace_path.join("worldgen/processor_list"))?;
         let jigsaw_pools = Self::read_datatype(&namespace_path.join("worldgen/template_pool"))?;
+        let density_functions =
+            Self::read_datatype(&namespace_path.join("worldgen/density_function"))?;
+        let placed_features = Self::read_datatype(&namespace_path.join("worldgen/placed_feature"))?;
+        let structure_sets = Self::read_datatype(&namespace_path.join("worldgen/structure_set"))?;
         let structures = match Self::read_structures(&namespace_path.join("structures")) {
             Ok(s) => s,
             Err(e) =>
@@ -253,6 +336,7 @@ impl Namespace {
             loot_tables,
             predicates,
             item_modifiers,
+            density_functions,
             dimensions,
             dimension_types,
             biomes,
@@ -260,10 +344,13 @@ impl Namespace {
             features,
             structure_features,
             surface_builders,
+            noise,
             noise_settings,
             processors,
             jigsaw_pools,
             structures,
+            structure_sets,
+            placed_features,
         })
     }
 
@@ -276,6 +363,7 @@ impl Namespace {
         };
 
         for (name, entry) in tag_files {
+            println!("{name} {entry:?}");
             let mut file = OpenOptions::new()
                 .read(true)
                 .write(false)
@@ -306,6 +394,7 @@ impl Namespace {
         };
 
         for (name, entry) in files {
+            println!("{name} {entry:?}");
             let file = OpenOptions::new()
                 .read(true)
                 .write(false)
@@ -328,6 +417,7 @@ impl Namespace {
         };
 
         for (name, entry) in files {
+            println!("{name} {entry:?}");
             let mut file = OpenOptions::new()
                 .read(true)
                 .write(false)
@@ -352,6 +442,7 @@ impl Namespace {
         };
 
         for (name, entry) in files {
+            println!("{name} {entry:?}");
             let mut file = OpenOptions::new()
                 .read(true)
                 .write(false)
@@ -406,6 +497,7 @@ impl Namespace {
             &self.surface_builders,
             &namespace_path.join("worldgen/configured_surface_builder"),
         )?;
+        Self::write_datatype(&self.noise, &namespace_path.join("worldgen/noise"))?;
         Self::write_datatype(
             &self.noise_settings,
             &namespace_path.join("worldgen/noise_settings"),
@@ -417,6 +509,18 @@ impl Namespace {
         Self::write_datatype(
             &self.jigsaw_pools,
             &namespace_path.join("worldgen/template_pool"),
+        )?;
+        Self::write_datatype(
+            &self.density_functions,
+            &namespace_path.join("worldgen/density_function"),
+        )?;
+        Self::write_datatype(
+            &self.placed_features,
+            &namespace_path.join("worldgen/placed_feature"),
+        )?;
+        Self::write_datatype(
+            &self.structure_sets,
+            &namespace_path.join("worldgen/structure_set"),
         )?;
         match Self::write_structures(&self.structures, &namespace_path.join("structures")) {
             Ok(_) => {}

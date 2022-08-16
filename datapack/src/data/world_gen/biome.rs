@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use qdat::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 
+use crate::data::tags::IdsOrTag;
+
 #[derive(Serialize, Deserialize)]
 pub struct Biome {
     pub category: BiomeCategory,
@@ -13,7 +15,8 @@ pub struct Biome {
     pub creature_spawn_probability: Option<f32>,
     pub effects: BiomeEffects,
     pub carvers: BiomeCarvers,
-    pub features: Vec<Vec<String>>,
+    // TODO: is tag?
+    pub features: Vec<IdsOrTag>,
     pub spawners: HashMap<MobCategory, Vec<MobSpawners>>,
     // This is literally never used by vanilla
     pub spawn_costs: HashMap<String, SpawnCosts>,

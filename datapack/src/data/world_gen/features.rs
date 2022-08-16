@@ -1,7 +1,10 @@
 use qdat::{world::location::BlockPosition, UnlocalizedName};
 use serde::{Deserialize, Serialize};
 
-use crate::data::datatypes::{BlockPredicate, ValueOrList};
+use crate::data::{
+    datatypes::BlockPredicate,
+    tags::{IdsOrTag, TagProvider},
+};
 
 use super::{
     carvers::{FloatProvider, HeightProvider},
@@ -133,7 +136,7 @@ pub enum Feature {
         can_place_on_ceiling: bool,
         #[serde(default = "Default::default")]
         can_place_on_wall: bool,
-        can_be_placed_on: Vec<UnlocalizedName>,
+        can_be_placed_on: IdsOrTag,
     },
     #[serde(rename = "minecraft:growing_plant")]
     GrowingPlant {
@@ -206,7 +209,7 @@ pub enum Feature {
         y_spread: Option<i32>,
         xz_spread: Option<i32>,
         tries: Option<i32>,
-        feature: PlacedFeature,
+        feature: PlacedFeatureProvider,
     },
     #[serde(rename = "minecraft:no_op")]
     NoOp {},
@@ -225,20 +228,20 @@ pub enum Feature {
     },
     #[serde(rename = "minecraft:random_boolean_selector")]
     RandomBooleanSelector {
-        feature_false: PlacedFeature,
-        feature_true: PlacedFeature,
+        feature_false: PlacedFeatureProvider,
+        feature_true: PlacedFeatureProvider,
     },
     #[serde(rename = "minecraft:random_patch")]
     RandomPatch {
         y_spread: Option<i32>,
         xz_spread: Option<i32>,
         tries: Option<i32>,
-        feature: PlacedFeature,
+        feature: PlacedFeatureProvider,
     },
     #[serde(rename = "minecraft:random_selector")]
     RandomSelector {
         features: Vec<RandomFeature>,
-        default: PlacedFeature,
+        default: PlacedFeatureProvider,
     },
     #[serde(rename = "minecraft:replace_single_block")]
     ReplaceSingleBlock { targets: Vec<BlockStateTarget> },
@@ -252,10 +255,10 @@ pub enum Feature {
         hanging_roots_vertical_span: i32,
         hanging_root_placement_attempts: i32,
         allowed_vertical_water_for_tree: i32,
-        root_replaceable: UnlocalizedName,
+        root_replaceable: TagProvider,
         root_state_provider: BlockStateProvider,
         hanging_root_state_provider: BlockStateProvider,
-        feature: PlacedFeature,
+        feature: PlacedFeatureProvider,
     },
     #[serde(rename = "minecraft:scattered_ore")]
     ScatteredOre {
@@ -269,8 +272,11 @@ pub enum Feature {
     Seagrass { probability: f32 },
     #[serde(rename = "minecraft:simple_block")]
     SimpleBlock { to_place: BlockStateProvider },
+    // TODO: this is now a tag ?
     #[serde(rename = "minecraft:simple_random_selector")]
-    SimpleRandomSelector { features: Vec<PlacedFeature> },
+    SimpleRandomSelector {
+        features: Vec<PlacedFeatureProvider>,
+    },
     #[serde(rename = "minecraft:small_dripstone")]
     SmallDripstone {
         max_placements: Option<i32>,
@@ -284,7 +290,7 @@ pub enum Feature {
         rock_count: Option<i32>,
         hole_count: Option<i32>,
         requires_block_below: Option<bool>,
-        valid_blocks: ValueOrList<UnlocalizedName>,
+        valid_blocks: IdsOrTag,
     },
     #[serde(rename = "minecraft:tree")]
     Tree {
@@ -313,7 +319,7 @@ pub enum Feature {
         extra_edge_column_chance: f32,
         vegetation_chance: f32,
         xz_radius: IntProvider,
-        replaceable: String,
+        replaceable: TagProvider,
         ground_state: BlockStateProvider,
         vegetation_feature: PlacedFeature,
     },
@@ -328,10 +334,10 @@ pub enum Feature {
         extra_edge_column_chance: f32,
         extra_bottom_block_chance: f32,
         vertical_range: i32,
-        vegetation_feature: PlacedFeature,
+        vegetation_feature: PlacedFeatureProvider,
         surface: SurfaceType,
         depth: IntProvider,
-        replaceable: String,
+        replaceable: TagProvider,
         ground_state: BlockStateProvider,
     },
     #[serde(rename = "minecraft:weeping_vines")]
@@ -344,16 +350,15 @@ pub struct BlockColumnLayer {
     provider: BlockStateProvider,
 }
 
-
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum PlacedFeature {
-    Feature(UnlocalizedName),
-    ModifiedFeature(ModifiedFeature),
+pub enum PlacedFeatureProvider {
+    Reference(UnlocalizedName),
+    Inline(PlacedFeature),
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ModifiedFeature {
+pub struct PlacedFeature {
     feature: ModifiedFeatureEntry,
     placement: Vec<PlacementModifier>,
 }
@@ -368,6 +373,8 @@ pub enum ModifiedFeatureEntry {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum PlacementModifier {
+    #[serde(rename = "minecraft:biome")]
+    Biome,
     #[serde(rename = "minecraft:block_predicate_filter")]
     BlockPredicateFilter { predicate: BlockPredicate },
     #[serde(rename = "minecraft:carving_mask")]
@@ -411,8 +418,8 @@ pub enum PlacementModifier {
     #[serde(rename = "minecraft:surface_relative_threshold_filter")]
     SurfaceRelativeThresholdFilter {
         heightmap: HeightMaps,
-        min_inclusive: i32,
-        max_inclusive: i32,
+        min_inclusive: Option<i32>,
+        max_inclusive: Option<i32>,
     },
     #[serde(rename = "minecraft:surface_water_depth_filter")]
     SurfaceWaterDepthFilter { max_water_depth: i32 },
@@ -686,7 +693,7 @@ pub enum SurfaceType {
 
 #[derive(Serialize, Deserialize)]
 pub struct RandomFeature {
-    feature: PlacedFeature,
+    feature: PlacedFeatureProvider,
     chance: f32,
 }
 
@@ -769,6 +776,13 @@ pub enum IntProviderInternal {
         min_inclusive: i32,
         max_inclusive: i32,
         source: Box<IntProvider>,
+    },
+    #[serde(rename = "minecraft:clamped_normal")]
+    ClampedNormal {
+        min_inclusive: i32,
+        max_inclusive: i32,
+        mean: f32,
+        deviation: f32,
     },
 }
 

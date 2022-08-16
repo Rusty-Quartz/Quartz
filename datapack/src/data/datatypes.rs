@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use qdat::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 
+use crate::data::tags::IdsOrTag;
+
 use super::{features::Direction, loot_tables::NumberProvider, noise_settings::BlockState};
 
 /// A condition that matches on an amount of slots
@@ -251,12 +253,12 @@ pub enum BlockPredicate {
     #[serde(rename = "minecraft:matching_blocks")]
     MatchingBlocks {
         offset: Option<[i8; 3]>,
-        blocks: BlockList,
+        blocks: IdsOrTag,
     },
     #[serde(rename = "minecraft:matching_fluids")]
     MatchingFluids {
         offset: Option<[i8; 3]>,
-        fluids: BlockList,
+        fluids: IdsOrTag,
     },
     #[serde(rename = "minecraft:not")]
     Not { predicate: Box<BlockPredicate> },

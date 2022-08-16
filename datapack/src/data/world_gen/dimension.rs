@@ -1,6 +1,8 @@
 use qdat::UnlocalizedName;
 use serde::{Deserialize, Serialize};
 
+use crate::data::{structure_set::StructureSetProvider, tags::IdsOrTag};
+
 use super::noise_settings::NoiseSettings;
 
 #[derive(Serialize, Deserialize)]
@@ -53,7 +55,7 @@ pub enum BiomeSourceType {
     #[serde(rename = "minecraft:fixed")]
     Fixed { biome: String },
     #[serde(rename = "minecraft:checkerboard")]
-    CheckerBoard { biomes: Vec<String>, scale: i32 },
+    CheckerBoard { biomes: IdsOrTag, scale: i32 },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -97,7 +99,8 @@ pub struct SuperflatSettings {
     pub lakes: bool,
     #[serde(default = "Default::default")]
     pub features: bool,
-    pub structures: StructureSettings,
+    #[serde(default = "Default::default")]
+    pub structure_overrides: Vec<StructureSetProvider>,
 }
 
 
