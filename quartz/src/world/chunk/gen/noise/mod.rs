@@ -1,6 +1,6 @@
-mod perlin;
-mod simplex;
-
+pub mod normal;
+pub mod perlin;
+pub mod simplex;
 
 // Utility math functions used in noise
 // maybe move these into util later?
