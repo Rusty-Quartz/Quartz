@@ -1,3 +1,6 @@
+// TODO: we might want to change the name of these to something else
+// depends on what we end up doing with StaticRegistry
+pub mod registries;
 pub(crate) mod static_registry;
 // TODO: move behind a compiler flag or something
 pub use super::static_registry::*;
