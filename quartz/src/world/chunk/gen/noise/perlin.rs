@@ -20,7 +20,7 @@ pub struct PerlinNoise {
     amplitudes: Vec<f64>,
     lowest_frequency_value_factor: f64,
     lowest_frequency_input_factor: f64,
-    max_value: f64,
+    pub(super) max_value: f64,
 }
 
 impl PerlinNoise {
@@ -120,8 +120,12 @@ impl PerlinNoise {
         }
     }
 
-    pub fn get_val(
-        &mut self,
+    pub fn get_value_simple(&self, x: f64, y: f64, z: f64) -> f64 {
+        self.get_value(x, y, z, 0.0, 0.0, false)
+    }
+
+    pub fn get_value(
+        &self,
         x: f64,
         y: f64,
         z: f64,
@@ -133,7 +137,7 @@ impl PerlinNoise {
         let mut input_factor = self.lowest_frequency_input_factor;
         let mut val_factor = self.lowest_frequency_value_factor;
 
-        for (amplitude, octave) in self.amplitudes.iter().zip(self.octaves.iter_mut()) {
+        for (amplitude, octave) in self.amplitudes.iter().zip(self.octaves.iter()) {
             if let Some(octave) = octave {
                 let noise_val = octave.scaled_noise(
                     wrap(x * input_factor),
@@ -242,7 +246,7 @@ impl PerlinOctave {
     // apparently this is deprecated?
     // I think this just means that people making mc mods shouldn't use it
     // not that its going to get removed or anything
-    pub fn scaled_noise(&mut self, x: f64, y: f64, z: f64, y_scale: f64, y_max: f64) -> f64 {
+    pub fn scaled_noise(&self, x: f64, y: f64, z: f64, y_scale: f64, y_max: f64) -> f64 {
         let offset_x = x + self.x_offset;
         let offset_y = y + self.y_offset;
         let offset_z = z + self.z_offset;
