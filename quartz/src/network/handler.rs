@@ -434,6 +434,28 @@ impl QuartzServer {
 
     async fn handle_status_request(&mut self, sender: ClientId) {
         let config = config().read();
+
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct ClientSampleEntry<'a> {
+            id: Uuid,
+            name: &'a str,
+        }
+
+        let sample = self
+            .client_list
+            .iter()
+            .enumerate()
+            .filter_map(|(n, (_, client))| {
+                if n < 5 {
+                    Some(ClientSampleEntry {
+                        name: client.username(),
+                        id: *client.uuid(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
         let json_response = json!({
             "version": {
                 "name": server::VERSION,
@@ -442,7 +464,7 @@ impl QuartzServer {
             "players": {
                 "max": config.max_players,
                 "online": self.client_list.online_count(),
-                "sample": [] // TODO: Decide whether or not to implement "sample" in status req
+                "sample": sample
             },
             "description": config.motd
         });

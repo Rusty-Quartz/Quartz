@@ -148,7 +148,6 @@ pub struct Item {
     pub items: Option<Vec<UnlocalizedName>>,
     // TODO: have Cassy impl a way to have serde parse snbt
     pub nbt: Option<String>,
-    // TODO: figure out what this is
     pub potion: Option<UnlocalizedName>,
     pub tag: Option<String>,
 }

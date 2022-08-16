@@ -37,7 +37,7 @@ pub enum Processor {
 
 #[derive(Serialize, Deserialize)]
 pub struct ProcessorRule {
-    // pub position_predicate: Option<ProcessorPredicate>,
+    pub position_predicate: Option<PositionPredicate>,
     pub input_predicate: ProcessorPredicate,
     pub location_predicate: ProcessorPredicate,
     pub output_state: BlockState,
@@ -73,9 +73,33 @@ pub enum ProcessorPredicate {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename = "snake_case")]
+#[serde(tag = "predicate_type")]
+pub enum PositionPredicate {
+    #[serde(rename = "minecraft:always_true")]
+    AlwaysTrue,
+    #[serde(rename = "minecraft:axis_aligned_linear_pos")]
+    AxisAlignedLinearPos {
+        axis: Axis,
+        min_chance: f32,
+        max_chance: f32,
+        min_dist: i32,
+        max_dist: i32,
+    },
+    #[serde(rename = "minecraft:linear_pos")]
+    LinearPos {
+        min_chance: f32,
+        max_chance: f32,
+        min_dist: i32,
+        max_dist: i32,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
 pub enum Axis {
+    #[serde(rename = "x")]
     X,
+    #[serde(rename = "y")]
     Y,
+    #[serde(rename = "z")]
     Z,
 }

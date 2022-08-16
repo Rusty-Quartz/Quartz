@@ -102,7 +102,7 @@ pub fn run(config: Config, raw_console: Arc<Interface<DefaultTerminal>>) {
     let rt = Arc::try_unwrap(rt);
     match rt {
         Ok(rt) => rt.shutdown_timeout(Duration::from_secs(5)),
-        Err(_) => error!("Failed to reclaim ownership of runtime")
+        Err(_) => error!("Failed to reclaim ownership of runtime"),
     }
 }
 

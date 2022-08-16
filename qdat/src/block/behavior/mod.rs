@@ -1,7 +1,7 @@
 // use crate::world::location::BlockPosition;
 
 // pub trait BlockBehavior {
-//     // TODO: add world argument
+//     // TO DO: add world argument
 //     fn on_break(_position: BlockPosition, _state: &'static BlockState) {}
 // }
 

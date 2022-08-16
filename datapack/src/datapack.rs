@@ -1,7 +1,9 @@
 use std::{
     collections::HashMap,
+    error::Error,
+    fmt::Display,
     fs::{DirEntry, File, OpenOptions},
-    io::{Error, ErrorKind, Read, Result},
+    io::Read,
     path::Path,
 };
 
@@ -124,6 +126,7 @@ fn write_file_recursive<P: AsRef<Path>>(path: P) -> Result<File> {
         .write(true)
         .create(true)
         .open(path)
+        .map_err(Into::into)
 }
 
 /// Holds all the info about the datapack
@@ -190,36 +193,34 @@ impl DataPack {
         match version_filter {
             VersionFilter::Latest =>
                 if meta.pack.pack_format != SUPPORTED_VERSION {
-                    return Err(Error::new(
-                        ErrorKind::Other,
-                        format!(
-                            "Pack {} format version ({}) is lower than the supported version",
-                            meta.pack.name, meta.pack.pack_format
-                        ),
-                    ));
+                    return Err(DatapackIoError::VersionError {
+                        pack_name: meta.pack.name,
+                        checked_version: SUPPORTED_VERSION,
+                        found_version: meta.pack.pack_format,
+                    });
                 },
             VersionFilter::Stable =>
                 if meta.pack.pack_format < LOWEST_SUPPORTED_STABLE_VERSION {
-                    return Err(Error::new(
-                        ErrorKind::Other,
-                        format!(
-                            "Pack {} format version ({}) is lower than the supported version",
-                            meta.pack.name, meta.pack.pack_format
-                        ),
-                    ));
+                    return Err(DatapackIoError::VersionError {
+                        pack_name: meta.pack.name,
+                        checked_version: LOWEST_SUPPORTED_STABLE_VERSION,
+                        found_version: meta.pack.pack_format,
+                    });
                 },
             VersionFilter::LatestOrStable =>
                 if meta.pack.pack_format != SUPPORTED_VERSION {
-                    if meta.pack.pack_format < LOWEST_SUPPORTED_STABLE_VERSION
-                        || path.join("data/worldgen").exists()
-                    {
-                        return Err(Error::new(
-                            ErrorKind::Other,
-                            format!(
-                                "Pack {} format version ({}) is lower than the supported version",
-                                meta.pack.name, meta.pack.pack_format
-                            ),
-                        ));
+                    if meta.pack.pack_format < LOWEST_SUPPORTED_STABLE_VERSION {
+                        return Err(DatapackIoError::VersionError {
+                            pack_name: meta.pack.name,
+                            checked_version: LOWEST_SUPPORTED_STABLE_VERSION,
+                            found_version: meta.pack.pack_format,
+                        });
+                    } else if path.join("data/worldgen").exists() {
+                        return Err(DatapackIoError::VersionError {
+                            pack_name: meta.pack.name,
+                            checked_version: SUPPORTED_VERSION,
+                            found_version: meta.pack.pack_format,
+                        });
                     }
                 },
             VersionFilter::None => {}
@@ -248,7 +249,8 @@ impl DataPack {
 
     pub fn write_datapack<P: AsRef<Path>>(&self, path: &P) -> Result<()> {
         let mcmeta_file = write_file_recursive(path.as_ref().join("pack.mcmeta"))?;
-        serde_json::to_writer(mcmeta_file, &self.meta)?;
+        serde_json::to_writer(mcmeta_file, &self.meta)
+            .map_err(|e| DatapackIoError::SerdeError(e))?;
 
 
         for namespace in &self.namespaces {
@@ -317,15 +319,7 @@ impl Namespace {
             Self::read_datatype(&namespace_path.join("worldgen/density_function"))?;
         let placed_features = Self::read_datatype(&namespace_path.join("worldgen/placed_feature"))?;
         let structure_sets = Self::read_datatype(&namespace_path.join("worldgen/structure_set"))?;
-        let structures = match Self::read_structures(&namespace_path.join("structures")) {
-            Ok(s) => s,
-            Err(e) =>
-            // I don't feel like changing error types to make this better
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("{}", e),
-                )),
-        };
+        let structures = Self::read_structures(&namespace_path.join("structures"))?;
 
         Ok(Namespace {
             name,
@@ -406,9 +400,7 @@ impl Namespace {
         Ok(functions)
     }
 
-    fn read_structures(
-        functions_path: &Path,
-    ) -> std::result::Result<HashMap<String, Structure>, NbtIoError> {
+    fn read_structures(functions_path: &Path) -> Result<HashMap<String, Structure>> {
         let mut structures = HashMap::new();
 
         let files = match recursive_read(functions_path, String::new()) {
@@ -522,15 +514,7 @@ impl Namespace {
             &self.structure_sets,
             &namespace_path.join("worldgen/structure_set"),
         )?;
-        match Self::write_structures(&self.structures, &namespace_path.join("structures")) {
-            Ok(_) => {}
-            Err(e) =>
-            // I don't feel like changing error types to make this better
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("{}", e),
-                )),
-        };
+        Self::write_structures(&self.structures, &namespace_path.join("structures"))?;
 
         Ok(())
     }
@@ -559,7 +543,7 @@ impl Namespace {
     fn write_structures<P: AsRef<Path>>(
         structures: &HashMap<String, Structure>,
         path: &P,
-    ) -> std::result::Result<(), NbtIoError> {
+    ) -> Result<()> {
         for (name, val) in structures {
             let mut file = write_file_recursive(path.as_ref().join(format!("{}.nbt", name)))?;
 
@@ -603,3 +587,56 @@ pub struct McMeta {
 struct RawMcMeta {
     pub pack: McMeta,
 }
+
+#[derive(Debug)]
+pub enum DatapackIoError {
+    IOError(std::io::Error),
+    VersionError {
+        pack_name: String,
+        checked_version: u8,
+        found_version: u8,
+    },
+    NBTError(quartz_nbt::io::NbtIoError),
+    SerdeError(serde_json::Error),
+}
+
+impl Display for DatapackIoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IOError(e) => write!(f, "{e}"),
+            Self::VersionError {
+                pack_name,
+                ref checked_version,
+                ref found_version,
+            } => write!(
+                f,
+                "Pack {pack_name} has invalid version {found_version}, expected version after \
+                 {checked_version}"
+            ),
+            Self::NBTError(e) => write!(f, "{e}"),
+            Self::SerdeError(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl Error for DatapackIoError {}
+
+impl From<std::io::Error> for DatapackIoError {
+    fn from(e: std::io::Error) -> Self {
+        DatapackIoError::IOError(e)
+    }
+}
+
+impl From<quartz_nbt::io::NbtIoError> for DatapackIoError {
+    fn from(e: quartz_nbt::io::NbtIoError) -> Self {
+        DatapackIoError::NBTError(e)
+    }
+}
+
+impl From<serde_json::Error> for DatapackIoError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::SerdeError(e)
+    }
+}
+
+pub type Result<T> = core::result::Result<T, DatapackIoError>;

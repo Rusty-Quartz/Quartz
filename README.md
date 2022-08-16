@@ -1,6 +1,6 @@
 # Quartz
 A reimplementation of a minecraft server in rust.  
-Currently working on supporting 1.17
+Currently working on supporting 1.18.2
 
 ## Mission Statement
 
@@ -25,4 +25,5 @@ We also plan on having our own plugin system to allow extending the functionalit
 
 ### Credits
 Packet info and minecraft datatypes from the [minecraft protocol wiki](https://wiki.vg/)  
-Other info taken from minecraft source deobfuscated using [yarn mappings](https://github.com/FabricMC/yarn)
+Info about the format of datapacks taken from [Minsode's datapack generator](https://misode.github.io/)  
+Other info taken from minecraft source deobfuscated using [parchment mappings](https://parchmentmc.org/), [quilt mappings](https://github.com/QuiltMC/quilt-mappings), and Mojang's own mappings

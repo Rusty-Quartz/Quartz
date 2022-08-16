@@ -1,7 +1,4 @@
-use crate::{
-    color::Color,
-    component::*,
-};
+use crate::{color::Color, component::*};
 
 /// Utility struct for building text components. Components can have children, and those children
 /// can have children, etc., however this utility only allows for a base component with a list of

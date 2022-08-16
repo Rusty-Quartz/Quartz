@@ -128,7 +128,6 @@ pub enum LootTableCondition {
     #[serde(rename = "minecraft:table_bonus")]
     TableBonus {
         enchantment: UnlocalizedName,
-        // TODO: can only be 0-1
         #[serde(default)]
         chances: Vec<f32>,
     },

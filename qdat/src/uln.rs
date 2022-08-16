@@ -421,6 +421,8 @@ impl Hash for UnlocalizedName {
     }
 }
 
+unsafe impl flashmap::TrustedHashEq for UnlocalizedName {}
+
 impl PartialEq for UnlocalizedName {
     #[inline]
     fn eq(&self, other: &Self) -> bool {

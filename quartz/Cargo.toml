@@ -15,6 +15,7 @@ path = "src/lib.rs"
 [dependencies]
 # Internal dependencies
 quartz_chat = { path = "../chat" }
+quartz_datapack = { path = "../datapack" }
 quartz_util = { path = "../util" }
 quartz_macros = { path = "../macros" }
 quartz_net = { path = "../network" }
@@ -25,6 +26,7 @@ byteorder = "1.4.3"
 dashmap = "5.1.0"
 enum_dispatch = "0.3.7"
 flate2 = "1.0.20"
+flashmap = "0.1"
 futures-util = "0.3.16"
 hecs = {git = "https://github.com/Rusty-Quartz/checs", features = ["macros"]}
 hex = "0.4.3"
@@ -39,11 +41,11 @@ rand = "0.8.4"
 regex = "1.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_with = "1.9.3"
+serde_with = "2.0.0"
 static_assertions = "1.1.0"
 tinyvec = "1.2.0"
 ureq = { version = "2.1.1", features = ["json"] }
-uuid = { version = "0.8.2", features = ["serde", "v4", "v3"] }
+uuid = { version = "1", features = ["serde", "v4", "v3"] }
 noise = "0.7.0"
 md-5 = "0.10"
 

@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::fmt::{self, Formatter};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
