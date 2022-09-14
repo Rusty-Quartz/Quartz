@@ -10,6 +10,7 @@ use crate::world::chunk::{Section, SectionStore, MAX_SECTION_COUNT};
 use ::noise::{NoiseFn, Perlin};
 
 mod noise;
+pub mod spline;
 pub mod qnoise {
     use super::noise::*;
 }

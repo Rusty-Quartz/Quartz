@@ -163,7 +163,7 @@ pub enum SplineValue {
     Spline(Spline),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum TerrainShaperSplineType {
     Offset,
