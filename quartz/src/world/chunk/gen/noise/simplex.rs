@@ -130,7 +130,7 @@ impl SimplexOctave {
     }
 
     #[allow(clippy::unnecessary_operation)]
-    pub fn new<R: RandomSource>(rand_source: &mut R) -> Self {
+    pub fn new(rand_source: &mut impl RandomSource) -> Self {
         // if xo, yo, and zo end up being used these are their initializers
         // leaving them in because they technically modify the random source so randomness would be off without them
         let xo = rand_source.next_double() * 256.0;
