@@ -3,6 +3,7 @@ use crate::world::chunk::gen::{noise::perlin::PerlinNoise, random::RandomSource}
 const INPUT_FACTOR: f64 = 1.0181268882175227;
 const TARGET_DEVIATION: f64 = 0.3333333333333333;
 
+#[derive(Clone)]
 pub struct NormalNoise {
     value_factor: f64,
     first_noise: PerlinNoise,
@@ -90,6 +91,7 @@ impl NormalNoise {
     }
 }
 
+#[derive(Clone)]
 pub struct NoiseParamteres {
     first_octave: i32,
     amplitudes: Vec<f64>,

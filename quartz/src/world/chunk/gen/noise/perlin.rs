@@ -1,19 +1,13 @@
 use noise::Perlin;
+use quartz_util::math::{dot, smooth_step};
 
 use crate::world::chunk::gen::{
-    noise::{
-        dot,
-        lerp_2d,
-        lerp_3d,
-        simplex::SimplexOctave,
-        smooth_step,
-        smooth_step_derivative,
-        wrap,
-    },
+    noise::{lerp_2d, lerp_3d, simplex::SimplexOctave, smooth_step_derivative, wrap},
     random::{PositionalRandomBuilder, RandomSource},
 };
 
 /// Generates multiple octaves of perlin noise.
+#[derive(Clone)]
 pub struct PerlinNoise {
     octaves: Vec<Option<PerlinOctave>>,
     first_octave: i32,
@@ -202,6 +196,13 @@ impl PerlinNoise {
 
     fn skip_octave(rand_source: &mut impl RandomSource) {
         rand_source.consume(262);
+    }
+
+    pub fn get_octave_noise(&mut self, octave: usize) -> Option<&mut PerlinOctave> {
+        let octaves_count = self.octaves.len();
+        self.octaves
+            .get_mut(octaves_count - 1 - octave)
+            .and_then(Option::as_mut)
     }
 }
 

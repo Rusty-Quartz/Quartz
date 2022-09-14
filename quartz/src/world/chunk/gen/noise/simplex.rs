@@ -1,9 +1,13 @@
-use crate::world::chunk::gen::{
-    noise::dot,
-    random::{legacy_random::LegacyRandom, worldgen::WorldgenRandom, RandomSource},
+use quartz_util::math::dot;
+
+use crate::world::chunk::gen::random::{
+    legacy_random::LegacyRandom,
+    worldgen::WorldgenRandom,
+    RandomSource,
 };
 
 
+#[derive(Clone)]
 pub struct SimplexNoise {
     octaves: Vec<Option<SimplexOctave>>,
     highest_freq_val_factor: f64,
