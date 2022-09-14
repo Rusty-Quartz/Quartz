@@ -118,7 +118,7 @@ pub enum HeightConditionProvider {
     BelowTop { below_top: i32 },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct NoiseOptions {
     pub min_y: i32,
     pub height: i32,
@@ -136,14 +136,14 @@ pub struct NoiseOptions {
     pub terrain_shaper: TerrainShaper,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct TerrainShaper {
     pub offset: TerrainShaperValue,
     pub factor: TerrainShaperValue,
     pub jaggedness: TerrainShaperValue,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum TerrainShaperValue {
     Spline {
@@ -153,14 +153,14 @@ pub enum TerrainShaperValue {
     Constant(f32),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct TerrainSplinePoint {
     pub location: f32,
     pub value: TerrainShaperValue,
     pub derivative: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum TerrainSpineCoordinate {
     Continents,
@@ -169,7 +169,7 @@ pub enum TerrainSpineCoordinate {
     Weirdness,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct NoiseSampling {
     pub xz_scale: f64,
     pub xz_factor: f64,
@@ -177,7 +177,7 @@ pub struct NoiseSampling {
     pub y_factor: f64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct NoiseCurve {
     pub target: f32,
     pub size: i32,
