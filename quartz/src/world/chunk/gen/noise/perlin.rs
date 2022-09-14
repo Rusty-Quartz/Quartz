@@ -216,7 +216,7 @@ pub struct PerlinOctave {
 impl PerlinOctave {
     pub const SHIFT_UP_EPSILON: f64 = 1.0e-7;
 
-    pub fn new<T: RandomSource>(random_source: &mut T) -> PerlinOctave {
+    pub fn new(random_source: &mut impl RandomSource) -> PerlinOctave {
         let xo = random_source.next_double() * 256.0;
         let yo = random_source.next_double() * 256.0;
         let zo = random_source.next_double() * 256.0;

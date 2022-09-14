@@ -22,7 +22,7 @@ impl MarsagliaPolarGaussian {
 
     // we use a RandomSource param instead of a field
     // because we can't have circular refs in Rust
-    pub fn next_gaussian<T: RandomSource>(&mut self, random_source: &mut T) -> f64 {
+    pub fn next_gaussian(&mut self, random_source: &mut impl RandomSource) -> f64 {
         if self.have_next_next_gaussian {
             self.have_next_next_gaussian = false;
             self.next_next_gaussian
