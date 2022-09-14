@@ -124,6 +124,12 @@ impl Coordinate {
             z: b.z(),
         }
     }
+
+    pub const fn as_chunk_long(&self) -> i64 {
+        let chunk_coord = self.as_chunk();
+        //(long)x & 4294967295L | ((long)z & 4294967295L) << 32
+        chunk_coord.x() as i64 & 4294967295 | chunk_coord.z() as i64 & 4294967295 << 32
+    }
 }
 
 impl Display for Coordinate {
