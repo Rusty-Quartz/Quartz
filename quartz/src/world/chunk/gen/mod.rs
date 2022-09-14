@@ -85,12 +85,14 @@ pub struct ProtoChunk {
 impl ProtoChunk {
     pub fn new(pos: Coordinate) -> ProtoChunk {
         let mut sections: [MaybeUninit<Section>; MAX_SECTION_COUNT] =
+            // Safety: an array of maybe uninit does not need any initialization
             unsafe { MaybeUninit::uninit().assume_init() };
 
         for (i, s) in sections.iter_mut().enumerate() {
             s.write(Section::empty(i as i8 - 1));
         }
 
+        // Safety: we initialized the sections in the loop above
         let sections = unsafe { std::mem::transmute::<_, [Section; MAX_SECTION_COUNT]>(sections) };
 
         ProtoChunk {

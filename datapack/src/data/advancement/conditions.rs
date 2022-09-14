@@ -296,6 +296,6 @@ pub enum AdvancementConditions {
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ConditionEntity {
-    Legacy(Entity),
+    Legacy(Box<Entity>),
     Predicate(Vec<Predicate>),
 }

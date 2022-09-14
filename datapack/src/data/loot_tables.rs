@@ -88,7 +88,7 @@ pub enum LootTableCondition {
     EntityProperties {
         // This has to be "this"
         entity: String,
-        predicate: Entity,
+        predicate: Box<Entity>,
     },
     #[serde(rename = "minecraft:entity_scores")]
     EntityScores {
@@ -106,7 +106,7 @@ pub enum LootTableCondition {
         y_offset: Option<f32>,
         #[serde(rename = "offsetZ")]
         z_offset: Option<f32>,
-        predicate: Option<PredicateLocation>,
+        predicate: Option<Box<PredicateLocation>>,
     },
     #[serde(rename = "minecraft:match_tool")]
     MatchTool {

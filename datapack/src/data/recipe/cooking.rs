@@ -38,7 +38,7 @@ macro_rules! smelting_type {
     ($($name: ident, $time: literal),*) => {
         $(
             #[doc = "To be used as the type parameter for [CookingRecipeType](quartz_datapack::data::recipe::cooking::CookingRecipeType)"]
-            #[derive(Debug, PartialEq)]
+            #[derive(Debug, Eq, PartialEq)]
             pub struct $name;
             impl CookingRecipeType for $name {
                 fn cook_time() -> u64 {

@@ -26,4 +26,10 @@ pub const PROTOCOL_VERSION: i32 = 755;
 /// The ID for the legacy ping packet.
 pub const LEGACY_PING_PACKET_ID: i32 = 0xFE;
 
-include!(concat!(env!("OUT_DIR"), "/packet_def_output.rs"));
+mod build {
+    #![allow(clippy::redundant_pattern, clippy::match_single_binding)]
+    use super::*;
+    include!(concat!(env!("OUT_DIR"), "/packet_def_output.rs"));
+}
+
+pub use build::*;

@@ -7,6 +7,7 @@
 )]
 // TODO: enable when ready
 // #![warn(missing_docs)]
+#![warn(clippy::undocumented_unsafe_blocks)]
 // when we enable warn missing_docs we will disable this
 #![allow(clippy::missing_safety_doc)]
 #![feature(new_uninit)]

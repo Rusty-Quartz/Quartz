@@ -598,6 +598,7 @@ impl BufferMetadata {
             bits_per_entry,
             // Safety: guaranteed by the assertion above
             data_bits_per_long: unsafe { NonZeroU8::new_unchecked(64 - (64 % bits_per_entry)) },
+            // Safety: see above
             entries_per_long: unsafe { NonZeroU8::new_unchecked(64 / bits_per_entry) },
         }
     }

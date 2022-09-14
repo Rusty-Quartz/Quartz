@@ -1,6 +1,11 @@
 use crate::block::StateID;
 
-include!(concat!(env!("OUT_DIR"), "/blockstate_output.rs"));
+mod build {
+    #![allow(clippy::should_implement_trait)]
+    use super::*;
+    include!(concat!(env!("OUT_DIR"), "/blockstate_output.rs"));
+}
+pub use build::*;
 
 pub const AIR: StateID = BlockStateData::Air.id();
 pub const VOID_AIR: StateID = BlockStateData::VoidAir.id();

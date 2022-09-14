@@ -332,9 +332,9 @@ impl<'de> Visitor<'de> for TagProviderVisitor {
                 ))),
             }
         } else {
-            Err(serde::de::Error::custom(format!(
-                "A tag has to be prepended by a #"
-            )))
+            Err(serde::de::Error::custom(
+                "A tag has to be prepended by a #".to_string(),
+            ))
         }
     }
 }

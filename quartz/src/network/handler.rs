@@ -35,7 +35,13 @@ use serde_json::json;
 use std::{str::FromStr, sync::Arc, time::Instant};
 use uuid::Uuid;
 
-include!(concat!(env!("OUT_DIR"), "/packet_handler_output.rs"));
+mod build {
+    #![allow(clippy::redundant_pattern, clippy::undocumented_unsafe_blocks)]
+    use super::*;
+    include!(concat!(env!("OUT_DIR"), "/packet_handler_output.rs"));
+}
+pub use build::*;
+
 
 pub(crate) struct AsyncPacketHandler {
     key_pair: Arc<Rsa<Private>>,

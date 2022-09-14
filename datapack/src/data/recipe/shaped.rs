@@ -51,7 +51,7 @@ impl Serialize for ShapedCraftingRecipe {
             .collect::<Vec<_>>();
 
         // There are always 3 rows so we can also get this
-        let first_width = width.get(0).unwrap();
+        let first_width = width.first().unwrap();
 
         if width.iter().any(|w| w != first_width && *w != 0) {
             // I feel like this could be worded better

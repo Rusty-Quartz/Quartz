@@ -43,7 +43,7 @@ pub enum Predicate {
         offset_y: Option<i32>,
         #[serde(rename = "offsetZ")]
         offset_z: Option<i32>,
-        predicate: PredicateLocation,
+        predicate: Box<PredicateLocation>,
     },
     #[serde(rename = "minecraft:match_tool")]
     MatchTool { predicate: Item },

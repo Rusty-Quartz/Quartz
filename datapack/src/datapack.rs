@@ -91,11 +91,7 @@ fn recursive_read(path: &Path, prefix: String) -> Result<Vec<(String, DirEntry)>
         if entry.metadata()?.is_dir() {
             entries.extend(recursive_read(
                 &entry.path(),
-                format!(
-                    "{}{}/",
-                    prefix,
-                    entry.file_name().to_string_lossy().to_string()
-                ),
+                format!("{}{}/", prefix, entry.file_name().to_string_lossy()),
             )?);
         } else {
             entries.push((
@@ -249,8 +245,7 @@ impl DataPack {
 
     pub fn write_datapack<P: AsRef<Path>>(&self, path: &P) -> Result<()> {
         let mcmeta_file = write_file_recursive(path.as_ref().join("pack.mcmeta"))?;
-        serde_json::to_writer(mcmeta_file, &self.meta)
-            .map_err(|e| DatapackIoError::SerdeError(e))?;
+        serde_json::to_writer(mcmeta_file, &self.meta).map_err(DatapackIoError::SerdeError)?;
 
 
         for namespace in &self.namespaces {

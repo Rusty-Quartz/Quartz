@@ -749,6 +749,7 @@ impl Region {
             #[allow(clippy::uninit_vec)]
             let buf = {
                 let mut buf: Vec<u8> = Vec::with_capacity(length);
+                // Safety: see above
                 unsafe {
                     buf.set_len(length);
                 }

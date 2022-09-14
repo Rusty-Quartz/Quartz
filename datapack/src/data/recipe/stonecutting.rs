@@ -4,7 +4,7 @@ use serde::{de::Visitor, ser::SerializeMap, Deserialize, Serialize};
 use crate::data::recipe::{ingredient::Ingredient, recipe::RecipeOutput};
 
 /// A stone cutting recipe
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct StonecuttingRecipe {
     pub group: Option<String>,
     pub input: Ingredient,

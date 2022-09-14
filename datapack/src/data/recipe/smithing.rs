@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::data::recipe::ingredient::Ingredient;
 
 /// A smithing recipe
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct SmithingRecipe {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
@@ -17,7 +17,7 @@ pub struct SmithingRecipe {
     pub result: SmithingOutput,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 // mojang I hate you please stop making things very close but not the same
 pub struct SmithingOutput {
     pub item: UnlocalizedName,
