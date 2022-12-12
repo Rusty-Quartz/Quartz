@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 
-use crate::world::chunk::gen::random::{
+use crate::random::{
     marsaglia_polar::MarsagliaPolarGaussian,
     util::{get_pos_seed, hash_string_md5, java_string_hash},
     BitRandomSource,

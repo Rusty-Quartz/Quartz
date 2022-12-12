@@ -1,0 +1,15 @@
+[package]
+name = "quartz_worldgen"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+quartz_datapack = { path = "../datapack" }
+quartz_util = { path = "../util" }
+quartz_macros = { path = "../macros" }
+quartz_net = { path = "../network" }
+qdat = { path = "../qdat" }
+
+md5 = "0.7.0"

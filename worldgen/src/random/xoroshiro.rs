@@ -2,7 +2,7 @@
 //!
 //! Most functions are taken directly from vanilla minecraft code and adapted to rust
 
-use crate::world::chunk::gen::random::{
+use crate::random::{
     marsaglia_polar::MarsagliaPolarGaussian,
     util::{get_pos_seed, hash_string_md5, i64_seed_to_u128_seed},
     PositionalRandomBuilder,

@@ -8,7 +8,7 @@ use quartz_datapack::data::{
 };
 use quartz_util::math::LerpExt;
 
-use super::{
+use crate::{
     noise::{
         blended::BlendedNoise,
         normal::{NoiseParamteres, NormalNoise},
@@ -254,21 +254,21 @@ impl<'a, C: DensityFunctionContext + Clone> DensityFunction<'a, C> {
                 offset_noise,
             } => {
                 let pos = ctx.get_pos();
-                compute_shift_noise(offset_noise, pos.x as f64, pos.y as f64, pos.z as f64)
+                compute_shifted_noise(offset_noise, pos.x as f64, pos.y as f64, pos.z as f64)
             }
             DensityFunction::ShiftA {
                 noise_data,
                 offset_noise,
             } => {
                 let pos = ctx.get_pos();
-                compute_shift_noise(offset_noise, pos.x as f64, 0.0, pos.z as f64)
+                compute_shifted_noise(offset_noise, pos.x as f64, 0.0, pos.z as f64)
             }
             DensityFunction::ShiftB {
                 noise_data,
                 offset_noise,
             } => {
                 let pos = ctx.get_pos();
-                compute_shift_noise(offset_noise, pos.z as f64, pos.x as f64, 0.0)
+                compute_shifted_noise(offset_noise, pos.z as f64, pos.x as f64, 0.0)
             }
             DensityFunction::ShiftedNoise {
                 noise,
@@ -392,7 +392,7 @@ pub trait DensityFunctionContextProvider<'a> {
 pub struct Blender;
 
 // Needed so that we can have spline::SamplePoint hold a DensityFunctionContext in one variant
-// and not otherwise
+// and otherwise should be unusable
 impl DensityFunctionContext for () {
     fn get_pos(&self) -> BlockPosition {
         unreachable!("Unit type DensityFunctionContext cannot actually be used as a context")
@@ -403,7 +403,7 @@ impl DensityFunctionContext for () {
     }
 }
 
-fn compute_shift_noise(normal_noise: &Option<NormalNoise>, x: f64, y: f64, z: f64) -> f64 {
+fn compute_shifted_noise(normal_noise: &Option<NormalNoise>, x: f64, y: f64, z: f64) -> f64 {
     match normal_noise {
         Some(noise) => noise.get_value(x * 0.25, y * 0.25, z * 0.25) * 4.0,
         None => 0.0,
@@ -431,14 +431,14 @@ impl RarityValueMapper {
         }
     }
 
-    pub fn mapper(&self, rarity: f64) -> f64 {
+    pub const fn mapper(&self, rarity: f64) -> f64 {
         match self {
             RarityValueMapper::Type1 => RarityValueMapper::get_spaghetti_rarity_3d(rarity),
             RarityValueMapper::Type2 => RarityValueMapper::get_spaghetti_rarity_2d(rarity),
         }
     }
 
-    fn get_spaghetti_rarity_2d(rarity: f64) -> f64 {
+    const fn get_spaghetti_rarity_2d(rarity: f64) -> f64 {
         if rarity < -0.75 {
             0.5
         } else if rarity < -0.5 {
@@ -452,7 +452,7 @@ impl RarityValueMapper {
         }
     }
 
-    fn get_spaghetti_rarity_3d(rarity: f64) -> f64 {
+    const fn get_spaghetti_rarity_3d(rarity: f64) -> f64 {
         if rarity < -0.5 {
             0.75
         } else if rarity < 0.0 {

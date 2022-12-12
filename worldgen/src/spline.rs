@@ -5,7 +5,7 @@ use std::{
 
 use quartz_util::math::{binary_search, LerpExt};
 
-use super::density_function::{DensityFunction, DensityFunctionContext};
+use crate::density_function::{DensityFunction, DensityFunctionContext};
 
 #[derive(Clone)]
 pub enum SplineValue<C: Coordinate + Clone> {
@@ -167,17 +167,17 @@ impl<C: Coordinate + Clone> SplineBuilder<C> {
 
     // NOTE: this function could be changed to consuming to increase spline building performance
     // I don't think it will be too much of an issue, see inner comments for details
-    pub fn build(&mut self) -> SplineValue<C> {
+    pub fn build(self) -> SplineValue<C> {
         SplineValue::Spline {
             // This can be expensive if C is CustomCoordinate as density functions are uh, not cheap to clone
             // but I don't think SplineBuilder is ever used for CustomCoordinates and this should be done at startup anyway
             // if this ends up being a performance hole I'll switch over to a consuming build which will be cheaper
-            coordinate: self.coordinate.clone(),
+            coordinate: self.coordinate,
             // These technically create new allocations for their vecs but as with above, this should mostly
             // be done at startup and allocating 3 empty vecs is not too expensive for cold code
-            locations: std::mem::take(&mut self.locations),
-            values: std::mem::take(&mut self.values),
-            derivatives: std::mem::take(&mut self.derivatives),
+            locations: self.locations,
+            values: self.values,
+            derivatives: self.derivatives,
         }
     }
 }

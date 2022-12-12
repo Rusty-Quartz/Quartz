@@ -1,4 +1,4 @@
-use crate::world::chunk::gen::random::{
+use crate::random::{
     java::{JavaRandom, JavaRandomByteSource, JavaRandomInner},
     legacy_random::LegacyRandom,
     marsaglia_polar::MarsagliaPolarGaussian,

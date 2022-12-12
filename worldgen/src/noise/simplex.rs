@@ -1,6 +1,6 @@
 use quartz_util::math::dot;
 
-use crate::world::chunk::gen::random::{
+use crate::random::{
     legacy_random::LegacyRandom,
     worldgen::WorldgenRandom,
     RandomSource,

@@ -1,6 +1,6 @@
 use qdat::world::location::BlockPosition;
 
-use crate::world::chunk::gen::random::marsaglia_polar::MarsagliaPolarGaussian;
+use crate::random::marsaglia_polar::MarsagliaPolarGaussian;
 
 pub mod java;
 pub mod legacy_random;

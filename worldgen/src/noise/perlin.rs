@@ -1,7 +1,7 @@
 use noise::Perlin;
 use quartz_util::math::{dot, smooth_step};
 
-use crate::world::chunk::gen::{
+use crate::{
     noise::{lerp_2d, lerp_3d, simplex::SimplexOctave, smooth_step_derivative, wrap},
     random::{PositionalRandomBuilder, RandomSource},
 };

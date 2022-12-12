@@ -7,7 +7,8 @@ members = [
     "util",
     "qdat",
     "network",
-    "datapack"
+    "datapack",
+    "worldgen"
 ]
 
 [profile.release]

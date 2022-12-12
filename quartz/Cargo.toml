@@ -19,7 +19,8 @@ quartz_datapack = { path = "../datapack" }
 quartz_util = { path = "../util" }
 quartz_macros = { path = "../macros" }
 quartz_net = { path = "../network" }
-qdat = { path = "../qdat" }
+quartz_worldgen = { path = "../worldgen" }
+qdat = { path = "../qdat" } 
 
 # External dependencies
 byteorder = "1.4.3"

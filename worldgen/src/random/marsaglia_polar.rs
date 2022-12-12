@@ -1,6 +1,6 @@
 use std::{cell::Cell, rc::Rc};
 
-use crate::world::chunk::gen::random::RandomSource;
+use crate::random::RandomSource;
 
 #[derive(Default)]
 pub struct MarsagliaPolarGaussian {

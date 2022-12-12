@@ -1,6 +1,6 @@
 use quartz_util::math::{div_floor, LerpExt};
 
-use crate::world::chunk::gen::{
+use crate::{
     density_function::DensityFunctionContext,
     noise::{perlin::PerlinNoise, wrap, NoiseSamplingSettings},
 };
