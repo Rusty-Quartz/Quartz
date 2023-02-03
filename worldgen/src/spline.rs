@@ -1,14 +1,10 @@
-use std::{
-    marker::PhantomData,
-    ops::{Mul, Sub},
-};
+use std::ops::{Mul, Sub};
 
 use quartz_util::math::{binary_search, LerpExt};
 
-use crate::density_function::{DensityFunction, DensityFunctionContext};
+use crate::density_function::{DensityFunctionContextWrapper, DensityFunctionRef};
 
-#[derive(Clone)]
-pub enum SplineValue<C: Coordinate + Clone> {
+pub enum SplineValue<C: Coordinate> {
     Constant(f32),
     Spline {
         coordinate: C,
@@ -18,8 +14,27 @@ pub enum SplineValue<C: Coordinate + Clone> {
     },
 }
 
-impl<C: Coordinate + Clone> SplineValue<C> {
-    pub fn apply(&mut self, point: &C::Point) -> f32 {
+impl<C: Coordinate + Clone> Clone for SplineValue<C> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Constant(c) => SplineValue::Constant(*c),
+            Self::Spline {
+                coordinate,
+                locations,
+                values,
+                derivatives,
+            } => SplineValue::Spline {
+                coordinate: coordinate.clone(),
+                locations: locations.clone(),
+                values: values.clone(),
+                derivatives: derivatives.clone(),
+            },
+        }
+    }
+}
+
+impl<C: Coordinate> SplineValue<C> {
+    pub fn apply(&self, point: &C::Point) -> f32 {
         match self {
             SplineValue::Constant(val) => *val,
             SplineValue::Spline {
@@ -69,7 +84,7 @@ impl<C: Coordinate + Clone> SplineValue<C> {
 pub trait Coordinate {
     type Point;
 
-    fn apply(&mut self, point: &Self::Point) -> f32;
+    fn apply(&self, point: &Self::Point) -> f32;
 }
 
 
@@ -84,7 +99,7 @@ pub enum TerrainCoordinate {
 impl Coordinate for TerrainCoordinate {
     type Point = TerrainPoint;
 
-    fn apply(&mut self, point: &Self::Point) -> f32 {
+    fn apply(&self, point: &Self::Point) -> f32 {
         match self {
             Self::Continents => point.continents,
             Self::Erosion => point.erosion,
@@ -102,21 +117,18 @@ pub struct TerrainPoint {
     weirdness: f32,
 }
 
-#[derive(Clone)]
-pub struct CustomCoordinate<'a, C: DensityFunctionContext + Clone>(
-    Box<DensityFunction<'a, C>>,
-    PhantomData<&'a C>,
-);
 
-impl<'a, C: DensityFunctionContext + Clone> Coordinate for CustomCoordinate<'a, C> {
-    type Point = CustomPoint<'a, C>;
+pub struct CustomCoordinate(DensityFunctionRef);
 
-    fn apply(&mut self, point: &Self::Point) -> f32 {
+impl Coordinate for CustomCoordinate {
+    type Point = CustomPoint;
+
+    fn apply(&self, point: &Self::Point) -> f32 {
         self.0.calculate(&point.0) as f32
     }
 }
 
-pub struct CustomPoint<'a, C: DensityFunctionContext>(pub &'a C);
+pub struct CustomPoint(pub DensityFunctionContextWrapper);
 
 pub struct SplineBuilder<C: Coordinate + Clone> {
     coordinate: C,
@@ -144,17 +156,17 @@ impl<C: Coordinate + Clone> SplineBuilder<C> {
         }
     }
 
-    pub fn add_const_point(&mut self, location: f32, value: f32, derivative: f32) -> &mut Self {
+    pub fn add_const_point(self, location: f32, value: f32, derivative: f32) -> Self {
         let transformed_val = (self.value_transformer)(value);
         self.add_spline_point(location, SplineValue::Constant(transformed_val), derivative)
     }
 
     pub fn add_spline_point(
-        &mut self,
+        mut self,
         location: f32,
         value: SplineValue<C>,
         derivative: f32,
-    ) -> &mut Self {
+    ) -> Self {
         if !self.locations.is_empty() && location < *self.locations.last().unwrap() {
             panic!("Please register Spline points in ascending order")
         } else {
@@ -165,8 +177,6 @@ impl<C: Coordinate + Clone> SplineBuilder<C> {
         self
     }
 
-    // NOTE: this function could be changed to consuming to increase spline building performance
-    // I don't think it will be too much of an issue, see inner comments for details
     pub fn build(self) -> SplineValue<C> {
         SplineValue::Spline {
             // This can be expensive if C is CustomCoordinate as density functions are uh, not cheap to clone
@@ -193,7 +203,6 @@ pub enum SplineType {
     Jaggedness,
 }
 
-#[derive(Clone)]
 pub struct TerrainShaper {
     offset_sampler: SplineValue<TerrainCoordinate>,
     factor_sampler: SplineValue<TerrainCoordinate>,
@@ -221,15 +230,15 @@ impl TerrainShaper {
         (y2 - y1) / (x2 - x1)
     }
 
-    pub fn factor(&mut self, point: &TerrainPoint) -> f32 {
+    pub fn factor(&self, point: &TerrainPoint) -> f32 {
         self.factor_sampler.apply(point)
     }
 
-    pub fn jaggedness(&mut self, point: &TerrainPoint) -> f32 {
+    pub fn jaggedness(&self, point: &TerrainPoint) -> f32 {
         self.jaggedness_sampler.apply(point)
     }
 
-    pub fn offset(&mut self, point: &TerrainPoint) -> f32 {
+    pub fn offset(&self, point: &TerrainPoint) -> f32 {
         self.offset_sampler.apply(point) - 0.50375
     }
 
@@ -285,10 +294,8 @@ impl TerrainShaper {
         let f = val6.max(0.5 * (val2 - val1));
         let g = 5.0 * (val3 - val2);
 
-        let mut builder =
-            SplineBuilder::new_with_value_transformer(TerrainCoordinate::Ridges, value_transformer);
 
-        builder
+        SplineBuilder::new_with_value_transformer(TerrainCoordinate::Ridges, value_transformer)
             .add_const_point(-1.0, val1, f)
             .add_const_point(-0.4, val2, f.min(g))
             .add_const_point(0.0, val3, g)
@@ -312,32 +319,32 @@ impl TerrainShaper {
         let k = Self::calculate_mountain_ridge_zero_continentalness_point(value);
         let l = -0.65;
 
-        if (l < k && k < i) {
+        if l < k && k < i {
             let m = Self::mountain_continentalness(l, value, f);
             let n = -0.75;
             let o = Self::mountain_continentalness(n, value, f);
             let p = Self::slope(h, o, g, n);
-            builder
+            builder = builder
                 .add_const_point(g, h, p)
                 .add_const_point(n, o, 0.0)
                 .add_const_point(l, m, 0.0);
             let q = Self::mountain_continentalness(k, value, f);
             let r = Self::slope(q, j, k, i);
             let s = 0.01;
-            builder
+            builder = builder
                 .add_const_point(k - s, q, 0.0)
                 .add_const_point(k, q, r)
                 .add_const_point(i, j, r);
         } else {
             let m = Self::slope(h, j, g, i);
             if b1 {
-                builder.add_const_point(g, h.max(0.2), 0.0).add_const_point(
+                builder = builder.add_const_point(g, h.max(0.2), 0.0).add_const_point(
                     0.0,
                     LerpExt::lerp(0.5, h, j),
                     m,
                 );
             } else {
-                builder.add_const_point(g, h, m);
+                builder = builder.add_const_point(g, h, m);
             }
         }
         builder.build()
@@ -360,7 +367,7 @@ impl TerrainShaper {
             TerrainCoordinate::Erosion,
             value_transformer,
         );
-        builder
+        builder = builder
             .add_spline_point(-0.6, spline_1.clone(), 0.0)
             .add_spline_point(
                 -0.5,
@@ -404,7 +411,7 @@ impl TerrainShaper {
             .add_spline_point(-0.69, spline_2, 0.0)
             .build();
 
-            builder
+            builder = builder
                 .add_const_point(0.35, float, 0.0)
                 .add_spline_point(0.45, spline_3, 0.0);
         } else {
@@ -424,7 +431,7 @@ impl TerrainShaper {
             .add_const_point(0.7, 1.56, 0.0)
             .build();
 
-            builder
+            builder = builder
                 .add_spline_point(0.05, spline_3.clone(), 0.0)
                 .add_spline_point(0.4, spline_3, 0.0)
                 .add_spline_point(0.45, spline_2.clone(), 0.0)
@@ -454,27 +461,27 @@ impl TerrainShaper {
         let g = Self::peaks_and_valleys(0.56666666);
         let h = (f + g) / 2.0;
         let mut builder =
-            SplineBuilder::new_with_value_transformer(TerrainCoordinate::Ridges, value_transformer);
-        builder.add_const_point(f, 0.0, 0.0);
+            SplineBuilder::new_with_value_transformer(TerrainCoordinate::Ridges, value_transformer)
+                .add_const_point(f, 0.0, 0.0);
 
         if val2 > 0.0 {
-            builder.add_spline_point(
+            builder = builder.add_spline_point(
                 h,
                 Self::build_weirdness_jaggedness_spline(val2, value_transformer),
                 0.0,
             );
         } else {
-            builder.add_const_point(h, 0.0, 0.0);
+            builder = builder.add_const_point(h, 0.0, 0.0);
         }
 
         if val > 0.0 {
-            builder.add_spline_point(
+            builder = builder.add_spline_point(
                 1.0,
                 Self::build_weirdness_jaggedness_spline(val, value_transformer),
                 0.0,
             );
         } else {
-            builder.add_const_point(1.0, 0.0, 0.0);
+            builder = builder.add_const_point(1.0, 0.0, 0.0);
         }
 
         builder.build()
@@ -498,6 +505,7 @@ impl TerrainShaper {
             .build()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_erosion_offset_spline(
         val: f32,
         val2: f32,
@@ -551,18 +559,16 @@ impl TerrainShaper {
         let mut builder = SplineBuilder::new_with_value_transformer(
             TerrainCoordinate::Erosion,
             value_transformer,
-        );
-
-        builder
-            .add_spline_point(-0.85, spline_1, 0.0)
-            .add_spline_point(-0.7, spline_2, 0.0)
-            .add_spline_point(-0.4, spline_3, 0.0)
-            .add_spline_point(-0.35, spline_4, 0.0)
-            .add_spline_point(-0.1, spline_5, 0.0)
-            .add_spline_point(0.2, spline_6, 0.0);
+        )
+        .add_spline_point(-0.85, spline_1, 0.0)
+        .add_spline_point(-0.7, spline_2, 0.0)
+        .add_spline_point(-0.4, spline_3, 0.0)
+        .add_spline_point(-0.35, spline_4, 0.0)
+        .add_spline_point(-0.1, spline_5, 0.0)
+        .add_spline_point(0.2, spline_6, 0.0);
 
         if b1 {
-            builder
+            builder = builder
                 .add_spline_point(0.4, spline_7.clone(), 0.0)
                 .add_spline_point(0.45, spline_8.clone(), 0.0)
                 .add_spline_point(0.55, spline_8, 0.0)
