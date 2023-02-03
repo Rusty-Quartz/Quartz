@@ -89,6 +89,10 @@ impl NormalNoise {
             + self.second_noise.get_value_simple(ox, oy, oz))
             * self.value_factor
     }
+
+    pub fn max_value(&self) -> f64 {
+        self.max_value
+    }
 }
 
 #[derive(Clone)]
