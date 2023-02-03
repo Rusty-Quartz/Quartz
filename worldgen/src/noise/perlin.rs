@@ -17,8 +17,6 @@ pub struct PerlinNoise {
 }
 
 impl PerlinNoise {
-    const ROUND_OFF: i32 = 33554432;
-
     /// # Panics
     /// Panics if octaves is empty or if the -first + last is less than one
     pub fn create_legacy_for_blended_noise(
@@ -202,6 +200,10 @@ impl PerlinNoise {
             .get(octaves_count - 1 - octave)
             .and_then(Option::as_ref)
     }
+
+    pub(super) fn first_octave(&self) -> i32 {
+        self.first_octave
+    }
 }
 
 #[derive(Clone)]
@@ -280,6 +282,7 @@ impl PerlinOctave {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn sample_and_lerp(
         &self,
         grid_x: i32,
@@ -381,15 +384,16 @@ impl PerlinOctave {
         let offset_x = x + self.x_offset;
         let offset_y = y + self.y_offset;
         let offset_z = z + self.z_offset;
-        let grid_x = x as i32;
-        let grid_y = y as i32;
-        let grid_z = z as i32;
-        let delta_x = x - grid_x as f64;
-        let delta_y = y - grid_y as f64;
-        let delta_z = z - grid_z as f64;
+        let grid_x = offset_x as i32;
+        let grid_y = offset_y as i32;
+        let grid_z = offset_z as i32;
+        let delta_x = offset_x - grid_x as f64;
+        let delta_y = offset_y - grid_y as f64;
+        let delta_z = offset_z - grid_z as f64;
         self.sample_with_derivative(grid_x, grid_y, grid_z, delta_x, delta_y, delta_z, values)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn sample_with_derivative(
         &self,
         grid_x: i32,

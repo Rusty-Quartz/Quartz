@@ -2,12 +2,12 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use crate::random::{
     marsaglia_polar::MarsagliaPolarGaussian,
-    util::{get_pos_seed, hash_string_md5, java_string_hash},
+    util::{get_pos_seed, java_string_hash},
     BitRandomSource,
     PositionalRandomBuilder,
 };
 
-const MODULUS_BITS: i32 = 48;
+const MODULUS_BITS: u8 = 48;
 const MODULUS_MASK: i64 = 281474976710655;
 const MULTIPLIER: i64 = 25214903917;
 const INCREMENT: i64 = 11;
@@ -21,10 +21,6 @@ impl LegacyRandom {
         LegacyRandom {
             seed: AtomicI64::new((seed ^ MULTIPLIER) & MODULUS_MASK),
         }
-    }
-
-    fn test(&mut self) {
-        self.next_int();
     }
 }
 
@@ -47,7 +43,7 @@ impl BitRandomSource for LegacyRandom {
                 .compare_exchange(orig_seed, new_seed, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
-                return (new_seed >> (48 - bits)) as i32;
+                return (new_seed >> (MODULUS_BITS - bits)) as i32;
             }
         }
     }

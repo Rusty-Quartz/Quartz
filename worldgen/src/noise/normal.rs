@@ -81,9 +81,9 @@ impl NormalNoise {
     }
 
     pub fn get_value(&self, x: f64, y: f64, z: f64) -> f64 {
-        let ox = x * 1.0181268882175227;
-        let oy = y * 1.0181268882175227;
-        let oz = z * 1.0181268882175227;
+        let ox = x * INPUT_FACTOR;
+        let oy = y * INPUT_FACTOR;
+        let oz = z * INPUT_FACTOR;
 
         (self.first_noise.get_value_simple(x, y, z)
             + self.second_noise.get_value_simple(ox, oy, oz))

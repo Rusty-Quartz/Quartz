@@ -136,7 +136,7 @@ pub trait BitRandomSource {
 
     fn next_int_bounded(&mut self, bound: u32) -> i32 {
         if bound & (bound - 1) == 0 {
-            (((bound as i64).wrapping_mul(self.next_bits(31) as i64) as i64) >> 31) as i32
+            ((bound as i64).wrapping_mul(self.next_bits(31) as i64) >> 31) as i32
         } else {
             let mut j = self.next_bits(31);
             let mut k = j % bound as i32;

@@ -16,16 +16,16 @@ impl SimplexNoise {
             panic!("Simplex noise needs octaves")
         }
 
-        let i = -octaves[0];
+        let first_octave = -octaves[0];
         let last_octave = octaves[octaves.len() - 1];
-        let octave_count = i + last_octave + 1;
+        let octave_count = first_octave + last_octave + 1;
 
         if octave_count < 1 {
             panic!("Simplex noise needs more than one octave")
         }
 
         let octave = SimplexOctave::new(rand_source);
-        let mut l = last_octave;
+        let l = last_octave;
         let mut noise_levels = vec![None; octave_count as usize];
 
         if (0 .. octave_count).contains(&last_octave) && octaves.contains(&0) {
@@ -35,7 +35,7 @@ impl SimplexNoise {
         // honestly the suggested code for this lint is less clear than this for loop so fuck it
         #[warn(clippy::needless_range_loop)]
         for m in last_octave + 1 .. octave_count {
-            if m >= 0 && octaves.contains(&(l - m as i32)) {
+            if m >= 0 && octaves.contains(&(l - m)) {
                 noise_levels[m as usize] = Some(SimplexOctave::new(rand_source));
             } else {
                 rand_source.consume(262);

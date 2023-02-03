@@ -112,7 +112,7 @@ impl Default for JavaRandom {
 impl JavaRandomByteSource for JavaRandom {
     type Source = ();
 
-    fn next(source: &mut Self::Source, java_random: &mut JavaRandomInner<Self>, bits: i32) -> i32 {
+    fn next(_source: &mut Self::Source, java_random: &mut JavaRandomInner<Self>, bits: i32) -> i32 {
         let old_seed = java_random.seed;
         let next_seed = (old_seed.wrapping_mul(MULTIPLIER).wrapping_add(ADDEND)) & MASK;
         java_random.seed = next_seed;
@@ -214,8 +214,8 @@ impl<BS: JavaRandomByteSource> JavaRandomInner<BS> {
     }
 
     pub fn next_double(&mut self, source: &mut BS::Source) -> f64 {
-        (((BS::next(source, self, 26) as i64) << 27) as f64 + BS::next(source, self, 27) as f64)
-            / (1_i64 << 53) as f64
+        (((BS::next(source, self, 26) as i64) << 27) + BS::next(source, self, 27) as i64) as f64
+            / DOUBLE_UNIT
     }
 
     pub fn next_gaussian(&mut self, source: &mut BS::Source) -> f64 {

@@ -21,6 +21,7 @@ pub(self) fn lerp_2d(
     ) as f64
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(self) fn lerp_3d(
     delta_x: f64,
     delta_y: f64,

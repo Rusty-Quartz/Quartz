@@ -36,7 +36,6 @@ impl PositionalRandomBuilder for XoroshiroPositonalRandomBuilder {
         let (low, high) = hash_string_md5(str.as_ref());
         XoroshiroRandom {
             rng: XoroshiroPlusPlus::new(low ^ self.seed_low, high ^ self.seed_high),
-            gaussian: MarsagliaPolarGaussian::new(),
         }
     }
 }
@@ -44,7 +43,6 @@ impl PositionalRandomBuilder for XoroshiroPositonalRandomBuilder {
 
 pub struct XoroshiroRandom {
     rng: XoroshiroPlusPlus,
-    gaussian: MarsagliaPolarGaussian,
 }
 
 impl XoroshiroRandom {
@@ -52,14 +50,12 @@ impl XoroshiroRandom {
         let (low, high) = i64_seed_to_u128_seed(seed);
         XoroshiroRandom {
             rng: XoroshiroPlusPlus::new(low, high),
-            gaussian: MarsagliaPolarGaussian::new(),
         }
     }
 
     pub fn from_longs(seed_low: i64, seed_high: i64) -> Self {
         XoroshiroRandom {
             rng: XoroshiroPlusPlus::new(seed_low, seed_high),
-            gaussian: MarsagliaPolarGaussian::new(),
         }
     }
 

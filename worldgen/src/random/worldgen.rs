@@ -1,8 +1,6 @@
 use crate::random::{
     java::{JavaRandom, JavaRandomByteSource, JavaRandomInner},
-    legacy_random::LegacyRandom,
     marsaglia_polar::MarsagliaPolarGaussian,
-    BitRandomSource,
     Random,
     RandomSource,
 };
@@ -51,8 +49,7 @@ impl<R: RandomSource> WorldgenRandom<R> {
         self.set_seed(level_seed, gaussian);
         let l = self.next_long() | 1;
         let m = self.next_long() | 1;
-        let n = (min_chunk_block_x as i64 * l as i64 + min_chunk_block_z as i64 * m as i64)
-            ^ level_seed;
+        let n = (min_chunk_block_x as i64 * l + min_chunk_block_z as i64 * m) ^ level_seed;
         self.set_seed(n, gaussian);
         n
     }
@@ -158,8 +155,8 @@ impl<R: RandomSource> Random<WorldgenRandom<R>> {
         let l = self.next_long() | 1;
         let m = self.next_long() | 1;
         let n = (min_chunk_block_x as i64)
-            .wrapping_mul(l as i64)
-            .wrapping_add((min_chunk_block_z as i64).wrapping_mul(m as i64))
+            .wrapping_mul(l)
+            .wrapping_add((min_chunk_block_z as i64).wrapping_mul(m))
             ^ level_seed;
         self.source.set_seed(n, &mut self.gaussian);
         n
@@ -199,7 +196,7 @@ impl<R: RandomSource> Random<WorldgenRandom<R>> {
 impl<R: RandomSource> JavaRandomByteSource for WorldgenRandom<R> {
     type Source = R;
 
-    fn next(source: &mut Self::Source, java_random: &mut JavaRandomInner<Self>, bits: i32) -> i32 {
+    fn next(source: &mut Self::Source, _java_random: &mut JavaRandomInner<Self>, bits: i32) -> i32 {
         source.next_bits(bits)
     }
 }

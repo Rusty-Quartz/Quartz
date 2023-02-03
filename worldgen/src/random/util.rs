@@ -32,18 +32,18 @@ pub fn hash_string_md5(s: &str) -> (i64, i64) {
     // though I'm unsure cause I think javax's md5 uses 128 bit blocks
     let hasher = md5::compute(s);
     let result = hasher.as_slice();
-    (build_long(&result[..]), build_long(&result[8 ..]))
+    (build_long(result), build_long(&result[8 ..]))
 }
 
 fn build_long(bytes: &[u8]) -> i64 {
-    ((bytes[0] as i64) << 56
+    (bytes[0] as i64) << 56
         | (bytes[1] as i64) << 48
         | (bytes[2] as i64) << 40
         | (bytes[3] as i64) << 32
         | (bytes[4] as i64) << 24
         | (bytes[5] as i64) << 16
         | (bytes[6] as i64) << 8
-        | (bytes[7] as i64))
+        | (bytes[7] as i64)
 }
 
 
