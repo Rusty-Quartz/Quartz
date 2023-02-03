@@ -28,12 +28,10 @@ pub fn get_pos_seed(x: i32, y: i32, z: i32) -> i64 {
 
 /// Returns the md5 hash of the string
 pub fn hash_string_md5(s: &str) -> (i64, i64) {
-    use md5::{Digest, Md5};
     // I think this has full parity w/ minecraft
     // though I'm unsure cause I think javax's md5 uses 128 bit blocks
-    let mut hasher = Md5::new();
-    hasher.update(s);
-    let result = hasher.finalize();
+    let hasher = md5::compute(s);
+    let result = hasher.as_slice();
     (build_long(&result[..]), build_long(&result[8 ..]))
 }
 
