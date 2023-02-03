@@ -1,4 +1,3 @@
-use noise::Perlin;
 use quartz_util::math::{dot, smooth_step};
 
 use crate::{
@@ -198,11 +197,11 @@ impl PerlinNoise {
         rand_source.consume(262);
     }
 
-    pub fn get_octave_noise(&mut self, octave: usize) -> Option<&mut PerlinOctave> {
+    pub fn get_octave_noise(&self, octave: usize) -> Option<&PerlinOctave> {
         let octaves_count = self.octaves.len();
         self.octaves
-            .get_mut(octaves_count - 1 - octave)
-            .and_then(Option::as_mut)
+            .get(octaves_count - 1 - octave)
+            .and_then(Option::as_ref)
     }
 }
 

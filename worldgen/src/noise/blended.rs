@@ -46,7 +46,7 @@ impl BlendedNoise {
         }
     }
 
-    pub fn calculate<C: DensityFunctionContext>(&mut self, ctx: &C) -> f64 {
+    pub fn calculate<C: DensityFunctionContext>(&self, ctx: &C) -> f64 {
         let pos = ctx.get_pos();
         let x = div_floor(pos.x, self.cell_width);
         let y = div_floor(pos.y as i32, self.cell_height);
@@ -60,16 +60,14 @@ impl BlendedNoise {
 
         for i in 0 .. 8 {
             let noise = self.main_noise.get_octave_noise(i);
-            match noise {
-                Some(noise) =>
-                    f += noise.scaled_noise(
-                        wrap(x as f64 * self.xz_main_scale * scale),
-                        wrap(y as f64 * self.y_main_scale * scale),
-                        wrap(z as f64 * self.xz_main_scale * scale),
-                        self.y_main_scale * scale,
-                        y as f64 * self.y_main_scale * scale,
-                    ) / scale,
-                None => {}
+            if let Some(noise) = noise {
+                f += noise.scaled_noise(
+                    wrap(x as f64 * self.xz_main_scale * scale),
+                    wrap(y as f64 * self.y_main_scale * scale),
+                    wrap(z as f64 * self.xz_main_scale * scale),
+                    self.y_main_scale * scale,
+                    y as f64 * self.y_main_scale * scale,
+                ) / scale
             }
 
             scale /= 2.0;

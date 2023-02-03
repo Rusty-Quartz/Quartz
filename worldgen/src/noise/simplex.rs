@@ -1,10 +1,6 @@
 use quartz_util::math::dot;
 
-use crate::random::{
-    legacy_random::LegacyRandom,
-    worldgen::WorldgenRandom,
-    RandomSource,
-};
+use crate::random::{legacy_random::LegacyRandom, worldgen::WorldgenRandom, RandomSource};
 
 
 #[derive(Clone)]
@@ -66,7 +62,7 @@ impl SimplexNoise {
         }
     }
 
-    pub fn get_value(&mut self, x: f64, y: f64, use_noise_offsets: bool) -> f64 {
+    pub fn get_value(&self, x: f64, y: f64, use_noise_offsets: bool) -> f64 {
         let mut value = 0.0;
         let mut input_factor = self.highest_freq_input_factor;
         let mut value_factor = self.highest_freq_val_factor;
