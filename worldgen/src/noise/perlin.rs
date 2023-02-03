@@ -19,15 +19,13 @@ pub struct PerlinNoise {
 impl PerlinNoise {
     const ROUND_OFF: i32 = 33554432;
 
+    /// # Panics
+    /// Panics if octaves is empty or if the -first + last is less than one
     pub fn create_legacy_for_blended_noise(
         rand_source: &mut impl RandomSource,
         octaves: &[i32],
-    ) -> Option<PerlinNoise> {
-        Some(PerlinNoise::new(
-            rand_source,
-            PerlinNoise::make_amplitudes(octaves)?,
-            false,
-        ))
+    ) -> PerlinNoise {
+        PerlinNoise::new(rand_source, PerlinNoise::make_amplitudes(octaves), false)
     }
 
     pub fn create_legacy_for_legacy_nether_biome(
@@ -38,15 +36,10 @@ impl PerlinNoise {
         PerlinNoise::new(rand_source, (first_octave, octaves), false)
     }
 
-    pub fn from_octaves(
-        rand_source: &mut impl RandomSource,
-        octaves: &[i32],
-    ) -> Option<PerlinNoise> {
-        Some(PerlinNoise::new(
-            rand_source,
-            PerlinNoise::make_amplitudes(octaves)?,
-            true,
-        ))
+    /// # Panics
+    /// Panics if octaves is empty or if the -first + last is less than one
+    pub fn from_octaves(rand_source: &mut impl RandomSource, octaves: &[i32]) -> PerlinNoise {
+        PerlinNoise::new(rand_source, PerlinNoise::make_amplitudes(octaves), true)
     }
 
     pub fn from_amplitudes(
@@ -102,15 +95,20 @@ impl PerlinNoise {
             }
         }
 
-        PerlinNoise {
+        let mut noise = PerlinNoise {
             octaves: noise_levels,
             first_octave,
             amplitudes,
             lowest_frequency_input_factor: f64::powi(2.0, -j),
             lowest_frequency_value_factor: f64::powi(2.0, octave_count - 1)
                 / (f64::powi(2.0, octave_count) - 1.0),
-            max_value: todo!(),
-        }
+            max_value: 0.0,
+        };
+
+        let max_val = noise.edge_value(2.0);
+
+        noise.max_value = max_val;
+        noise
     }
 
     pub fn get_value_simple(&self, x: f64, y: f64, z: f64) -> f64 {
@@ -172,25 +170,26 @@ impl PerlinNoise {
         val
     }
 
-    fn make_amplitudes(octaves: &[i32]) -> Option<(i32, Vec<f64>)> {
-        if (octaves.is_empty()) {
+    fn make_amplitudes(octaves: &[i32]) -> (i32, Vec<f64>) {
+        if octaves.is_empty() {
             panic!("Perlin noise has to be given octaves");
         }
-        let i = -octaves.first()?;
-        let j = *octaves.last()?;
-        let k = i + j + 1;
-        if k < 1 {
+        let first_octave = -octaves[0];
+        let last_octave = octaves[octaves.len()];
+        let octave_total = first_octave + last_octave + 1;
+        if octave_total < 1 {
             panic!("Perlin noise has to have more than one octave");
         }
 
-        let mut double_list = Vec::with_capacity(k as usize);
+        let mut double_list = Vec::with_capacity(octave_total as usize);
 
         for octave in octaves {
-            *double_list.get_mut((octave + i) as usize)? = 1.0;
+            // Shouldn't panic because we should have guarenteed double list is of the right size
+            double_list[(octave + first_octave) as usize] = 1.0;
         }
 
 
-        Some((-i, double_list))
+        (-first_octave, double_list)
     }
 
     fn skip_octave(rand_source: &mut impl RandomSource) {
