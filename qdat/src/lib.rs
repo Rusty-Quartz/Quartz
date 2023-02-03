@@ -2,6 +2,7 @@
 
 pub mod block;
 pub mod item;
+pub mod registry;
 pub mod world;
 
 pub mod uln;

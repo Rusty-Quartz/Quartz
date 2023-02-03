@@ -27,7 +27,6 @@ byteorder = "1.4.3"
 dashmap = "5.1.0"
 enum_dispatch = "0.3.7"
 flate2 = "1.0.20"
-flashmap = "0.1"
 futures-util = "0.3.16"
 hecs = {git = "https://github.com/Rusty-Quartz/checs", features = ["macros"]}
 hex = "0.4.3"
