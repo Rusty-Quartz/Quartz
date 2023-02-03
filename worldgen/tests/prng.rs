@@ -6,11 +6,7 @@
 
 #[test]
 fn xoroshiro_test() {
-    use quartz::world::chunk::gen::random::{
-        xoroshiro::XoroshiroRandom,
-        PositionalRandomBuilder,
-        Random,
-    };
+    use quartz_worldgen::random::{xoroshiro::XoroshiroRandom, PositionalRandomBuilder, Random};
 
     let mut rand = Random::new(XoroshiroRandom::new(12345));
     assert_eq!(rand.next_int(), 57184507);
@@ -45,11 +41,7 @@ fn xoroshiro_test() {
 
 #[test]
 fn legacy_random_test() {
-    use quartz::world::chunk::gen::random::{
-        legacy_random::LegacyRandom,
-        PositionalRandomBuilder,
-        Random,
-    };
+    use quartz_worldgen::random::{legacy_random::LegacyRandom, PositionalRandomBuilder, Random};
 
     let mut rand = Random::new(LegacyRandom::new(12345));
     assert_eq!(rand.next_int(), 1553932502);
@@ -84,7 +76,7 @@ fn legacy_random_test() {
 
 #[test]
 fn java_rand_test() {
-    use quartz::world::chunk::gen::random::java::JavaRandom;
+    use quartz_worldgen::random::java::JavaRandom;
 
     let mut rand = JavaRandom::with_seed(12345);
     assert_eq!(rand.next_int(), 1553932502);
@@ -102,7 +94,7 @@ fn java_rand_test() {
 
 #[test]
 fn worldgen_random_test() {
-    use quartz::world::chunk::gen::random::{
+    use quartz_worldgen::random::{
         legacy_random::LegacyRandom,
         worldgen::{seed_slime_chunks, WorldgenRandom},
         PositionalRandomBuilder,
