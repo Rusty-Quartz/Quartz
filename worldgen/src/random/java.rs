@@ -215,7 +215,7 @@ impl<BS: JavaRandomByteSource> JavaRandomInner<BS> {
 
     pub fn next_double(&mut self, source: &mut BS::Source) -> f64 {
         (((BS::next(source, self, 26) as i64) << 27) + BS::next(source, self, 27) as i64) as f64
-            / DOUBLE_UNIT
+            * DOUBLE_UNIT
     }
 
     pub fn next_gaussian(&mut self, source: &mut BS::Source) -> f64 {
