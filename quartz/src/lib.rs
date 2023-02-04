@@ -10,7 +10,6 @@
 #![warn(clippy::undocumented_unsafe_blocks)]
 // when we enable warn missing_docs we will disable this
 #![allow(clippy::missing_safety_doc)]
-#![feature(new_uninit)]
 
 //! This crate contains virtually all of the code, APIs, and other malarkey that makes quartz run. The server
 //! code is launched through the separate `quartz_launcher` crate. Plugins should use this crate as a library
