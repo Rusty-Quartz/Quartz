@@ -92,7 +92,7 @@ impl<T: ChunkGenerator + 'static> ChunkProvider<T> {
             Ok(result) => result,
             Err(error) => {
                 // We propagate panics up so we can handle them correctly
-                panic!("Internal error in chunk provider: {}", error);
+                panic!("Internal error in chunk provider: {error}");
             }
         };
 
@@ -591,8 +591,8 @@ impl RegionHandler {
             None => {
                 // We explicitly panic here because this is a serious bug
                 panic!(
-                    "Failed to cache chunk at {:?}: region and chunk coordinates not synchronized",
-                    coords
+                    "Failed to cache chunk at {coords:?}: region and chunk coordinates not \
+                     synchronized"
                 );
             }
         }

@@ -90,7 +90,7 @@ impl World {
 
         entities
             .despawn(player)
-            .map_err(|e| format!("Error despawning player entity: {}", e))?;
+            .map_err(|e| format!("Error despawning player entity: {e}"))?;
 
         Ok(p)
     }

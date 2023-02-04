@@ -441,7 +441,7 @@ impl CompactStateBuffer {
 
     #[inline]
     fn entry_at(&self, long_index: usize, bit_index: u8) -> Option<usize> {
-        let entry = (*self.data.get(long_index as usize)? >> bit_index) & self.meta.mask;
+        let entry = (*self.data.get(long_index)? >> bit_index) & self.meta.mask;
         Some(entry as usize)
     }
 }
@@ -519,7 +519,7 @@ fn write_entry_to(
     let _ = bits_per_entry;
 
     let insertion = (entry as u64) << bit_index;
-    match dest.get_mut(long_index as usize) {
+    match dest.get_mut(long_index) {
         Some(long) => {
             // We have to clear the bits before we write the insertion;
             *long &= !((u64::MAX >> (u64::BITS as u64 - bits_per_entry.get() as u64)) << bit_index);

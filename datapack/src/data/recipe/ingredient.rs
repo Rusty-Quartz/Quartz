@@ -102,8 +102,7 @@ impl<'de> Visitor<'de> for IngredientVisitor {
             let uln = UnlocalizedName::from_str(value);
             if let Err(e) = uln {
                 return Err(serde::de::Error::custom(format!(
-                    "Invalid Identifier provided: {}",
-                    e
+                    "Invalid Identifier provided: {e}"
                 )));
             }
             // This error message kinda sucks

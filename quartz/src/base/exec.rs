@@ -43,7 +43,7 @@ pub unsafe fn raw_console_unchecked() -> &'static Interface<DefaultTerminal> {
 pub fn display_to_console<T: Display>(message: &T) {
     match raw_console().lock_writer_erase() {
         Ok(mut writer) =>
-            if let Err(e) = writeln!(writer, "{}", message) {
+            if let Err(e) = writeln!(writer, "{message}") {
                 error!("Failed to send message to console: {}", e);
             },
         Err(e) => error!("Failed to lock console interface: {}", e),

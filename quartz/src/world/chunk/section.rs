@@ -419,8 +419,7 @@ impl OptionalSectionIndex {
     fn some(index: usize) -> Self {
         if cfg!(debug_assertions) && index >= OPT_SECTION_INDEX_NONE_NICHE as usize {
             panic!(
-                "Attempted to construct an optional section index with an illegal index: {}",
-                index
+                "Attempted to construct an optional section index with an illegal index: {index}"
             );
         }
 
@@ -593,13 +592,11 @@ impl Display for SectionInsertionError {
         match self {
             Self::AlreadyPresent(y) => write!(
                 f,
-                "attempted to insert a section at y={} where one was already present",
-                y
+                "attempted to insert a section at y={y} where one was already present"
             ),
             Self::IndexOutOfRange(y) => write!(
                 f,
-                "attempted to insert a section at y={} which is out of range (max {})",
-                y, MAX_SECTION_COUNT
+                "attempted to insert a section at y={y} which is out of range (max {MAX_SECTION_COUNT})"
             ),
         }
     }

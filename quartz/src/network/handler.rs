@@ -427,7 +427,7 @@ impl QuartzServer {
         let mut buffer = PacketBuffer::new(3 + string_vec.len());
 
         // Write FF and length
-        buffer.write_bytes(&[0xFF]);
+        buffer.write_bytes([0xFF]);
         buffer.write(&(string_vec.len() as u16));
 
         // Write String
@@ -598,7 +598,7 @@ impl QuartzServer {
             self.client_list
                 .send_packet(sender, ClientBoundPacket::SetSlot {
                     window_id: 0,
-                    slot: slot as i16,
+                    slot,
                     slot_data: clicked_item.clone(),
                 });
         }

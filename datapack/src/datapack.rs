@@ -528,7 +528,7 @@ impl Namespace {
         path: &P,
     ) -> Result<()> {
         for (name, val) in value {
-            let file = write_file_recursive(path.as_ref().join(format!("{}.json", name)))?;
+            let file = write_file_recursive(path.as_ref().join(format!("{name}.json")))?;
 
             serde_json::to_writer(file, val)?;
         }
@@ -540,7 +540,7 @@ impl Namespace {
         path: &P,
     ) -> Result<()> {
         for (name, val) in structures {
-            let mut file = write_file_recursive(path.as_ref().join(format!("{}.nbt", name)))?;
+            let mut file = write_file_recursive(path.as_ref().join(format!("{name}.nbt")))?;
 
             quartz_nbt::serde::serialize_into(&mut file, val, None, Flavor::GzCompressed)?;
         }
@@ -556,7 +556,7 @@ impl Namespace {
                 .read(false)
                 .write(true)
                 .create(true)
-                .open(path.as_ref().join(format!("{}.mcfunction", name)))?;
+                .open(path.as_ref().join(format!("{name}.mcfunction")))?;
 
             write_function(func, file)?;
         }

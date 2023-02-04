@@ -89,7 +89,7 @@ impl Serialize for TagEntry {
             // If the tag already starts with a # we just serialize it
             TagEntry::Tag(t) if t.starts_with('#') => serializer.serialize_str(t),
             // Otherwise we add a # to the front
-            TagEntry::Tag(t) => serializer.serialize_str(&format!("#{}", t)),
+            TagEntry::Tag(t) => serializer.serialize_str(&format!("#{t}")),
             TagEntry::FailableEntry(entry, required) => {
                 let mut map = serializer.serialize_map(Some(2))?;
                 match entry.as_ref() {
@@ -133,8 +133,7 @@ impl<'de> Visitor<'de> for TagEntryVisitor {
                 Ok(u) => u,
                 Err(e) =>
                     return Err(serde::de::Error::custom(format!(
-                        "invalid identifier: {}",
-                        e
+                        "invalid identifier: {e}"
                     ))),
             };
             Ok(TagEntry::NamespaceID(uln))
@@ -178,8 +177,7 @@ impl<'de> Visitor<'de> for TagEntryVisitor {
                 Ok(u) => u,
                 Err(e) =>
                     return Err(serde::de::Error::custom(format!(
-                        "invalid identifier: {}",
-                        e
+                        "invalid identifier: {e}"
                     ))),
             };
             TagEntry::NamespaceID(uln)

@@ -15,7 +15,7 @@ fn format_in_place(file: &OsStr) {
     Command::new("rustfmt")
         .arg(file)
         .output()
-        .unwrap_or_else(|_| panic!("Failed to format file: {:?}", file));
+        .unwrap_or_else(|_| panic!("Failed to format file: {file:?}"));
 }
 
 

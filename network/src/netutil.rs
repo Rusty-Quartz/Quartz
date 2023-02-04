@@ -634,7 +634,7 @@ impl WriteToPacket for u16 {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         let mut buf = [0; 2];
         BigEndian::write_u16(&mut buf, *self);
-        buffer.write_bytes(&buf);
+        buffer.write_bytes(buf);
     }
 }
 
@@ -642,7 +642,7 @@ impl WriteToPacket for i16 {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         let mut buf = [0; 2];
         BigEndian::write_i16(&mut buf, *self);
-        buffer.write_bytes(&buf);
+        buffer.write_bytes(buf);
     }
 }
 
@@ -650,7 +650,7 @@ impl WriteToPacket for i32 {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         let mut buf = [0; 4];
         BigEndian::write_i32(&mut buf, *self);
-        buffer.write_bytes(&buf);
+        buffer.write_bytes(buf);
     }
 
     fn varying_write_to(&self, buffer: &mut PacketBuffer) {
@@ -681,7 +681,7 @@ impl WriteToPacket for i64 {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         let mut buf = [0; 8];
         BigEndian::write_i64(&mut buf, *self);
-        buffer.write_bytes(&buf);
+        buffer.write_bytes(buf);
     }
 
     fn varying_write_to(&self, buffer: &mut PacketBuffer) {
@@ -718,7 +718,7 @@ impl WriteToPacket for u128 {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         let mut buf = [0; 16];
         BigEndian::write_u128(&mut buf, *self);
-        buffer.write_bytes(&buf);
+        buffer.write_bytes(buf);
     }
 }
 
@@ -726,7 +726,7 @@ impl WriteToPacket for f32 {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         let mut buf = [0; 4];
         BigEndian::write_f32(&mut buf, *self);
-        buffer.write_bytes(&buf);
+        buffer.write_bytes(buf);
     }
 }
 
@@ -734,7 +734,7 @@ impl WriteToPacket for f64 {
     fn write_to(&self, buffer: &mut PacketBuffer) {
         let mut buf = [0; 8];
         BigEndian::write_f64(&mut buf, *self);
-        buffer.write_bytes(&buf);
+        buffer.write_bytes(buf);
     }
 }
 
@@ -756,7 +756,7 @@ impl WriteToPacket for &str {
 
 impl WriteToPacket for BlockPosition {
     fn write_to(&self, buffer: &mut PacketBuffer) {
-        buffer.write(&(self.as_i64() as i64));
+        buffer.write(&self.as_i64());
     }
 }
 
@@ -819,19 +819,18 @@ impl Display for PacketSerdeError {
                 f,
                 "Variable-length integer or long overflowed while reading"
             ),
-            PacketSerdeError::InvalidId(id) => write!(f, "Invalid packet ID encountered: {}", id),
+            PacketSerdeError::InvalidId(id) => write!(f, "Invalid packet ID encountered: {id}"),
             PacketSerdeError::Utf8Error(e) => Display::fmt(e, f),
             PacketSerdeError::InvalidUnlocalizedName(uln) => write!(
                 f,
-                "Invalid unlocalized name encountered while reading: \"{}\"",
-                uln
+                "Invalid unlocalized name encountered while reading: \"{uln}\""
             ),
             PacketSerdeError::SerdeJson(e) => Display::fmt(e, f),
             PacketSerdeError::Nbt(e) => Display::fmt(e, f),
             PacketSerdeError::Network(e) => Display::fmt(e, f),
             PacketSerdeError::OpenSSL(e) => Display::fmt(e, f),
             PacketSerdeError::InvalidEnum(enum_type, id) =>
-                write!(f, "Received invalid enum ID for type {}: {}", enum_type, id),
+                write!(f, "Received invalid enum ID for type {enum_type}: {id}"),
             PacketSerdeError::Internal(msg) => Display::fmt(msg, f),
             PacketSerdeError::InvalidRecipe(msg) => Display::fmt(msg, f),
         }

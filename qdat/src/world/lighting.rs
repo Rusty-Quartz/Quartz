@@ -116,8 +116,7 @@ impl Display for LightingInitError {
         match self {
             Self::InvalidLength(len) => write!(
                 f,
-                "expected light buffer of length {} but found length of {}",
-                LIGHTING_LENGTH, len
+                "expected light buffer of length {LIGHTING_LENGTH} but found length of {len}"
             ),
             Self::AlreadyInitialized => write!(f, "light buffer already initialized"),
         }

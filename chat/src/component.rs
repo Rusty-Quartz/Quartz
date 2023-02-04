@@ -111,7 +111,7 @@ impl Component {
 
     fn write_text(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.component_type {
-            ComponentType::Text { text } => write!(f, "{}", text),
+            ComponentType::Text { text } => write!(f, "{text}"),
             // TODO: Implement this for other component types
             _ => write!(
                 f,
@@ -164,7 +164,7 @@ impl Display for Component {
         if let Some(event) = &self.click_event {
             if event.action == ClickEventType::OpenUrl {
                 if let EventArgument::Text(url) = &event.value {
-                    write!(f, "\x1B]8;;{}\x1B\\", url)?;
+                    write!(f, "\x1B]8;;{url}\x1B\\")?;
                     link_applied = true;
                 }
             }
@@ -321,7 +321,7 @@ impl<'de> Deserialize<'de> for Font {
             "minecraft:default" | "default" => Ok(Self::Default),
             "minecraft:uniform" | "uniform" => Ok(Self::Uniform),
             "minecraft:alt" | "alt" => Ok(Self::Alt),
-            _ => Err(de::Error::custom(format!("Invalid font type: {}", string))),
+            _ => Err(de::Error::custom(format!("Invalid font type: {string}"))),
         }
     }
 }
@@ -414,7 +414,7 @@ impl<'de> Visitor<'de> for FormatVisitor {
                     if set {
                         format |= Format::UNDERLINE
                     },
-                _ => return Err(de::Error::custom(format!("Unkown format type: {}", name))),
+                _ => return Err(de::Error::custom(format!("Unkown format type: {name}"))),
             }
         }
 
@@ -681,7 +681,7 @@ impl ToComponent for NbtTag {
         match self {
             NbtTag::Byte(value) => primitive_to_component!(value),
             NbtTag::Short(value) => primitive_to_component!(value),
-            NbtTag::Int(value) => vec![Component::colored(format!("{}", value), Color::Gold)],
+            NbtTag::Int(value) => vec![Component::colored(format!("{value}"), Color::Gold)],
             NbtTag::Long(value) => primitive_to_component!(value),
             NbtTag::Float(value) => primitive_to_component!(value),
             NbtTag::Double(value) => primitive_to_component!(value),
@@ -758,13 +758,13 @@ impl ToComponent for NbtCompound {
                 let quote = snbt_key.as_bytes()[0] as char;
 
                 if components.len() > 1 {
-                    components.push(Component::text(format!(", {}", quote)));
+                    components.push(Component::text(format!(", {quote}")));
                 }
                 components.push(Component::colored(
                     snbt_key[1 .. snbt_key.len() - 1].to_owned(),
                     Color::Aqua,
                 ));
-                components.push(Component::text(format!("{}: ", quote)));
+                components.push(Component::text(format!("{quote}: ")));
             }
             // They key can be pushed as-is
             else {

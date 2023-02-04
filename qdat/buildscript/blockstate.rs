@@ -45,7 +45,7 @@ pub fn gen_blockstates() {
     }
     .to_string();
     let formatted = super::format_ast(unformatted).unwrap();
-    fs::write(&dest_path, formatted).unwrap();
+    fs::write(dest_path, formatted).unwrap();
 
     println!("cargo:rerun-if-changed=../assets/blocks.json");
     println!("cargo:rerun-if-changes=buildscript/blockstate.rs");
@@ -147,7 +147,7 @@ fn find_shared_properties(data: &mut IndexMap<String, RawBlockInfo>) -> Vec<Prop
 
                                 property_conflicts.insert(
                                     block_properties.clone(),
-                                    (format!("{}_{}", property_name, ending), vec![block.clone()]),
+                                    (format!("{property_name}_{ending}"), vec![block.clone()]),
                                 );
                             }
                         }

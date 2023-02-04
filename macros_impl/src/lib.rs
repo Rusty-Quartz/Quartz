@@ -12,7 +12,7 @@ pub fn quartz() -> TokenStream {
             let name = Ident::new(&name, Span::call_site());
             quote! { ::#name }
         }
-        Err(e) => Error::new(Span::call_site(), format!("{}", e)).to_compile_error(),
+        Err(e) => Error::new(Span::call_site(), format!("{e}")).to_compile_error(),
     }
 }
 
@@ -23,7 +23,7 @@ pub fn quartz_net() -> TokenStream {
             let name = Ident::new(&name, Span::call_site());
             quote! { ::#name }
         }
-        Err(e) => Error::new(Span::call_site(), format!("{}", e)).to_compile_error(),
+        Err(e) => Error::new(Span::call_site(), format!("{e}")).to_compile_error(),
     }
 }
 

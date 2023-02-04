@@ -41,8 +41,7 @@ pub fn init_items() {
         // This should never happen if the data integrity is not compromised
         assert_ne!(
             0, raw_data.stack_size,
-            "Item has max stack size of 0, {}",
-            name
+            "Item has max stack size of 0, {name}"
         );
 
         // NOTE: this is disabled because I don't feel like trying to make the id an &'static str

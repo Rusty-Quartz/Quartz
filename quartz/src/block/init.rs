@@ -43,7 +43,7 @@ pub(crate) fn make_block_list(raw: &HashMap<String, RawBlockInfo>) -> Vec<Block>
 
         // This should never happen if the data integrity is not compromised
         if block_info.states.is_empty() {
-            panic!("Invalid block encountered: {}, no states found.", name);
+            panic!("Invalid block encountered: {name}, no states found.");
         }
 
         block_list.push(Block {

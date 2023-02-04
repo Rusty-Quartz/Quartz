@@ -28,15 +28,14 @@ impl Display for ChunkDecodeError {
             ChunkDecodeError::NbtIo(error) => Display::fmt(error, f),
             ChunkDecodeError::NbtRepr(error) => Display::fmt(error, f),
             ChunkDecodeError::UnknownBlockState(state) =>
-                write!(f, "Unknown block state {}", state),
+                write!(f, "Unknown block state {state}"),
             ChunkDecodeError::UnknownStateProperty(msg) => Display::fmt(msg, f),
             ChunkDecodeError::Lighting(error) => Display::fmt(error, f),
             ChunkDecodeError::ChunkRegionDesync(coords) =>
-                write!(f, "Attempted to load chunk outside of region at {}", coords),
+                write!(f, "Attempted to load chunk outside of region at {coords}"),
             ChunkDecodeError::UnknownCompression(id) => write!(
                 f,
-                "Encountered unknown compression scheme {}, expected 1 or 2",
-                id
+                "Encountered unknown compression scheme {id}, expected 1 or 2"
             ),
         }
     }

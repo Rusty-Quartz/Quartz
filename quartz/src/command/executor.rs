@@ -70,7 +70,7 @@ mod cmds {
             };
 
             cmd executes |ctx| {
-                ctx.executor.dispatch(&format!("{} -h", cmd), ctx)
+                ctx.executor.dispatch(&format!("{cmd} -h"), ctx)
             };
 
             help executes |ctx| {

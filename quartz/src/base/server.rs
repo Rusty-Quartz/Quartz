@@ -583,8 +583,7 @@ impl Client {
                         Some(vec![
                             ComponentBuilder::empty()
                                 .click_event(ClickEvent::suggest_command(format!(
-                                    "/tell {} ",
-                                    username
+                                    "/tell {username} "
                                 )))
                                 .hover_event(HoverEvent::show_entity(HoverEntity {
                                     id: uuid.to_string(),

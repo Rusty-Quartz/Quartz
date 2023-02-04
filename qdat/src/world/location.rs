@@ -129,9 +129,9 @@ impl Coordinate {
 impl Display for Coordinate {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Coordinate::Block(CoordinatePair { x, z }) => write!(f, "[Block] x: {}, z: {}", x, z),
-            Coordinate::Chunk(CoordinatePair { x, z }) => write!(f, "[Chunk] x: {}, z: {}", x, z),
-            Coordinate::Region(CoordinatePair { x, z }) => write!(f, "[Region] x: {}, z: {}", x, z),
+            Coordinate::Block(CoordinatePair { x, z }) => write!(f, "[Block] x: {x}, z: {z}"),
+            Coordinate::Chunk(CoordinatePair { x, z }) => write!(f, "[Chunk] x: {x}, z: {z}"),
+            Coordinate::Region(CoordinatePair { x, z }) => write!(f, "[Region] x: {x}, z: {z}"),
         }
     }
 }
@@ -139,9 +139,9 @@ impl Display for Coordinate {
 impl Debug for Coordinate {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Coordinate::Block(CoordinatePair { x, z }) => write!(f, "B({}, {})", x, z),
-            Coordinate::Chunk(CoordinatePair { x, z }) => write!(f, "C({}, {})", x, z),
-            Coordinate::Region(CoordinatePair { x, z }) => write!(f, "R({}, {})", x, z),
+            Coordinate::Block(CoordinatePair { x, z }) => write!(f, "B({x}, {z})"),
+            Coordinate::Chunk(CoordinatePair { x, z }) => write!(f, "C({x}, {z})"),
+            Coordinate::Region(CoordinatePair { x, z }) => write!(f, "R({x}, {z})"),
         }
     }
 }
@@ -193,7 +193,7 @@ impl From<Coordinate> for CoordinatePair {
 }
 
 // We allow this because we make sure that hash and partialeq are both satisfied
-#[allow(clippy::derive_hash_xor_eq)]
+#[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for CoordinatePair {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64((self.x as u32 as u64) << 32 | self.z as u32 as u64);

@@ -754,7 +754,7 @@ impl ReadFromPacket for Recipe {
             "minecraft:crafting_special_suspiciousstew" => RecipeData::SuspiciousStew,
             _ =>
                 return Err(PacketSerdeError::InvalidRecipe(
-                    format!("Unknown recipe type {} recieved", recipe_type).into_boxed_str(),
+                    format!("Unknown recipe type {recipe_type} recieved").into_boxed_str(),
                 )),
         };
 

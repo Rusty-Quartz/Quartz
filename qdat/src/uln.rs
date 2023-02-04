@@ -753,7 +753,7 @@ impl Serialize for UlnStr {
         let (repr, colon) = self.unpack();
 
         match colon {
-            None => serializer.serialize_str(&format!("minecraft:{}", repr)),
+            None => serializer.serialize_str(&format!("minecraft:{repr}")),
             Some(_) => serializer.serialize_str(repr),
         }
     }
@@ -785,8 +785,8 @@ impl Display for UlnStr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let (repr, colon) = self.unpack();
         match colon {
-            None => write!(f, "minecraft:{}", repr),
-            Some(_) => write!(f, "{}", repr),
+            None => write!(f, "minecraft:{repr}"),
+            Some(_) => write!(f, "{repr}"),
         }
     }
 }
@@ -942,8 +942,7 @@ impl Display for ParseUnlocalizedNameError {
         match self {
             Self::StringTooLarge(len) => write!(
                 f,
-                "encountered unlocalized name of length {}, the maximum length is {}",
-                len, MAX_ULN_LENGTH
+                "encountered unlocalized name of length {len}, the maximum length is {MAX_ULN_LENGTH}"
             ),
             Self::EmptyInput => write!(f, "unlocalized name cannot be empty"),
             Self::EmptyNamespace => write!(f, "empty namespace in unlocalized name"),
@@ -1002,7 +1001,7 @@ impl Meta {
     #[inline]
     fn len(&self) -> NonZeroUsize {
         // Safety: guaranteed by the constructors of this type
-        unsafe { NonZeroUsize::new_unchecked(self.0.overflowing_shr((usize::BITS / 2) as u32).0) }
+        unsafe { NonZeroUsize::new_unchecked(self.0.overflowing_shr(usize::BITS / 2).0) }
     }
 
     #[inline]
