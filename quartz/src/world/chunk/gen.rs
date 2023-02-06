@@ -9,11 +9,6 @@ use crate::world::chunk::{Section, SectionStore, MAX_SECTION_COUNT};
 
 use ::noise::{NoiseFn, Perlin};
 
-
-pub mod qnoise {
-    pub use quartz_worldgen::noise::*;
-}
-
 pub enum ChunkStatus {
     Empty,
     Shaping,
