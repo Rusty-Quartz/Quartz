@@ -1,4 +1,4 @@
-mod density_function;
-mod noise;
-mod random;
-mod spline;
+pub mod density_function;
+pub mod noise;
+pub mod random;
+pub mod spline;
