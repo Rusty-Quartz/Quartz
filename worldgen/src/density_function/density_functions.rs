@@ -1,64 +1,22 @@
 use std::sync::Arc;
 
-use dashmap::DashMap;
-use qdat::{registry::Resolvable, world::location::BlockPosition, UnlocalizedName};
+use qdat::{registry::Resolvable, UnlocalizedName};
 
 use quartz_util::math::LerpExt;
 
 use crate::{
+    density_function::{
+        spline::{CustomCoordinate, SplineValue},
+        DensityFunctionContext,
+        DensityFunctionContextWrapper,
+    },
     noise::{
         blended::BlendedNoise,
         normal::{NoiseParamteres, NormalNoise},
         simplex::SimplexNoise,
     },
-    spline::{CustomCoordinate, SplineValue},
 };
 
-#[derive(Clone)]
-pub struct DensityFunctionTree {
-    functions: Vec<DensityFunction>,
-}
-
-impl DensityFunctionTree {
-    pub fn calculate<C: DensityFunctionContext + 'static>(&self, ctx: Arc<C>) -> f64 {
-        // Shouldn't be that expensive to clone here
-        let start_function = self.functions[0].clone();
-
-        let wrapper = DensityFunctionContextWrapper { ctx, tree: self };
-
-        // Id is always 0 since id is just the index into the functions vec
-        start_function.calculate(0, &wrapper)
-    }
-}
-
-#[derive(Clone)]
-pub struct DensityFunctionContextWrapper<'a> {
-    ctx: Arc<dyn DensityFunctionContext>,
-    tree: &'a DensityFunctionTree,
-}
-
-impl<'a> DensityFunctionContextWrapper<'a> {
-    pub fn single_point(&self, pos: BlockPosition) -> DensityFunctionContextWrapper<'a> {
-        DensityFunctionContextWrapper {
-            ctx: Arc::new(SinglePointFunctionContext(pos)),
-            tree: self.tree,
-        }
-    }
-}
-
-impl<'a> DensityFunctionContext for DensityFunctionContextWrapper<'a> {
-    fn get_pos(&self) -> BlockPosition {
-        self.ctx.get_pos()
-    }
-
-    fn get_blender(&self) -> Option<Blender> {
-        self.ctx.get_blender()
-    }
-
-    fn get_cacher(&self) -> Option<&Cacher> {
-        self.ctx.get_cacher()
-    }
-}
 
 #[derive(Clone, Copy)]
 pub struct DensityFunctionRef(usize);
@@ -340,67 +298,6 @@ impl DensityFunction {
     }
 }
 
-pub trait DensityFunctionContext {
-    /// Gets the position we're running the density function at
-    fn get_pos(&self) -> BlockPosition;
-    /// Gets the world blender for the region
-    fn get_blender(&self) -> Option<Blender> {
-        None
-    }
-    /// Gets the cacher for the current chunk
-    fn get_cacher(&self) -> Option<&Cacher> {
-        None
-    }
-    /// Gets the interpolator for the current chunk
-    fn get_interpolator(&self) -> Option<()> {
-        None
-    }
-}
-
-pub trait Interpolator {
-    fn cache_all_in_cell(&self, id: usize, arg: DensityFunctionRef) -> f64;
-    fn interpolate(&self, id: usize, arg: DensityFunctionRef) -> f64;
-}
-
-pub struct SinglePointFunctionContext(BlockPosition);
-
-impl DensityFunctionContext for SinglePointFunctionContext {
-    fn get_pos(&self) -> BlockPosition {
-        self.0
-    }
-}
-
-pub trait DensityFunctionContextProvider<'a> {
-    type Context: DensityFunctionContext + Clone;
-    fn for_index(&self, arr_index: u32) -> Self::Context;
-    fn fill_all_directly(&self, arr: &mut [f64], function: DensityFunction);
-}
-
-pub trait DensityFunctionVisitor {
-    fn apply(func: &mut DensityFunction);
-}
-
-/// The world blender
-///
-/// A world blender will interpolate chunk data to make a smooth transition between chunks that use different terrain generation algorithms.
-///
-/// This is used in vanilla to smooth chunks generated in older versions with new chunks.
-///
-/// We currently do not implement this due to the main world gen algorithm not being completed.
-pub struct Blender;
-
-// Needed so that we can have spline::SamplePoint hold a DensityFunctionContext in one variant
-// and otherwise should be unusable
-impl DensityFunctionContext for () {
-    fn get_pos(&self) -> BlockPosition {
-        unreachable!("Unit type DensityFunctionContext cannot actually be used as a context")
-    }
-
-    fn get_blender(&self) -> Option<Blender> {
-        unreachable!("Unit type DensityFunctionContext cannot actually be used as a context")
-    }
-}
-
 fn compute_shifted_noise(normal_noise: &NoiseHolder, x: f64, y: f64, z: f64) -> f64 {
     normal_noise.get_value(x * 0.25, y * 0.25, z * 0.25) * 4.0
 }
@@ -481,65 +378,6 @@ impl NoiseHolder {
             n.max_value()
         } else {
             2.0
-        }
-    }
-}
-
-pub struct Cacher {
-    cache_2d: DashMap<(usize, BlockPosition), f64>,
-    flat_cache: DashMap<(usize, BlockPosition), f64>,
-    cache_once: DashMap<usize, f64>,
-}
-
-impl Cacher {
-    fn cache_2d(
-        &self,
-        id: usize,
-        child_func: &DensityFunctionRef,
-        ctx: &DensityFunctionContextWrapper,
-    ) -> f64 {
-        let block_pos = ctx.get_pos();
-        match self.cache_2d.get(&(id, block_pos)) {
-            Some(val) => *val,
-            None => {
-                let val = child_func.calculate(ctx);
-                self.cache_2d.insert((id, block_pos), val);
-                val
-            }
-        }
-    }
-
-    fn flat_cache(
-        &self,
-        id: usize,
-        child_func: &DensityFunctionRef,
-        ctx: &DensityFunctionContextWrapper,
-    ) -> f64 {
-        let block_pos = ctx.get_pos();
-
-        match self.flat_cache.get(&(id, block_pos)) {
-            Some(val) => *val,
-            None => {
-                let val = child_func.calculate(&ctx.single_point(block_pos));
-                self.flat_cache.insert((id, block_pos), val);
-                val
-            }
-        }
-    }
-
-    fn cache_once(
-        &self,
-        id: usize,
-        child_func: &DensityFunctionRef,
-        ctx: &DensityFunctionContextWrapper,
-    ) -> f64 {
-        match self.cache_once.get(&id) {
-            Some(val) => *val,
-            None => {
-                let val = child_func.calculate(ctx);
-                self.cache_once.insert(id, val);
-                val
-            }
         }
     }
 }
