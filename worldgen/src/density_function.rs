@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
-use qdat::{
-    registry::Resolvable,
-    world::location::{BlockPosition, Coordinate},
-    UnlocalizedName,
-};
+use dashmap::DashMap;
+use qdat::{registry::Resolvable, world::location::BlockPosition, UnlocalizedName};
 
 use quartz_util::math::LerpExt;
 
@@ -14,7 +11,7 @@ use crate::{
         normal::{NoiseParamteres, NormalNoise},
         simplex::SimplexNoise,
     },
-    spline::{CustomCoordinate, CustomPoint, SplineValue},
+    spline::{CustomCoordinate, SplineValue},
 };
 
 #[derive(Clone)]
@@ -23,29 +20,43 @@ pub struct DensityFunctionTree {
 }
 
 impl DensityFunctionTree {
-    pub fn calculate<C: DensityFunctionContext + 'static>(self, ctx: Arc<C>) -> f64 {
+    pub fn calculate<C: DensityFunctionContext + 'static>(&self, ctx: Arc<C>) -> f64 {
         // Shouldn't be that expensive to clone here
         let start_function = self.functions[0].clone();
 
         let wrapper = DensityFunctionContextWrapper { ctx, tree: self };
 
-        start_function.calculate(&wrapper)
+        // Id is always 0 since id is just the index into the functions vec
+        start_function.calculate(0, &wrapper)
     }
 }
 
 #[derive(Clone)]
-pub struct DensityFunctionContextWrapper {
+pub struct DensityFunctionContextWrapper<'a> {
     ctx: Arc<dyn DensityFunctionContext>,
-    tree: DensityFunctionTree,
+    tree: &'a DensityFunctionTree,
 }
 
-impl DensityFunctionContext for DensityFunctionContextWrapper {
+impl<'a> DensityFunctionContextWrapper<'a> {
+    pub fn single_point(&self, pos: BlockPosition) -> DensityFunctionContextWrapper<'a> {
+        DensityFunctionContextWrapper {
+            ctx: Arc::new(SinglePointFunctionContext(pos)),
+            tree: self.tree,
+        }
+    }
+}
+
+impl<'a> DensityFunctionContext for DensityFunctionContextWrapper<'a> {
     fn get_pos(&self) -> BlockPosition {
         self.ctx.get_pos()
     }
 
-    fn get_blender(&self) -> Blender {
+    fn get_blender(&self) -> Option<Blender> {
         self.ctx.get_blender()
+    }
+
+    fn get_cacher(&self) -> Option<&Cacher> {
+        self.ctx.get_cacher()
     }
 }
 
@@ -53,8 +64,8 @@ impl DensityFunctionContext for DensityFunctionContextWrapper {
 pub struct DensityFunctionRef(usize);
 
 impl DensityFunctionRef {
-    pub(crate) fn calculate(&self, wrapped: &DensityFunctionContextWrapper) -> f64 {
-        wrapped.tree.functions[self.0].calculate(wrapped)
+    pub(crate) fn calculate(&self, ctx: &DensityFunctionContextWrapper) -> f64 {
+        ctx.tree.functions[self.0].calculate(self.0, ctx)
     }
 }
 
@@ -78,8 +89,6 @@ pub enum DensityFunction {
     },
     BlendOffset,
     Cache2d {
-        last_pos_2d: i64,
-        last_value: f64,
         arg: DensityFunctionRef,
     },
     CacheAllInCell {
@@ -182,7 +191,7 @@ pub enum DensityFunction {
     },
 }
 impl DensityFunction {
-    pub fn calculate(&self, ctx: &DensityFunctionContextWrapper) -> f64 {
+    pub fn calculate(&self, id: usize, ctx: &DensityFunctionContextWrapper) -> f64 {
         match self {
             DensityFunction::Abs { arg: argument } => argument.calculate(ctx).abs(),
             DensityFunction::Add {
@@ -193,24 +202,15 @@ impl DensityFunction {
             DensityFunction::BlendAlpha => todo!(),
             DensityFunction::BlendDensity { arg: _argument } => todo!(),
             DensityFunction::BlendOffset => todo!(),
-            DensityFunction::Cache2d {
-                last_pos_2d,
-                last_value,
-                arg: argument,
-            } => {
-                let coord: Coordinate = ctx.get_pos().into();
-                let curr_pos = coord.as_chunk_long();
-                if curr_pos == *last_pos_2d {
-                    *last_value
-                } else {
-                    let val = argument.calculate(ctx);
-                    // *last_value = val;
-                    // *last_pos_2d = curr_pos;
-                    val
-                }
-            }
+            DensityFunction::Cache2d { arg } => match ctx.get_cacher() {
+                Some(cacher) => cacher.cache_2d(id, arg, ctx),
+                None => arg.calculate(ctx),
+            },
             DensityFunction::CacheAllInCell { arg: _argument } => todo!(),
-            DensityFunction::CacheOnce { arg: _argument } => todo!(),
+            DensityFunction::CacheOnce { arg } => match ctx.get_cacher() {
+                Some(cacher) => cacher.cache_once(id, arg, ctx),
+                None => arg.calculate(ctx),
+            },
             DensityFunction::Clamp {
                 arg: input,
                 min,
@@ -222,7 +222,10 @@ impl DensityFunction {
                 val * val * val
             }
             DensityFunction::EndIslands { noise: _noise } => todo!(),
-            DensityFunction::FlatCache { arg: _argument } => todo!(),
+            DensityFunction::FlatCache { arg } => match ctx.get_cacher() {
+                Some(cacher) => cacher.flat_cache(id, arg, ctx),
+                None => arg.calculate(ctx),
+            },
             DensityFunction::HalfNegative { arg: argument } => {
                 let val = argument.calculate(ctx);
                 if val > 0.0 {
@@ -296,7 +299,7 @@ impl DensityFunction {
                 spline,
                 min_value,
                 max_value,
-            } => (spline.apply(&CustomPoint(ctx.clone())) as f64).clamp(*min_value, *max_value),
+            } => (spline.apply(ctx) as f64).clamp(*min_value, *max_value),
             DensityFunction::Square { arg } => {
                 let val = arg.calculate(ctx);
                 val * val
@@ -341,7 +344,30 @@ pub trait DensityFunctionContext {
     /// Gets the position we're running the density function at
     fn get_pos(&self) -> BlockPosition;
     /// Gets the world blender for the region
-    fn get_blender(&self) -> Blender;
+    fn get_blender(&self) -> Option<Blender> {
+        None
+    }
+    /// Gets the cacher for the current chunk
+    fn get_cacher(&self) -> Option<&Cacher> {
+        None
+    }
+    /// Gets the interpolator for the current chunk
+    fn get_interpolator(&self) -> Option<()> {
+        None
+    }
+}
+
+pub trait Interpolator {
+    fn cache_all_in_cell(&self, id: usize, arg: DensityFunctionRef) -> f64;
+    fn interpolate(&self, id: usize, arg: DensityFunctionRef) -> f64;
+}
+
+pub struct SinglePointFunctionContext(BlockPosition);
+
+impl DensityFunctionContext for SinglePointFunctionContext {
+    fn get_pos(&self) -> BlockPosition {
+        self.0
+    }
 }
 
 pub trait DensityFunctionContextProvider<'a> {
@@ -370,7 +396,7 @@ impl DensityFunctionContext for () {
         unreachable!("Unit type DensityFunctionContext cannot actually be used as a context")
     }
 
-    fn get_blender(&self) -> Blender {
+    fn get_blender(&self) -> Option<Blender> {
         unreachable!("Unit type DensityFunctionContext cannot actually be used as a context")
     }
 }
@@ -455,6 +481,65 @@ impl NoiseHolder {
             n.max_value()
         } else {
             2.0
+        }
+    }
+}
+
+pub struct Cacher {
+    cache_2d: DashMap<(usize, BlockPosition), f64>,
+    flat_cache: DashMap<(usize, BlockPosition), f64>,
+    cache_once: DashMap<usize, f64>,
+}
+
+impl Cacher {
+    fn cache_2d(
+        &self,
+        id: usize,
+        child_func: &DensityFunctionRef,
+        ctx: &DensityFunctionContextWrapper,
+    ) -> f64 {
+        let block_pos = ctx.get_pos();
+        match self.cache_2d.get(&(id, block_pos)) {
+            Some(val) => *val,
+            None => {
+                let val = child_func.calculate(ctx);
+                self.cache_2d.insert((id, block_pos), val);
+                val
+            }
+        }
+    }
+
+    fn flat_cache(
+        &self,
+        id: usize,
+        child_func: &DensityFunctionRef,
+        ctx: &DensityFunctionContextWrapper,
+    ) -> f64 {
+        let block_pos = ctx.get_pos();
+
+        match self.flat_cache.get(&(id, block_pos)) {
+            Some(val) => *val,
+            None => {
+                let val = child_func.calculate(&ctx.single_point(block_pos));
+                self.flat_cache.insert((id, block_pos), val);
+                val
+            }
+        }
+    }
+
+    fn cache_once(
+        &self,
+        id: usize,
+        child_func: &DensityFunctionRef,
+        ctx: &DensityFunctionContextWrapper,
+    ) -> f64 {
+        match self.cache_once.get(&id) {
+            Some(val) => *val,
+            None => {
+                let val = child_func.calculate(ctx);
+                self.cache_once.insert(id, val);
+                val
+            }
         }
     }
 }

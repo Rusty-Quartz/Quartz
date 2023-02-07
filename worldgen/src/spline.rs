@@ -34,7 +34,7 @@ impl<C: Coordinate + Clone> Clone for SplineValue<C> {
 }
 
 impl<C: Coordinate> SplineValue<C> {
-    pub fn apply(&self, point: &C::Point) -> f32 {
+    pub fn apply(&self, point: &C::Point<'_>) -> f32 {
         match self {
             SplineValue::Constant(val) => *val,
             SplineValue::Spline {
@@ -82,9 +82,9 @@ impl<C: Coordinate> SplineValue<C> {
 }
 
 pub trait Coordinate {
-    type Point;
+    type Point<'a>;
 
-    fn apply(&self, point: &Self::Point) -> f32;
+    fn apply(&self, point: &Self::Point<'_>) -> f32;
 }
 
 
@@ -97,9 +97,9 @@ pub enum TerrainCoordinate {
 }
 
 impl Coordinate for TerrainCoordinate {
-    type Point = TerrainPoint;
+    type Point<'a> = TerrainPoint;
 
-    fn apply(&self, point: &Self::Point) -> f32 {
+    fn apply(&self, point: &Self::Point<'_>) -> f32 {
         match self {
             Self::Continents => point.continents,
             Self::Erosion => point.erosion,
@@ -121,14 +121,12 @@ pub struct TerrainPoint {
 pub struct CustomCoordinate(DensityFunctionRef);
 
 impl Coordinate for CustomCoordinate {
-    type Point = CustomPoint;
+    type Point<'a> = DensityFunctionContextWrapper<'a>;
 
-    fn apply(&self, point: &Self::Point) -> f32 {
-        self.0.calculate(&point.0) as f32
+    fn apply(&self, point: &Self::Point<'_>) -> f32 {
+        self.0.calculate(point) as f32
     }
 }
-
-pub struct CustomPoint(pub DensityFunctionContextWrapper);
 
 pub struct SplineBuilder<C: Coordinate + Clone> {
     coordinate: C,

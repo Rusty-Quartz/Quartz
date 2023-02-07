@@ -12,4 +12,5 @@ quartz_macros = { path = "../macros" }
 quartz_net = { path = "../network" }
 qdat = { path = "../qdat" }
 
+dashmap = "5.4"
 md5 = "0.7.0"
