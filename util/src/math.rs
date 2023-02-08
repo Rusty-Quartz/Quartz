@@ -1,4 +1,4 @@
-use std::ops::{Add, BitXor, Div, Mul, Sub};
+use std::ops::{Add, Div, Mul, Sub};
 
 const LOG2_TABLE_64: [u64; 64] = [
     63, 0, 58, 1, 59, 47, 53, 2, 60, 39, 48, 27, 54, 33, 42, 3, 61, 51, 37, 40, 49, 18, 28, 20, 55,
@@ -182,4 +182,85 @@ pub const fn div_floor(x: i32, y: i32) -> i32 {
     }
 
     r
+}
+
+/// Lerps between values in 2d space
+pub fn lerp_2d(delta_x: f64, delta_y: f64, x0y0: f64, x1y0: f64, x0y1: f64, x1y1: f64) -> f64 {
+    LerpExt::lerp(
+        delta_y as f32,
+        LerpExt::lerp(delta_x as f32, x0y0 as f32, x1y0 as f32),
+        LerpExt::lerp(delta_x as f32, x0y1 as f32, x1y1 as f32),
+    ) as f64
+}
+
+/// Lerps between values in 3d space
+#[allow(clippy::too_many_arguments)]
+pub fn lerp_3d(
+    delta_x: f64,
+    delta_y: f64,
+    delta_z: f64,
+    x0y0z0: f64,
+    x1y0z0: f64,
+    x0y1z0: f64,
+    x1y1z0: f64,
+    x0y0z1: f64,
+    x1y0z1: f64,
+    x0y1z1: f64,
+    x1y1z1: f64,
+) -> f64 {
+    LerpExt::lerp(
+        delta_z as f32,
+        lerp_2d(delta_x, delta_y, x0y0z0, x1y0z0, x0y1z0, x1y1z0) as f32,
+        lerp_2d(delta_x, delta_y, x0y0z1, x1y0z1, x0y1z1, x1y1z1) as f32,
+    ) as f64
+}
+
+/// The derivative of [smooth_step]
+pub fn smooth_step_derivative(val: f64) -> f64 {
+    30.0 * val * val * (val - 1.0) * (val - 1.0)
+}
+
+// idk
+pub fn wrap(val: f64) -> f64 {
+    const WRAP_CONST: f64 = 3.3554432E7;
+    val - lfloor(val / WRAP_CONST + 0.5) as f64 * WRAP_CONST
+}
+
+/// Floors the double and converts it to a long
+pub fn lfloor(val: f64) -> i64 {
+    let l = val as i64;
+    if val < l as f64 {
+        l - 1
+    } else {
+        l
+    }
+}
+
+/// Returns the floor modulus of two i32s
+///
+/// The relationship between this and floor_div is
+/// floor_div(x, y) * y + floor_mod(x, y) == x
+pub fn floor_mod(rhs: i32, lhs: i32) -> i32 {
+    let mut val = rhs % lhs;
+
+    if val ^ lhs < 0 && val != 0 {
+        val += lhs;
+    }
+
+    val
+}
+
+
+/// Returns the largest value that is less than or equal to the quotient of two i32s
+///
+/// The relationship between this and floor_div is
+/// floor_div(x, y) * y + floor_mod(x, y) == x
+pub fn floor_div(rhs: i32, lhs: i32) -> i32 {
+    let mut val = rhs / lhs;
+
+    if rhs ^ lhs < 0 && val * rhs != 0 {
+        val -= 1;
+    }
+
+    val
 }

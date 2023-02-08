@@ -1,7 +1,7 @@
-use quartz_util::math::{dot, smooth_step};
+use quartz_util::math::{dot, lerp_2d, lerp_3d, smooth_step, smooth_step_derivative, wrap};
 
 use crate::{
-    noise::{lerp_2d, lerp_3d, simplex::SimplexOctave, smooth_step_derivative, wrap},
+    noise::simplex::SimplexOctave,
     random::{PositionalRandomBuilder, RandomSource},
 };
 

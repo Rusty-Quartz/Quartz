@@ -168,7 +168,7 @@ impl SimplexOctave {
 
     // I have no idea how any of this works
     // TODO: come back and label these vars properly
-    fn sample_2d(&self, x: f64, y: f64) -> f64 {
+    pub fn sample_2d(&self, x: f64, y: f64) -> f64 {
         let d: f64 = (x + y) * SimplexOctave::F2;
         let i = (x + d).floor();
         let j = (y + d).floor();
@@ -194,7 +194,7 @@ impl SimplexOctave {
         70.0 * (w + z + aa)
     }
 
-    fn sample_3d(&self, x: f64, y: f64, z: f64) -> f64 {
+    pub fn sample_3d(&self, x: f64, y: f64, z: f64) -> f64 {
         // we do this instead of x/3
         // because this is what mojang does
         // and it might have different rounding characteristics

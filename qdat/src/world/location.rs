@@ -1,6 +1,7 @@
 use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
+    ops::{Add, Sub},
 };
 
 use serde::{Deserialize, Serialize};
@@ -53,6 +54,30 @@ impl Display for BlockPosition {
 impl Debug for BlockPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "({}, {}, {})", self.x, self.y, self.z)
+    }
+}
+
+impl Add for BlockPosition {
+    type Output = BlockPosition;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        BlockPosition {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+            z: self.z + rhs.z,
+        }
+    }
+}
+
+impl Sub for BlockPosition {
+    type Output = BlockPosition;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        BlockPosition {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        }
     }
 }
 

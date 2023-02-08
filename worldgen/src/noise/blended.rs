@@ -1,10 +1,10 @@
 use std::ops::Range;
 
-use quartz_util::math::LerpExt;
+use quartz_util::math::{wrap, LerpExt};
 
 use crate::{
-    density_function::DensityFunctionContext,
-    noise::{perlin::PerlinNoise, wrap},
+    density_function::{DensityFunctionContext, DensityFunctionContextWrapper},
+    noise::perlin::PerlinNoise,
     random::{xoroshiro::XoroshiroRandom, RandomSource},
 };
 
@@ -130,7 +130,7 @@ impl BlendedNoise {
         }
     }
 
-    pub fn calculate<C: DensityFunctionContext>(&self, ctx: &C) -> f64 {
+    pub fn calculate(&self, ctx: &DensityFunctionContextWrapper) -> f64 {
         let pos = ctx.get_pos();
         let scaled_x = pos.x as f64 * self.xz_multiplier / self.xz_factor;
         let scaled_y = pos.y as f64 * self.y_multiplier / self.y_factor;

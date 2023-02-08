@@ -1,11 +1,7 @@
 use dashmap::DashMap;
 use qdat::world::location::BlockPosition;
 
-use crate::density_function::{
-    DensityFunctionContext,
-    DensityFunctionContextWrapper,
-    DensityFunctionRef,
-};
+use crate::density_function::{DensityFunctionContextWrapper, DensityFunctionRef};
 
 pub struct Cacher {
     cache_2d: DashMap<(usize, BlockPosition), f64>,
